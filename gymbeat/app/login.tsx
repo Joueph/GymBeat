@@ -54,7 +54,7 @@ export default function LoginScreen() {
       <View style={{ marginTop: 20 }}>
         <Button
           title="Ir para Cadastro"
-          onPress={() => router.push("/cadastro")}
+          onPress={() => router.push("./cadastro")}
         />
       </View>
     </View>

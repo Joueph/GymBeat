@@ -1,30 +1,42 @@
-import React, { useEffect, useState, ReactNode } from "react";
-
+import React, {
+  useEffect,
+  useState,
+  ReactNode,
+  createContext,
+  useContext,
+} from "react";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { useRouter } from "expo-router";
 import { ActivityIndicator, View } from "react-native";
-import { auth } from "../firebaseconfig"; // Add this import
+import { auth } from "../firebaseconfig";
 
-type Props = { children: ReactNode };
+type AuthContextType = {
+  user: User | null;
+  initialized: boolean;
+};
 
-export default function AuthProvider({ children }: Props) {
-  const router = useRouter();
+const AuthContext = createContext<AuthContextType>({
+  user: null,
+  initialized: false,
+});
+
+export const useAuth = () => useContext(AuthContext);
+
+export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setLoading(false);
-      if (!currentUser) {
-        router.replace("/login");
+      if (!initialized) {
+        setInitialized(true);
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [initialized]);
 
-  if (loading) {
+  if (!initialized) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator size="large" />
@@ -32,5 +44,9 @@ export default function AuthProvider({ children }: Props) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <AuthContext.Provider value={{ user, initialized }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }

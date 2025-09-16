@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, Button, StyleSheet, Alert, TextInput, ActivityIndicator, ScrollView, Image, TouchableOpacity } from "react-native";
+import { useAuth } from "../authprovider";
+
+import { View, Text, Button, StyleSheet, Alert, TextInput, ActivityIndicator, ScrollView, Image, TouchableOpacity, Platform } from "react-native";
 import { signOut } from "firebase/auth";
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 
-import { useAuth } from "../authprovider";
 import { auth } from "../../firebaseconfig";
 import { getUserProfile, updateUserProfile } from "../../userService";
 import { uploadImageAndGetURL } from "../../services/storageService";
@@ -14,6 +16,8 @@ export default function PerfilScreen() {
   const [profile, setProfile] = useState<Partial<Usuario>>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -65,15 +69,42 @@ export default function PerfilScreen() {
     }
   };
   
-  const handleUpdate = async () => {
+const handleUpdate = async () => {
     if (!user) return;
     try {
-      const dataToUpdate = {
-        ...profile,
-        altura: Number(profile.altura) || undefined,
-        peso: Number(profile.peso) || undefined,
-        dataNascimento: profile.dataNascimento ? new Date(profile.dataNascimento) : undefined,
+      // Começamos com um objeto limpo para garantir que não enviamos dados indesejados.
+      const dataToUpdate: Partial<Usuario> = {
+        nome: profile.nome,
       };
+
+      // Adiciona os campos numéricos apenas se eles forem válidos, senão usa null.
+      const alturaNum = Number(profile.altura);
+      if (!isNaN(alturaNum) && alturaNum > 0) {
+        dataToUpdate.altura = alturaNum;
+      } else {
+        dataToUpdate.altura = undefined;
+      }
+
+      const pesoNum = Number(profile.peso);
+      if (!isNaN(pesoNum) && pesoNum > 0) {
+        dataToUpdate.peso = pesoNum;
+      } else {
+        dataToUpdate.peso = undefined;
+      }
+      
+      // Adiciona a data de nascimento apenas se for uma data válida, senão usa null.
+      if (profile.dataNascimento) {
+        const dataNasc = new Date(profile.dataNascimento as any);
+        // Verifica se a data é válida antes de adicionar
+        if (!isNaN(dataNasc.getTime())) {
+          dataToUpdate.dataNascimento = dataNasc;
+        } else {
+          dataToUpdate.dataNascimento = undefined;
+        }
+      } else {
+        dataToUpdate.dataNascimento = undefined;
+      }
+
       await updateUserProfile(user.uid, dataToUpdate);
       Alert.alert("Sucesso", "Perfil atualizado com sucesso!");
     } catch (error: any) {
@@ -93,6 +124,23 @@ export default function PerfilScreen() {
     setProfile(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    const currentDate = selectedDate || new Date();
+    setShowDatePicker(Platform.OS === 'ios'); // Fecha o picker no iOS, no Android ele fecha automaticamente
+    if (selectedDate) {
+      setProfile(prev => ({ ...prev, dataNascimento: currentDate }));
+    }
+  };
+
+  const formatDate = (date?: Date | string) => {
+    if (!date) return "";
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString('pt-BR');
+  };
+
+
+
   if (loading) {
     return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
   }
@@ -100,8 +148,8 @@ export default function PerfilScreen() {
   return (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
       <TouchableOpacity onPress={handlePickImage} disabled={uploading}>
-        <Image 
-          source={profile.photoURL ? { uri: profile.photoURL } : require('../../assets/images/default-pfp.png')} 
+        <Image
+          source={{ uri: profile.photoURL }}
           style={styles.pfp} 
         />
         {uploading && <ActivityIndicator style={styles.uploadIndicator} size="large" color="#4CAF50" />}
@@ -119,7 +167,48 @@ export default function PerfilScreen() {
         onChangeText={(text) => handleChange('nome', text)}
       />
 
-      {/* ... outros inputs ... */}
+      <Text style={styles.label}>Altura (cm)</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ex: 175"
+        placeholderTextColor="#ccc"
+        keyboardType="numeric"
+        value={profile.altura ? String(profile.altura) : ''}
+        onChangeText={(text) => handleChange('altura', text)}
+      />
+
+      <Text style={styles.label}>Peso (kg)</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Ex: 70.5"
+        placeholderTextColor="#ccc"
+        keyboardType="numeric"
+        value={profile.peso ? String(profile.peso) : ''}
+        onChangeText={(text) => handleChange('peso', text)}
+      />
+
+      <Text style={styles.label}>Data de Nascimento</Text>
+      <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.input}>
+        <Text style={{ color: profile.dataNascimento ? '#fff' : '#ccc' }}>
+          {profile.dataNascimento ? formatDate(profile.dataNascimento) : "Selecione a Data"}
+        </Text>
+      </TouchableOpacity>
+
+      {showDatePicker && (
+        <DateTimePicker
+          testID="dateTimePicker"
+          value={profile.dataNascimento ? new Date(profile.dataNascimento) : new Date()}
+          mode="date"
+          display="default"
+          onChange={handleDateChange}
+          maximumDate={new Date()} // Não permite datas futuras
+          themeVariant="dark" // Força o tema escuro
+          textColor="white" // Tenta forçar a cor do texto para branco (pode não funcionar em todas as plataformas/versões)
+          style={{ backgroundColor: '#173F5F' }} // Estilo para o background do picker
+        />
+      )}
+
+
 
       <Button title="Salvar Alterações" onPress={handleUpdate} color="#4CAF50" />
       

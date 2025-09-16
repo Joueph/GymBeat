@@ -1,23 +1,34 @@
 // app/cadastro.tsx
 import React, { useState } from "react";
-import { View, Text, TextInput, Button, StyleSheet } from "react-native";
+import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
 import { useRouter } from "expo-router";
 import { auth } from "../firebaseconfig";
 import { createUserWithEmailAndPassword } from "firebase/auth";
+import { createUserProfileDocument } from "../userService"; // Importe a função
 
 export default function CadastroScreen() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [nome, setNome] = useState(""); // Novo estado para o nome
 
   const handleCadastro = async () => {
+    if (!nome.trim() || !email.trim() || !senha.trim()) {
+      Alert.alert("Erro", "Por favor, preencha todos os campos.");
+      return;
+    }
     try {
-      await createUserWithEmailAndPassword(auth, email, senha);
-      alert("Conta criada com sucesso!");
-      router.replace("/(tabs)"); // vai direto para home
+      const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
+      const user = userCredential.user;
+
+      // Cria o documento de perfil no Firestore com os dados adicionais
+      await createUserProfileDocument(user, { nome });
+
+      Alert.alert("Sucesso!", "Conta criada com sucesso!");
+      router.replace("/(tabs)");
     } catch (error: any) {
-      alert("Erro: " + error.message);
+      Alert.alert("Erro no Cadastro", error.message);
     }
   };
 
@@ -26,13 +37,21 @@ export default function CadastroScreen() {
       <Text style={styles.title}>Criar Conta</Text>
 
       <TextInput
+        placeholder="Nome Completo"
+        value={nome}
+        onChangeText={setNome}
+        style={styles.input}
+      />
+      <TextInput
         placeholder="Email"
         value={email}
         onChangeText={setEmail}
         style={styles.input}
+        keyboardType="email-address"
+        autoCapitalize="none"
       />
       <TextInput
-        placeholder="Senha"
+        placeholder="Senha (mínimo 6 caracteres)"
         secureTextEntry
         value={senha}
         onChangeText={setSenha}

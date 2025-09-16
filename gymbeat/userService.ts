@@ -1,29 +1,69 @@
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, getDoc, updateDoc } from "firebase/firestore";
 import { User } from "firebase/auth";
 import { db } from "./firebaseconfig";
+import { Usuario } from "./models/usuario"; // Importe a interface Usuario
 
 /**
- * Creates or updates a user profile document in Firestore.
- * This is useful for storing additional user information not handled by Firebase Auth.
- * @param user The user object from Firebase Authentication.
- * @param additionalData Optional additional data to store for the user, e.g., { displayName: 'John Doe' }.
+ * Cria ou atualiza um documento de perfil de usuário no Firestore.
+ * @param user O objeto de usuário da Autenticação Firebase.
+ * @param additionalData Dados adicionais para armazenar para o usuário.
  */
-export const createUserProfileDocument = async (user: User, additionalData: object = {}) => {
+export const getUserProfile = async (uid: string) => {
+  if (!uid) return null;
+  try {
+    const userRef = doc(db, `users/${uid}`);
+    const userSnap = await getDoc(userRef);
+
+    if (userSnap.exists()) {
+      return { id: userSnap.id, ...userSnap.data() } as Usuario;
+    } else {
+      console.log("Nenhum documento de usuário encontrado!");
+      return null;
+    }
+  } catch (error) {
+    console.error("Erro ao buscar perfil do usuário:", error);
+    throw error;
+  }
+};
+
+export const updateUserProfile = async (uid: string, data: Partial<Usuario>) => {
+  if (!uid) return;
+  try {
+    const userRef = doc(db, `users/${uid}`);
+    await updateDoc(userRef, data);
+    console.log("Perfil do usuário atualizado com sucesso!");
+  } catch (error) {
+    console.error("Erro ao atualizar o perfil do usuário:", error);
+    throw error;
+  }
+};
+
+export const createUserProfileDocument = async (user: User, additionalData: Partial<Usuario>) => {
   if (!user) return;
 
-  // A reference to the document in the 'users' collection with the user's UID as the document ID.
   const userRef = doc(db, `users/${user.uid}`);
 
   const userData = {
     uid: user.uid,
     email: user.email,
-    createdAt: serverTimestamp(), // Automatically sets the creation time on the server
+    dataCriacao: serverTimestamp(),
+    // Dados padrão ou vindos do formulário de cadastro
+    nome: additionalData.nome || user.email,
+    dataNascimento: additionalData.dataNascimento || null,
+    altura: additionalData.altura || null,
+    peso: additionalData.peso || null,
+    fichas: [],
+    amizades: [],
+    role: 'usuario',
+    photoURL: additionalData.photoURL || '', // URL da foto de perfil
     ...additionalData,
   };
 
-  try {
-    // Use setDoc to create the document. It will overwrite if it already exists.
-    await setDoc(userRef, userData);
+
+
+try {
+    // Use setDoc para criar o documento. O { merge: true } evita sobrescrever dados se o doc já existir.
+    await setDoc(userRef, userData, { merge: true });
     console.log(`User profile document created/updated for: ${user.email}`);
   } catch (error) {
     console.error("Error creating user profile document:", error);

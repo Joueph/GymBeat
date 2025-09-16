@@ -10,12 +10,16 @@ const InitialLayout = () => {
   useEffect(() => {
     if (!initialized) return;
 
-    const inTabsGroup = segments[0] === "(tabs)";
-
-    if (user && !inTabsGroup) {
-      router.replace("/(tabs)");
-    } else if (!user && inTabsGroup) {
-      router.replace("/login");
+    const inAuthGroup = segments[0] === 'login' || segments[0] === 'cadastro';
+    
+    // Se o usuário está logado, mas está tentando acessar uma tela de autenticação,
+    // redirecione-o para a tela principal do aplicativo.
+    if (user && inAuthGroup) {
+      router.replace('/(tabs)');
+    // Se o usuário NÃO está logado e NÃO está em uma tela de autenticação,
+    // redirecione-o para a tela de login.
+    } else if (!user && !inAuthGroup) {
+      router.replace('/login');
     }
   }, [user, initialized, segments, router]);
 

@@ -11,6 +11,16 @@ import { getUserProfile, updateUserProfile } from "../../userService";
 import { uploadImageAndGetURL } from "../../services/storageService";
 import { Usuario } from "../../models/usuario";
 
+// Helper para converter Timestamps do Firestore e outros formatos para um objeto Date.
+const toDate = (date: any): Date | null => {
+  if (!date) return null;
+  // Se for um objeto Timestamp do Firestore, use o método toDate()
+  if (typeof date.toDate === 'function') return date.toDate();
+  // Tenta criar uma data a partir do valor (pode ser string, número ou já um Date)
+  const d = new Date(date);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 export default function PerfilScreen() {
   const { user } = useAuth();
   const [profile, setProfile] = useState<Partial<Usuario>>({});
@@ -94,15 +104,10 @@ const handleUpdate = async () => {
       
       // Adiciona a data de nascimento apenas se for uma data válida, senão usa null.
       if (profile.dataNascimento) {
-        const dataNasc = new Date(profile.dataNascimento as any);
-        // Verifica se a data é válida antes de adicionar
-        if (!isNaN(dataNasc.getTime())) {
+        const dataNasc = toDate(profile.dataNascimento);
+        if (dataNasc) {
           dataToUpdate.dataNascimento = dataNasc;
-        } else {
-          dataToUpdate.dataNascimento = undefined;
         }
-      } else {
-        dataToUpdate.dataNascimento = undefined;
       }
 
       await updateUserProfile(user.uid, dataToUpdate);
@@ -132,11 +137,9 @@ const handleUpdate = async () => {
     }
   };
 
-  const formatDate = (date?: Date | string) => {
-    if (!date) return "";
-    const d = typeof date === 'string' ? new Date(date) : date;
-    if (isNaN(d.getTime())) return "";
-    return d.toLocaleDateString('pt-BR');
+  const formatDate = (date?: any) => {
+    const d = toDate(date);
+    return d ? d.toLocaleDateString('pt-BR') : "";
   };
 
 
@@ -197,7 +200,7 @@ const handleUpdate = async () => {
       {showDatePicker && (
         <DateTimePicker
           testID="dateTimePicker"
-          value={profile.dataNascimento ? new Date(profile.dataNascimento) : new Date()}
+          value={toDate(profile.dataNascimento) || new Date()}
           mode="date"
           display="default"
           onChange={handleDateChange}

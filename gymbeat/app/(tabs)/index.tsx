@@ -1,8 +1,7 @@
 // joueph/gymbeat/GymBeat-Android/gymbeat/app/(tabs)/index.tsx
 
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, Pressable, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, Pressable, ActivityIndicator, Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useAuth } from '../authprovider';
 import { getLogsByUsuarioId } from '../../services/logService';
@@ -23,6 +22,7 @@ export default function HomeScreen() {
   const [treinos, setTreinos] = useState<Treino[]>([]);
   const [friends, setFriends] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<Usuario | null>(null);
   const [isModalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
@@ -38,6 +38,7 @@ export default function HomeScreen() {
 
           setLogs(userLogs);
           setTreinos(userTreinos);
+          setProfile(userProfile);
 
           if (userProfile && userProfile.amizades) {
             const friendsData = await Promise.all(
@@ -70,13 +71,37 @@ export default function HomeScreen() {
     fetchData();
   }, [user]);
 
+  const [waveAnimation] = useState(new Animated.Value(0));
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(waveAnimation, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(waveAnimation, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.timing(waveAnimation, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(waveAnimation, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.delay(3000)
+      ])
+    ).start();
+  }, []);
+
+  const waveRotation = waveAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '30deg']
+  });
+
   const handleCreateNewFicha = async () => {
     if (!user) return;
     try {
+      const expirationDate = new Date();
+      expirationDate.setMonth(expirationDate.getMonth() + 2);
       const newFichaId = await addFicha({
         usuarioId: user.uid,
         nome: 'Nova Ficha (Edite)',
         treinos: [],
+        dataExpiracao: expirationDate,
+        opcoes: 'Programa de treinamento',
+        ativa: false
       });
 
       if (newFichaId) {
@@ -152,6 +177,15 @@ export default function HomeScreen() {
 
   const ListHeader = () => (
     <>
+      <View style={styles.headerContainer}>
+        <View style={{ gap: 5, flexDirection: 'column', alignItems: 'flex-start', paddingBottom: 5 , paddingTop: 10}}>
+          <ThemedText style={styles.smallGreeting}>Olá,</ThemedText>
+          <ThemedText style={styles.largeUsername}>{profile?.nome}</ThemedText>
+        </View>
+        <Animated.Text style={[styles.waveEmoji, { transform: [{ rotate: waveRotation }] }]}>
+          👋
+        </Animated.Text>
+      </View>
       <ThemedView style={styles.section}>
         {renderWeeklyCalendar()}
       </ThemedView>
@@ -170,7 +204,7 @@ export default function HomeScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <FlatList
         data={friends}
         keyExtractor={(item) => item.id}
@@ -180,6 +214,13 @@ export default function HomeScreen() {
             <ThemedText>{item.hasTrainedToday ? '✅ Treinou Hoje' : '❌ Não treinou'}</ThemedText>
           </View>
         )}
+        ListEmptyComponent={
+          <View style={styles.emptyFriendsContainer}>
+            <ThemedText style={styles.emptyFriendsText}>
+              Você ainda não tem amigos. Adicione amigos para ver a atividade deles aqui!
+            </ThemedText>
+          </View>
+        }
         ListHeaderComponent={ListHeader}
       />
       <Modal
@@ -209,18 +250,47 @@ export default function HomeScreen() {
           </View>
         </BlurView>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 10,
+    paddingHorizontal: 10,
+    paddingTop: 15,
     backgroundColor: '#00141c',
   },
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 5,
+    gap: 5,
+    flexWrap: 'wrap',
+    flexGrow: 1,
+  },
+  smallGreeting: {
+    fontSize: 25,
+    fontWeight: 'bold',
+    color: '#ccc',
+  },
+  largeUsername: {
+    fontSize: 45,
+    fontWeight: 'bold',
+    color: '#fff',
+    paddingTop: 15,
+    paddingBottom: 5,
+    flexWrap: 'wrap',
+    flex: 1,
+  },
+
+  waveEmoji: {
+    fontSize: 30,
+    marginLeft: 8,
+  },
   section: {
-    marginBottom: 20,
+    marginBottom: 15,
   },
   centered: {
     flex: 1,
@@ -230,19 +300,25 @@ const styles = StyleSheet.create({
   },
   calendarContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: 10,
+    justifyContent: 'space-between',
+    padding: 5,
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 15,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
+    width: '100%',
+    gap: 5,
   },
+
   dayContainer: {
     alignItems: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 5,
+    paddingHorizontal: 2 ,
     borderRadius: 10,
-    width: 42,
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    flexBasis: '13%',  
+
   },
   progressionOverlay: {
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
@@ -286,6 +362,16 @@ const styles = StyleSheet.create({
     padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#ccc',
+  },
+  emptyFriendsContainer: {
+    paddingHorizontal: 15,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  emptyFriendsText: {
+    color: '#aaa',
+    textAlign: 'center',
+    fontSize: 16,
   },
   newSheetButton: {
     backgroundColor: '#1cb0f6',

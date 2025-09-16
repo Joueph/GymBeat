@@ -10,6 +10,7 @@ import {
   deleteDoc,
   arrayUnion,
   getDoc,
+  documentId,
 } from 'firebase/firestore';
 import { db } from '../firebaseconfig';
 import { Treino } from '../models/treino';
@@ -22,6 +23,29 @@ const treinosCollection = collection(db, 'treinos');
  * @param treinoData - Dados do treino a serem adicionados.
  * @param fichaId - ID da ficha à qual o treino será vinculado.
  */
+
+/**
+ * Busca múltiplos documentos de treino com base em uma lista de IDs.
+ * @param treinoIds - Array de IDs dos treinos a serem buscados.
+ */
+export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> => {
+    if (!treinoIds || treinoIds.length === 0) {
+        return [];
+    }
+    try {
+        const q = query(treinosCollection, where(documentId(), 'in', treinoIds));
+        const querySnapshot = await getDocs(q);
+        const treinos: Treino[] = [];
+        querySnapshot.forEach((doc) => {
+            treinos.push({ id: doc.id, ...doc.data() } as Treino);
+        });
+        return treinos;
+    } catch (error) {
+        console.error('Erro ao buscar treinos por IDs: ', error);
+        throw error;
+    }
+};
+
 export const addTreino = async (treinoData: Omit<Treino, 'id' | 'dataCriacao' | 'logs'>, fichaId: string) => {
   try {
     // Adiciona o treino à coleção 'treinos'

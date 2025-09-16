@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TextInput, Button, ActivityIndicator, Alert } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { View, StyleSheet, TextInput, Button, ActivityIndicator, Alert, Switch } from 'react-native';
+import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { getFichaById, updateFicha } from '../../services/fichaService';
+import { getFichaById, updateFicha, getFichaAtiva, setFichaAtiva } from '../../services/fichaService';
 import { Ficha } from '../../models/ficha';
+import { useAuth } from '../authprovider';
 
 export default function CriarFichaScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { fichaId } = useLocalSearchParams<{ fichaId: string }>();
   
-  const [ficha, setFicha] = useState<Partial<Ficha>>({ nome: '' });
+  const [ficha, setFicha] = useState<Partial<Ficha>>({ nome: '', ativa: false });
   const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!fichaId) {
@@ -48,21 +51,36 @@ export default function CriarFichaScreen() {
       return;
     }
 
+    if (!user) {
+      Alert.alert("Erro", "Usuário não autenticado.");
+      return;
+    }
+
+    setIsSaving(true);
     try {
-      await updateFicha(fichaId, {
-        nome: ficha.nome,
-      });
+      if (ficha.ativa) {
+        // Se estamos ativando a ficha, primeiro atualizamos o nome
+        // e depois usamos o serviço que a torna a única ativa.
+        await updateFicha(fichaId, { nome: ficha.nome });
+        await setFichaAtiva(user.uid, fichaId);
+      } else {
+        // Se estamos desativando, podemos atualizar nome e status de uma vez.
+        await updateFicha(fichaId, { nome: ficha.nome, ativa: false });
+      }
+
       Alert.alert("Sucesso", "Ficha salva com sucesso!");
-      router.back(); // Go back to the previous screen
+      router.back();
     } catch (error) {
       console.error("Erro ao salvar ficha:", error);
       Alert.alert("Erro", "Não foi possível salvar as alterações.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   if (loading) {
     return (
-      <ThemedView style={styles.container}>
+      <ThemedView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#fff" />
       </ThemedView>
     );
@@ -70,7 +88,15 @@ export default function CriarFichaScreen() {
 
   return (
     <ThemedView style={styles.container}>
-      <ThemedText type="title" style={styles.title}>Editar Ficha</ThemedText>
+      {/* Use Stack.Screen to configure the header for this screen */}
+      <Stack.Screen
+        options={{
+          title: 'Editar Ficha',
+          headerShown: true,
+          headerStyle: { backgroundColor: 'rgba(255, 255, 255, 0.05)' },
+          headerTintColor: '#fff',
+        }}
+      />
       
       <ThemedText style={styles.label}>Nome da Ficha</ThemedText>
       <TextInput
@@ -81,7 +107,19 @@ export default function CriarFichaScreen() {
         onChangeText={(text) => setFicha(prev => ({ ...prev, nome: text }))}
       />
 
-      <Button title="Salvar Ficha" onPress={handleSave} color="#4CAF50" />
+      {/* Switch para definir como Ficha Ativa */}
+      <View style={styles.switchContainer}>
+        <ThemedText style={styles.labelSwitch}>Definir como Ficha Ativa</ThemedText>
+        <Switch
+          trackColor={{ false: "#767577", true: "#81b0ff" }}
+          thumbColor={ficha.ativa ? "#4CAF50" : "#f4f3f4"}
+          ios_backgroundColor="#3e3e3e"
+          onValueChange={(value) => setFicha(prev => ({ ...prev, ativa: value }))}
+          value={!!ficha.ativa} // Garante que o valor é sempre booleano
+        />
+      </View>
+
+      <Button title={isSaving ? "Salvando..." : "Salvar Ficha"} onPress={handleSave} color="#4CAF50" disabled={isSaving} />
     </ThemedView>
   );
 }
@@ -90,12 +128,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     padding: 20,
     backgroundColor: "#0d181c",
   },
-  title: {
-    marginBottom: 30,
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: "#0d181c",
   },
   label: {
     fontSize: 16,
@@ -113,5 +153,22 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: "#4CAF50",
+  },
+  switchContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '90%',
+    marginBottom: 30,
+    backgroundColor: '#173F5F',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4CAF50",
+  },
+  labelSwitch: {
+    fontSize: 16,
+    color: "#fff",
   },
 });

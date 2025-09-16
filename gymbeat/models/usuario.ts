@@ -3,6 +3,7 @@ import { Ficha } from './ficha';
 export type UserRole = 'usuario' | 'administrador' | 'personal';
 
 export interface Usuario {
+  hasTrainedToday: any;
   id: string;
   nome: string;
   dataNascimento: Date;

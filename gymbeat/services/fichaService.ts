@@ -5,6 +5,9 @@ import {
   where,
   getDocs,
   serverTimestamp,
+  doc,
+  getDoc,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from '../firebaseconfig'; // Sua configuração do Firebase
 import { Ficha } from '../models/ficha';
@@ -52,4 +55,40 @@ export const getFichasByUsuarioId = async (usuarioId: string): Promise<Ficha[]> 
   }
 };
 
-// Você pode adicionar outras funções aqui, como updateFicha e deleteFicha.
+/**
+ * Busca uma ficha específica pelo seu ID.
+ * @param fichaId - O ID da ficha.
+ * @returns A ficha correspondente ou null se não encontrada.
+ */
+export const getFichaById = async (fichaId: string): Promise<Ficha | null> => {
+  try {
+    const fichaRef = doc(db, 'fichas', fichaId);
+    const docSnap = await getDoc(fichaRef);
+
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as Ficha;
+    } else {
+      console.log("Nenhuma ficha encontrada com o ID:", fichaId);
+      return null;
+    }
+  } catch (error) {
+    console.error('Erro ao buscar ficha por ID: ', error);
+    throw error;
+  }
+};
+
+/**
+ * Atualiza os dados de uma ficha de treino.
+ * @param fichaId - O ID da ficha a ser atualizada.
+ * @param data - Os dados a serem atualizados.
+ */
+export const updateFicha = async (fichaId: string, data: Partial<Ficha>) => {
+  try {
+    const fichaRef = doc(db, 'fichas', fichaId);
+    await updateDoc(fichaRef, data);
+    console.log('Ficha atualizada com sucesso!');
+  } catch (error) {
+    console.error('Erro ao atualizar ficha: ', error);
+    throw error;
+  }
+};

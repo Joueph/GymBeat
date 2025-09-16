@@ -1,98 +1,325 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
-import { useRouter } from "expo-router";
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
+// joueph/gymbeat/GymBeat-Android/gymbeat/app/(tabs)/index.tsx
+
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, Pressable, ActivityIndicator } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
+import { useAuth } from '../authprovider';
+import { getLogsByUsuarioId } from '../../services/logService';
+import { addFicha } from '../../services/fichaService';
+import { getTreinosByUsuarioId } from '../../services/treinoService';
+import { getUserProfile } from '../../userService';
+import { Usuario } from '../../models/usuario';
+import { Treino } from '../../models/treino';
+import { Log } from '../../models/log';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+import { useRouter } from 'expo-router';
 
 export default function HomeScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Eae meu chapa!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+  const { user } = useAuth();
+  const [logs, setLogs] = useState<Log[]>([]);
+  const router = useRouter();
+  const [treinos, setTreinos] = useState<Treino[]>([]);
+  const [friends, setFriends] = useState<Usuario[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalVisible, setModalVisible] = useState(false);
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
+  useEffect(() => {
+    const fetchData = async () => {
+      if (user) {
+        try {
+          // Fetch logs, treinos, and friends in parallel
+          const [userLogs, userTreinos, userProfile] = await Promise.all([
+            getLogsByUsuarioId(user.uid),
+            getTreinosByUsuarioId(user.uid),
+            getUserProfile(user.uid),
+          ]);
+
+          setLogs(userLogs);
+          setTreinos(userTreinos);
+
+          if (userProfile && userProfile.amizades) {
+            const friendsData = await Promise.all(
+              userProfile.amizades.map(async (friendId) => {
+                const friendProfile = await getUserProfile(friendId);
+                // Check for mutual friendship
+                if (friendProfile && friendProfile.amizades?.includes(user.uid)) {
+                   // Check if friend has trained today based on the 'lastTrained' field
+                  const today = new Date().toDateString();
+                  let hasTrainedToday = false;
+                  if (friendProfile.lastTrained) {
+                    const lastTrainedDate = (friendProfile.lastTrained as any).toDate ? (friendProfile.lastTrained as any).toDate() : new Date(friendProfile.lastTrained);
+                    hasTrainedToday = lastTrainedDate.toDateString() === today;
+                  }
+                  return { ...friendProfile, hasTrainedToday: hasTrainedToday };
+                }
+                return null;
+              })
+            );
+            setFriends(friendsData.filter(Boolean) as (Usuario & { hasTrainedToday: boolean })[]);
+          }
+        } catch (error) {
+          console.error("Erro ao buscar dados:", error);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchData();
+  }, [user]);
+
+  const handleCreateNewFicha = async () => {
+    if (!user) return;
+    try {
+      const newFichaId = await addFicha({
+        usuarioId: user.uid,
+        nome: 'Nova Ficha (Edite)',
+        treinos: [],
+      });
+
+      if (newFichaId) {
+        setModalVisible(false);
+        router.push(`/treino/criarFicha?fichaId=${newFichaId}`);
+      }
+    } catch (error) {
+      console.error("Erro ao criar nova ficha:", error);
+    }
+  };
+
+  const renderWeeklyCalendar = () => {
+    const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
+    const today = new Date();
+    const currentDay = today.getDay();
+ 
+    const loggedDays = new Set(logs.map(log => {
+      // Firestore Timestamps precisam ser convertidos para Datas JS
+      const logDate = log.horarioFim && typeof (log.horarioFim as any).toDate === 'function'
+        ? (log.horarioFim as any).toDate()
+        : new Date(log.horarioFim as any);
+      return logDate.toDateString();
+    }));
+
+    return (
+      <View style={styles.calendarContainer}>
+        {weekDays.map((day, index) => {
+          const date = new Date();
+          date.setDate(today.getDate() - (currentDay - index));
+          const isPastOrToday = index <= currentDay;
+          const isLogged = loggedDays.has(date.toDateString());
+ 
+          const dayStyles = [
+            styles.dayContainer,
+            isPastOrToday && styles.progressionOverlay,
+            isLogged && styles.loggedDay,
+          ];
+          return (
+            <View key={day} style={dayStyles}>
+              <ThemedText style={styles.dayText}>{day}</ThemedText>
+              <ThemedText style={styles.dateText}>{date.getDate()}</ThemedText>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
+  const renderNextWorkout = () => {
+    if (treinos.length > 0) {
+      const nextTreino = treinos[0]; // Simple logic: gets the first workout
+      const lastLog = logs.find(log => log.treino.id === nextTreino.id);
+      const duration = lastLog ? `${Math.round((new Date(lastLog.horarioFim).getTime() - new Date(lastLog.horarioInicio).getTime()) / 60000)} min` : "N/A";
+
+      return (
+        <View style={styles.duolingoCard}>
+          <ThemedText type="subtitle">Próximo Treino: {nextTreino.nome}</ThemedText>
+          <ThemedText>Duração Média: {duration}</ThemedText>
+          <ThemedText>Exercícios: {nextTreino.exercicios.map(e => e.modelo.nome).join(', ')}</ThemedText>
+          <TouchableOpacity style={styles.startButton}>
+            <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Começar Treino</ThemedText>
+          </TouchableOpacity>
+        </View>
+      );
+    } else {
+      return null;
+    }
+  };
+
+  if (loading) {
+    return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
+  }
+
+  const ListHeader = () => (
+    <>
+      <ThemedView style={styles.section}>
+        {renderWeeklyCalendar()}
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
+      <ThemedView style={styles.section}>
+        {renderNextWorkout()}
       </ThemedView>
-    </ParallaxScrollView>
+      <ThemedView style={styles.section}>
+        <TouchableOpacity style={styles.newSheetButton} onPress={() => setModalVisible(true)}>
+          <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Criar Nova Ficha</ThemedText>
+        </TouchableOpacity>
+      </ThemedView>
+      <ThemedView style={styles.section}>
+        <ThemedText type="subtitle" style={{ marginBottom: 10 }}>Amigos</ThemedText>
+      </ThemedView>
+    </>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <FlatList
+        data={friends}
+        keyExtractor={(item) => item.id}
+        renderItem={({ item }) => (
+          <View style={styles.friendItem}>
+            <ThemedText>{item.nome}</ThemedText>
+            <ThemedText>{item.hasTrainedToday ? '✅ Treinou Hoje' : '❌ Não treinou'}</ThemedText>
+          </View>
+        )}
+        ListHeaderComponent={ListHeader}
+      />
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isModalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <BlurView intensity={50} tint="dark" style={styles.blurContainer}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
+
+          <View style={styles.modalView}>
+            <ThemedText type="title" style={{ marginBottom: 15 }}>Criar Nova Ficha</ThemedText>
+            <ThemedText style={{ marginBottom: 20, textAlign: 'center' }}>
+              Comece um novo plano de treino. Você pode montar sua própria ficha ou usar um de nossos modelos pré-definidos.
+            </ThemedText>
+            <TouchableOpacity style={styles.modalButton} onPress={handleCreateNewFicha}>
+              <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Criar Ficha do Zero</ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.modalButton, {  borderBlockColor: '#58CC02' }]} onPress={() => {
+              setModalVisible(false);
+              router.push('/(tabs)/workouts');
+            }}>
+              <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Ver Modelos</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </BlurView>
+      </Modal>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    padding: 10,
+    backgroundColor: '#00141c',
+  },
+  section: {
+    marginBottom: 20,
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: '#00141c',
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  calendarContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  dayContainer: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    width: 42,
+  },
+  progressionOverlay: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  loggedDay: {
+    backgroundColor: '#DAA520', // Dourado Pastel
+  },
+  dayText: {
+    fontWeight: 'bold',
+    color: '#E0E0E0',
+  },
+  dateText: {
+    marginTop: 5,
+    color: '#FFFFFF',
+  },
+  duolingoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 15,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  startButton: {
+    backgroundColor: '#58CC02',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  actionButton: {
+    backgroundColor: '#1cb0f6',
+    padding: 10,
+    borderRadius: 8,
+  },
+  friendItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ccc',
+  },
+  newSheetButton: {
+    backgroundColor: '#1cb0f6',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  blurContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  modalView: {
+    width: '100%',
+    backgroundColor: '#0d181c',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 35,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalButton: {
+    backgroundColor: '#1cb0f6',
+    padding: 15,
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 10,
   },
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated, ImageBackground, Image } from 'react-native';
 import { Swipeable, GestureHandlerRootView, RectButton } from 'react-native-gesture-handler';
 import { useAuth } from '../authprovider';
 import { useRouter } from 'expo-router';
@@ -109,10 +109,16 @@ export default function TreinoHojeScreen() {
               renderLeftActions={(progress, dragX) => renderLeftActions(progress, dragX, fichaAtiva.id)}
               overshootLeft={false}
             >
-              <View style={styles.cardFichaAtiva}>
-                <Text style={styles.fichaAtivaTitle}>{fichaAtiva.nome}</Text>
-                <Text style={styles.fichaAtivaSubtitle}>Ficha atual</Text>
-              </View>
+              <ImageBackground 
+                source={{ uri: fichaAtiva.imagemUrl || undefined }} 
+                style={styles.cardFichaAtiva} 
+                imageStyle={{ borderRadius: 8 }}
+              >
+                <View style={styles.cardOverlay}>
+                  <Text style={styles.fichaAtivaTitle}>{fichaAtiva.nome}</Text>
+                  <Text style={styles.fichaAtivaSubtitle}>Ficha atual</Text>
+                </View>
+              </ImageBackground>
             </Swipeable>
           </View>
         ) : (
@@ -145,6 +151,10 @@ export default function TreinoHojeScreen() {
                     overshootLeft={false}
                   >
                     <View style={styles.cardFichaAnterior}>
+                        <Image 
+                          source={{ uri: ficha.imagemUrl || 'https://via.placeholder.com/100x100.png?text=Ficha' }} 
+                          style={styles.fichaAnteriorImage} 
+                        />
                         <Text style={styles.fichaAnteriorTitle}>{ficha.nome}</Text>
                     </View>
                   </Swipeable>
@@ -159,7 +169,18 @@ export default function TreinoHojeScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#0d181c', padding: 15 },
-    cardFichaAtiva: { backgroundColor: '#173F5F', padding: 12, borderRadius: 8 },
+    cardFichaAtiva: { 
+      backgroundColor: '#173F5F', 
+      borderRadius: 8, 
+      minHeight: 100, 
+      justifyContent: 'flex-end' 
+    },
+    cardOverlay: {
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      padding: 12,
+      borderBottomLeftRadius: 8,
+      borderBottomRightRadius: 8,
+    },
     fichaAtivaTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
     fichaAtivaSubtitle: { fontSize: 14, color: '#ccc' },
     cardTreinoHoje: { backgroundColor: '#4CAF50', padding: 25, borderRadius: 12, marginBottom: 30, alignItems: 'center' },
@@ -168,8 +189,9 @@ const styles = StyleSheet.create({
     treinoHojeExercicios: { fontSize: 16, color: '#fff', marginTop: 10, fontWeight: '500' },
     cardDescanso: { backgroundColor: '#2a3b42'},
     sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginTop: 20, marginBottom: 10 },
-    cardFichaAnterior: { backgroundColor: '#222', padding: 15, borderRadius: 8 },
-    fichaAnteriorTitle: { fontSize: 16, color: '#aaa' },
+    cardFichaAnterior: { backgroundColor: '#222', borderRadius: 8, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' },
+    fichaAnteriorImage: { width: 60, height: 60, marginRight: 15 },
+    fichaAnteriorTitle: { fontSize: 16, color: '#aaa', flex: 1 },
     emptyText: { color: '#aaa', textAlign: 'center', marginVertical: 20 },
     deleteBox: {
       backgroundColor: '#ff3b30',

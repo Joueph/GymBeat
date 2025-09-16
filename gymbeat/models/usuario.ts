@@ -13,4 +13,5 @@ export interface Usuario {
   amizades: string[]; // Lista de IDs de outros usuários
   photoURL?: string;
   lastTrained?: Date; // Timestamp do último treino
+  isPro?: boolean; // Indica se o usuário é PRO
 }

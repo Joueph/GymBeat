@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TextInput, Button, ActivityIndicator, Alert, Switch } from 'react-native';
+import { View, StyleSheet, TextInput, Button, ActivityIndicator, Alert, Switch, TouchableOpacity, Image, Text } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { getFichaById, updateFicha, getFichaAtiva, setFichaAtiva } from '../../services/fichaService';
+import { uploadImageAndGetURL } from '../../services/storageService';
+import { getUserProfile } from '../../userService';
 import { Ficha } from '../../models/ficha';
+import { Usuario } from '../../models/usuario';
 import { useAuth } from '../authprovider';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function CriarFichaScreen() {
   const router = useRouter();
@@ -13,8 +17,10 @@ export default function CriarFichaScreen() {
   const { fichaId } = useLocalSearchParams<{ fichaId: string }>();
   
   const [ficha, setFicha] = useState<Partial<Ficha>>({ nome: '', ativa: false });
+  const [profile, setProfile] = useState<Usuario | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
     if (!fichaId) {
@@ -23,16 +29,26 @@ export default function CriarFichaScreen() {
       return;
     }
 
-    const fetchFicha = async () => {
+    const fetchInitialData = async () => {
+      if (!user) {
+        Alert.alert("Erro", "Usuário não autenticado.");
+        router.back();
+        return;
+      }
       try {
         setLoading(true);
-        const fetchedFicha = await getFichaById(fichaId);
+        const [fetchedFicha, userProfile] = await Promise.all([
+          getFichaById(fichaId),
+          getUserProfile(user.uid)
+        ]);
+
         if (fetchedFicha) {
           setFicha(fetchedFicha);
         } else {
           Alert.alert("Erro", "Ficha não encontrada.");
           router.back();
         }
+        setProfile(userProfile);
       } catch (error) {
         console.error("Erro ao buscar ficha:", error);
         Alert.alert("Erro", "Não foi possível carregar os dados da ficha.");
@@ -42,8 +58,46 @@ export default function CriarFichaScreen() {
       }
     };
 
-    fetchFicha();
-  }, [fichaId]);
+    fetchInitialData();
+  }, [fichaId, user]);
+
+  const handlePickImage = async () => {
+    if (!fichaId) return;
+
+    if (!profile?.isPro) {
+      Alert.alert(
+        "Recurso PRO",
+        "Adicionar imagens às suas fichas é um recurso exclusivo para membros PRO. Faça o upgrade para personalizar seus treinos!",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert("Permissão necessária", "Você precisa permitir o acesso à galeria para escolher uma foto.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [16, 9],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setIsUploadingImage(true);
+      try {
+        const uploadUrl = await uploadImageAndGetURL(result.assets[0].uri, `fichas/${fichaId}/cover`);
+        setFicha(prev => ({ ...prev, imagemUrl: uploadUrl }));
+      } catch (error) {
+        Alert.alert("Erro de Upload", "Não foi possível enviar a imagem da ficha.");
+      } finally {
+        setIsUploadingImage(false);
+      }
+    }
+  };
 
   const handleSave = async () => {
     if (!fichaId || !ficha.nome?.trim()) {
@@ -58,14 +112,18 @@ export default function CriarFichaScreen() {
 
     setIsSaving(true);
     try {
+      const dataToUpdate: Partial<Ficha> = { 
+        nome: ficha.nome,
+        imagemUrl: ficha.imagemUrl
+      };
+
       if (ficha.ativa) {
-        // Se estamos ativando a ficha, primeiro atualizamos o nome
-        // e depois usamos o serviço que a torna a única ativa.
-        await updateFicha(fichaId, { nome: ficha.nome });
+        await updateFicha(fichaId, dataToUpdate);
         await setFichaAtiva(user.uid, fichaId);
       } else {
-        // Se estamos desativando, podemos atualizar nome e status de uma vez.
-        await updateFicha(fichaId, { nome: ficha.nome, ativa: false });
+        // Se estamos desativando, podemos atualizar tudo de uma vez.
+        dataToUpdate.ativa = false;
+        await updateFicha(fichaId, dataToUpdate);
       }
 
       Alert.alert("Sucesso", "Ficha salva com sucesso!");
@@ -98,6 +156,19 @@ export default function CriarFichaScreen() {
         }}
       />
       
+      <TouchableOpacity onPress={handlePickImage} disabled={isUploadingImage} style={styles.imagePicker}>
+        <Image
+            source={{ uri: ficha.imagemUrl ?? 'https://via.placeholder.com/400x200.png?text=Toque+para+adicionar+imagem' }}
+            style={styles.fichaImage} 
+        />
+        {!profile?.isPro && ficha.imagemUrl && (
+          <View style={styles.proOverlay}>
+            <Text style={styles.proBadgeText}>PRO</Text>
+          </View>
+        )}
+        {isUploadingImage && <ActivityIndicator style={styles.uploadIndicator} size="large" color="#fff" />}
+      </TouchableOpacity>
+
       <ThemedText style={styles.label}>Nome da Ficha</ThemedText>
       <TextInput
         style={styles.input}
@@ -136,6 +207,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: "#0d181c",
+  },
+  imagePicker: {
+    width: '90%',
+    marginBottom: 20,
+  },
+  fichaImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 8,
+    backgroundColor: '#333',
+  },
+  uploadIndicator: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  proOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  proBadgeText: {
+    color: '#DAA520', // Dourado
+    fontSize: 24,
+    fontWeight: 'bold',
+    borderWidth: 2,
+    borderColor: '#DAA520',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
   label: {
     fontSize: 16,

@@ -23,7 +23,7 @@ export default function CadastroScreen() {
       const user = userCredential.user;
 
       // Cria o documento de perfil no Firestore com os dados adicionais
-      await createUserProfileDocument(user, { nome });
+      await createUserProfileDocument(user, { nome, isPro: false });
 
       Alert.alert("Sucesso!", "Conta criada com sucesso!");
       router.replace("/(tabs)");

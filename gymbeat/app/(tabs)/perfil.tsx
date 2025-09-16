@@ -151,10 +151,16 @@ const handleUpdate = async () => {
   return (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
       <TouchableOpacity onPress={handlePickImage} disabled={uploading}>
-        <Image
-          source={{ uri: profile.photoURL }}
-          style={styles.pfp} 
-        />
+        {profile.photoURL ? (
+          <Image
+            source={{ uri: profile.photoURL }}
+            style={styles.pfp} 
+          />
+        ) : (
+          <View style={styles.pfpPlaceholder}>
+            <Text style={styles.placeholderText}>+</Text>
+          </View>
+        )}
         {uploading && <ActivityIndicator style={styles.uploadIndicator} size="large" color="#4CAF50" />}
       </TouchableOpacity>
       <Text style={styles.changePfpText}>Toque na imagem para alterar</Text>
@@ -211,9 +217,22 @@ const handleUpdate = async () => {
         />
       )}
 
+      <Text style={styles.label}>Plano</Text>
+      {profile.isPro ? (
+          <View style={styles.proPlanContainer}>
+            <Text style={styles.proPlanText}>Você é um membro PRO! ✨</Text>
+          </View>
+      ) : (
+          <View style={styles.freePlanContainer}>
+              <Text style={styles.freePlanText}>Você está no plano Gratuito.</Text>
+              <Button title="Upgrade para o PRO" onPress={() => Alert.alert("Em Breve", "A funcionalidade de upgrade será adicionada em breve.")} color="#DAA520" />
+          </View>
+      )}
 
 
-      <Button title="Salvar Alterações" onPress={handleUpdate} color="#4CAF50" />
+      <View style={{ width: '90%', marginTop: 20 }}>
+        <Button title="Salvar Alterações" onPress={handleUpdate} color="#4CAF50" />
+      </View>
       
       <View style={{ marginTop: 40, width: '90%' }}>
         <Button title="Sair" onPress={handleSignOut} color="#f44336" />
@@ -231,6 +250,22 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderWidth: 2,
     borderColor: '#4CAF50',
+  },
+  pfpPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+    backgroundColor: '#173F5F',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    color: '#ccc',
+    fontSize: 40,
+    fontWeight: '300',
   },
   changePfpText: {
     color: '#ccc',
@@ -272,5 +307,33 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderWidth: 1,
     borderColor: "#4CAF50",
+  },
+  freePlanContainer: {
+    width: '90%',
+    backgroundColor: '#173F5F',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#DAA520', // Dourado
+  },
+  freePlanText: {
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 10,
+  },
+  proPlanContainer: {
+    width: '90%',
+    backgroundColor: '#173F5F',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  proPlanText: {
+    color: '#DAA520', // Dourado
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

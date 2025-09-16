@@ -9,4 +9,5 @@ export interface Ficha {
   usuarioId: string;
   opcoes: 'Programa de treinamento' | 'Criada por usuário' | 'Criada por personal';
   ativa: boolean; // <-- ADICIONE ESTA LINHA
+  imagemUrl?: string; // URL da imagem associada à ficha
 }

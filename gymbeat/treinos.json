@@ -1,0 +1,461 @@
+[
+  {
+    "plan_name": "TREINO DE CORPO INTEIRO (MASC. E FEMIN.) - SEMANA 1",
+    "level": "iniciantes",
+    "duration": "1 a 3 meses",
+    "gender": "MASC. E FEMIN.",
+    "workouts": [
+      {
+        "day": "SEGUNDA",
+        "exercises": [
+          {
+            "name": "Supino Máquina",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Remada Sentada Fechada",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Extensora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Mesa Flexora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Rosca Direta Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Tríceps Corda Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Abs Supra",
+            "sets": "3",
+            "reps": "11-13"
+          }
+        ]
+      },
+      {
+        "day": "QUARTA",
+        "exercises": [
+          {
+            "name": "Supino Reto",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Puxada Pulley",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Agachamento",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Adutora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Abdutora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Rosca Direta Barra",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Tríceps Barra Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Abs Infra",
+            "sets": "3",
+            "reps": "11-13"
+          }
+        ]
+      },
+      {
+        "day": "SEXTA",
+        "exercises": [
+          {
+            "name": "Supino Máquina",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Remada Fechada Máquina",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Extensora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Flexora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Rosca Direta Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Tríceps Corda Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Abs Supra",
+            "sets": "3",
+            "reps": "11-13"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "plan_name": "TREINO CORPO INTEIRO (MASC. E FEMIN.) - SEMANA 2",
+    "level": "iniciantes",
+    "duration": "1 a 3 meses",
+    "gender": "MASC. E FEMIN.",
+    "workouts": [
+      {
+        "day": "SEGUNDA",
+        "exercises": [
+          {
+            "name": "Supino Reto",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Puxada Pulley",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Agachamento",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Adutora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Abdutora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Rosca Direta Barra",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Tríceps Barra Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Abs Infra",
+            "sets": "3",
+            "reps": "11-13"
+          }
+        ]
+      },
+      {
+        "day": "QUARTA",
+        "exercises": [
+          {
+            "name": "Supino Máquina",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Remada Fechada Máquina",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Extensora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Mesa Flexora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Rosca Direta Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Tríceps Corda Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Abs Supra",
+            "sets": "3",
+            "reps": "11-13"
+          }
+        ]
+      },
+      {
+        "day": "SEXTA",
+        "exercises": [
+          {
+            "name": "Supino Reto",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Puxada Pulley",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Agachamento",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Adutora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Cadeira Abdutora",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Rosca Direta Barra",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Tríceps Barra Cross",
+            "sets": "3",
+            "reps": "11-13"
+          },
+          {
+            "name": "Abs Infra",
+            "sets": "3",
+            "reps": "11-13"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "plan_name": "TREINO - 1 - AB (SUPERIOR / INFERIOR) - MASCULINO",
+    "level": "iniciantes",
+    "duration": "1 a 3 meses",
+    "gender": "MASCULINO",
+    "workouts": [
+      {
+        "day": "SEGUNDA",
+        "exercises": [
+          {
+            "name": "Supino Máquina",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Supino Declinado",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Crucifixo Inclinado",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Puxada Aberta Pulley",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Puxada Fechada Triângulo Pulley",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Remada Sentada Fechada",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Rosca Direta Barra W",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Tríceps Corda Cross",
+            "sets": "3",
+            "reps": "9-11"
+          }
+        ]
+      },
+      {
+        "day": "TERÇA",
+        "exercises": [
+          {
+            "name": "Agachamento",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Agachamento Búlgaro",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Cadeira Extensora",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Cadeira Adutora",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Cadeira Abdutora",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Afundo",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Mesa flexora",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Abs Supra",
+            "sets": "3",
+            "reps": "9-11"
+          }
+        ]
+      },
+      {
+        "day": "QUINTA",
+        "exercises": [
+          {
+            "name": "Supino Máquina",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Supino Declinado",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Crucifixo Inclinado",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Puxada Aberta Pulley",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Puxada Fechada Triângulo Pulley",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Remada Fechada Máquina",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Rosca Direta Barra W",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Tríceps Corda Cross",
+            "sets": "3",
+            "reps": "9-11"
+          }
+        ]
+      },
+      {
+        "day": "SEXTA",
+        "exercises": [
+          {
+            "name": "Agachamento",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Agachamento Búlgaro",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Cadeira Extensora",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Cadeira Adutora",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Cadeira Abdutora",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Afundo",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Mesa Flexora",
+            "sets": "3",
+            "reps": "9-11"
+          },
+          {
+            "name": "Abs Supra",
+            "sets": "3",
+            "reps": "9-11"
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,37 +1,29 @@
-import { collection, addDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebaseconfig';
+import { collection, getDocs, query, where, documentId } from 'firebase/firestore';
 import { ExercicioModelo } from '../models/exercicio';
 
-const exerciciosCollection = collection(db, 'exerciciosModelos');
-
-/**
- * Adiciona um novo modelo de exercício à coleção geral de exercícios.
- * @param exercicioData - Dados do exercício modelo.
- */
-export const addExercicioModelo = async (exercicioData: Omit<ExercicioModelo, 'id'>) => {
-  try {
-    const docRef = await addDoc(exerciciosCollection, exercicioData);
-    console.log('Modelo de exercício adicionado com o ID: ', docRef.id);
-    return docRef.id;
-  } catch (error) {
-    console.error('Erro ao adicionar modelo de exercício: ', error);
-    throw error;
+export const getExerciciosModelos = async (): Promise<ExercicioModelo[]> => {
+  const exerciciosRef = collection(db, 'exerciciosModelos');
+  const snapshot = await getDocs(exerciciosRef);
+  if (snapshot.empty) {
+    return [];
   }
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExercicioModelo));
 };
 
-/**
- * Busca todos os modelos de exercícios disponíveis.
- */
-export const getAllExercicioModelos = async (): Promise<ExercicioModelo[]> => {
-  try {
-    const querySnapshot = await getDocs(exerciciosCollection);
-    const exercicios: ExercicioModelo[] = [];
-    querySnapshot.forEach((doc) => {
-      exercicios.push({ id: doc.id, ...doc.data() } as ExercicioModelo);
-    });
-    return exercicios;
-  } catch (error) {
-    console.error('Erro ao buscar modelos de exercícios: ', error);
-    throw error;
-  }
+export const getExerciciosModelosByIds = async (ids: string[]): Promise<ExercicioModelo[]> => {
+    if (!ids || ids.length === 0) {
+        return [];
+    }
+
+    const exerciciosRef = collection(db, 'exerciciosModelos');
+    // Firestore 'in' query is limited to 30 elements. For more, you'd need multiple queries.
+    const q = query(exerciciosRef, where(documentId(), 'in', ids));
+    const snapshot = await getDocs(q);
+
+    const modelos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExercicioModelo));
+
+    // Firestore 'in' query doesn't guarantee order. Let's re-order.
+    const orderedModelos = ids.map(id => modelos.find(m => m.id === id)).filter(Boolean) as ExercicioModelo[];
+    return orderedModelos;
 };

@@ -7,27 +7,29 @@ import {
   serverTimestamp,
   doc,
   updateDoc,
-  deleteDoc,
   arrayUnion,
   getDoc,
   documentId,
 } from 'firebase/firestore';
 import { db } from '../firebaseconfig';
 import { Treino } from '../models/treino';
-import { Ficha } from '../models/ficha';
 
 const treinosCollection = collection(db, 'treinos');
 
-/**
- * Adiciona um novo treino e o associa a uma ficha.
- * @param treinoData - Dados do treino a serem adicionados.
- * @param fichaId - ID da ficha à qual o treino será vinculado.
- */
+export const getTreinoById = async (treinoId: string): Promise<Treino | null> => {
+    try {
+        const docRef = doc(db, 'treinos', treinoId);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            return { id: docSnap.id, ...docSnap.data() } as Treino;
+        }
+        return null;
+    } catch (error) {
+        console.error('Erro ao buscar treino por ID: ', error);
+        throw error;
+    }
+};
 
-/**
- * Busca múltiplos documentos de treino com base em uma lista de IDs.
- * @param treinoIds - Array de IDs dos treinos a serem buscados.
- */
 export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> => {
     if (!treinoIds || treinoIds.length === 0) {
         return [];
@@ -46,16 +48,15 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
     }
 };
 
-export const addTreino = async (treinoData: Omit<Treino, 'id' | 'dataCriacao' | 'logs'>, fichaId: string) => {
+export const addTreinoToFicha = async (fichaId: string, treinoData: Omit<Treino, 'id' | 'usuarioId'>, usuarioId: string) => {
   try {
-    // Adiciona o treino à coleção 'treinos'
     const docRef = await addDoc(treinosCollection, {
       ...treinoData,
+      usuarioId,
       dataCriacao: serverTimestamp(),
       logs: [],
     });
 
-    // Atualiza a ficha para incluir o ID do novo treino
     const fichaRef = doc(db, 'fichas', fichaId);
     await updateDoc(fichaRef, {
       treinos: arrayUnion(docRef.id)
@@ -69,10 +70,17 @@ export const addTreino = async (treinoData: Omit<Treino, 'id' | 'dataCriacao' | 
   }
 };
 
-/**
- * Busca todos os treinos de um usuário.
- * @param usuarioId - O UID do usuário.
- */
+export const updateTreino = async (treinoId: string, treinoData: Partial<Treino>) => {
+    try {
+        const treinoRef = doc(db, 'treinos', treinoId);
+        await updateDoc(treinoRef, treinoData);
+        console.log('Treino atualizado com sucesso!');
+    } catch (error) {
+        console.error('Erro ao atualizar treino: ', error);
+        throw error;
+    }
+};
+
 export const getTreinosByUsuarioId = async (usuarioId: string): Promise<Treino[]> => {
   try {
     const q = query(treinosCollection, where('usuarioId', '==', usuarioId));

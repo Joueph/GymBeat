@@ -1,16 +1,15 @@
-import { ExercicioNoTreino } from './exercicio';
-import { Log } from './log';
+import { Exercicio } from './exercicio';
+
+export type DiaSemana = 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab';
 
 export interface Treino {
   id: string;
-  nome: string;
-  diasSemana: ('seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab' | 'dom')[];
-  exercicios: ExercicioNoTreino[];
   usuarioId: string;
-  dataCriacao: Date;
+  nome: string;
+  diasSemana: DiaSemana[];
   intervalo: {
     min: number;
     seg: number;
   };
-  logs: Log[];
+  exercicios: Exercicio[];
 }

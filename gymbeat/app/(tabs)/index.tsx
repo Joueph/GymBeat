@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, Pressable, ActivityIndicator, Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
+import { FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '../authprovider';
 import { getLogsByUsuarioId } from '../../services/logService';
 import { addFicha } from '../../services/fichaService';
@@ -158,9 +159,9 @@ export default function HomeScreen() {
 
       return (
         <View style={styles.duolingoCard}>
-          <ThemedText type="subtitle">Próximo Treino: {nextTreino.nome}</ThemedText>
-          <ThemedText>Duração Média: {duration}</ThemedText>
-          <ThemedText>Exercícios: {nextTreino.exercicios.map(e => e.modelo.nome).join(', ')}</ThemedText>
+          <ThemedText type="subtitle" style={styles.cardTitle}>Próximo Treino: {nextTreino.nome}</ThemedText>
+          <ThemedText style={styles.cardText}>Duração Média: {duration}</ThemedText>
+          <ThemedText style={styles.cardText}>Exercícios: {nextTreino.exercicios.map(e => e.modelo.nome).join(', ')}</ThemedText>
           <TouchableOpacity style={styles.startButton}>
             <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Começar Treino</ThemedText>
           </TouchableOpacity>
@@ -210,8 +211,20 @@ export default function HomeScreen() {
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.friendItem}>
-            <ThemedText>{item.nome}</ThemedText>
-            <ThemedText>{item.hasTrainedToday ? '✅ Treinou Hoje' : '❌ Não treinou'}</ThemedText>
+            <ThemedText style={styles.friendName}>{item.nome}</ThemedText>
+            <View style={styles.friendStatus}>
+              {item.hasTrainedToday ? (
+                <>
+                  <FontAwesome name="check-circle" size={16} color="#58CC02" />
+                  <ThemedText style={styles.friendStatusText}> Treinou Hoje</ThemedText>
+                </>
+              ) : (
+                <>
+                  <FontAwesome name="times-circle" size={16} color="#ff3b30" />
+                  <ThemedText style={styles.friendStatusText}> Não treinou</ThemedText>
+                </>
+              )}
+            </View>
           </View>
         )}
         ListEmptyComponent={
@@ -335,14 +348,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   duolingoCard: {
-    backgroundColor: '#fff',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 15,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  cardTitle: {
+    color: '#fff',
+    marginBottom: 10,
+  },
+  cardText: {
+    color: '#ccc',
+    marginBottom: 5,
   },
   startButton: {
     backgroundColor: '#58CC02',
@@ -359,9 +377,22 @@ const styles = StyleSheet.create({
   friendItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  friendName: {
+    fontSize: 16,
+    color: '#fff',
+  },
+  friendStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  friendStatusText: {
+    color: '#ccc',
+    marginLeft: 6,
   },
   emptyFriendsContainer: {
     paddingHorizontal: 15,

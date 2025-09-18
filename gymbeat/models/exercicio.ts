@@ -1,14 +1,16 @@
 export interface ExercicioModelo {
   id: string;
   nome: string;
-  imagemUrl?: string; // GIF, Webp, ou Webm
+  imagemUrl: string;
   grupoMuscular: string;
-  tipo: 'Academia' | 'Calistenia' | 'Em casa' | 'Crossfit';
+  tipo: string;
 }
 
-export interface ExercicioNoTreino {
+export interface Exercicio {
   modelo: ExercicioModelo;
-  repeticoes: string; // Para suportar formatos como (10;8)(10;8)(10;8)
-  pesos: string;      // Para suportar formatos como (10;8)(10;8)(10;8)
+  modeloId: string;
   series: number;
+  repeticoes: string;
+  peso?: number;
+  // Outros campos como tempo de descanso, anotações, etc. podem ser adicionados aqui
 }

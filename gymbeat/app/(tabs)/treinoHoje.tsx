@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated, ImageBackground, Image } from 'react-native';
 import { Swipeable, GestureHandlerRootView, RectButton } from 'react-native-gesture-handler';
+import { FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '../authprovider';
 import { useRouter } from 'expo-router';
 import { getFichaAtiva, getFichasInativas, deleteFicha } from '../../services/fichaService';
@@ -11,6 +12,8 @@ import { Treino } from '../../models/treino';
 const DIAS_SEMANA_MAP: { [key: number]: string } = {
   0: 'dom', 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sab'
 }; 
+
+const AnimatedIcon = Animated.createAnimatedComponent(FontAwesome);
 
 export default function TreinoHojeScreen() {
   const { user } = useAuth();
@@ -72,9 +75,7 @@ export default function TreinoHojeScreen() {
 
     return (
       <RectButton style={styles.deleteBox} onPress={() => handleDeleteFicha(fichaId)}>
-        <Animated.Text style={[styles.deleteText, { transform: [{ scale }] }]}>
-          🗑️
-        </Animated.Text>
+        <AnimatedIcon name="trash-o" size={28} color="white" style={{ transform: [{ scale }] }} />
       </RectButton>
     );
   };
@@ -88,9 +89,7 @@ export default function TreinoHojeScreen() {
 
     return (
       <RectButton style={styles.editBox} onPress={() => handleEditFicha(fichaId)}>
-        <Animated.Text style={[styles.editText, { transform: [{ scale }] }]}>
-          ✏️
-        </Animated.Text>
+        <AnimatedIcon name="pencil" size={28} color="white" style={{ transform: [{ scale }] }} />
       </RectButton>
     );
   };
@@ -201,10 +200,6 @@ const styles = StyleSheet.create({
       borderRadius: 8,
       height: '100%',
     },
-    deleteText: {
-      color: 'white',
-      fontSize: 24,
-    },
     editBox: {
       backgroundColor: '#1cb0f6',
       justifyContent: 'center',
@@ -212,9 +207,5 @@ const styles = StyleSheet.create({
       width: 80,
       borderRadius: 8,
       height: '100%',
-    },
-    editText: {
-      color: 'white',
-      fontSize: 24,
     },
 });

@@ -46,7 +46,9 @@ app-example
 firebase-debug.log
 firebase-debug.*.log
 # Google service account keys
-*.json
+/scripts/*.json
+
+
 # Firebase emulators
 firebase-data/
 firestore-export.json

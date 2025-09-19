@@ -1,29 +1,41 @@
 import { db } from '../firebaseconfig';
-import { collection, getDocs, query, where, documentId } from 'firebase/firestore';
+import { collection, getDocs, query, where, documentId, limit, orderBy, startAfter, DocumentSnapshot } from 'firebase/firestore';
 import { ExercicioModelo } from '../models/exercicio';
 
-export const getExerciciosModelos = async (): Promise<ExercicioModelo[]> => {
+const EXERCICIOS_PAGE_SIZE = 20; // Define a default page size
+
+export const getExerciciosModelos = async (params: { lastVisibleDoc?: DocumentSnapshot | null, limit?: number, searchTerm?: string }): Promise<{ exercicios: ExercicioModelo[], lastVisibleDoc: DocumentSnapshot | null }> => {
+  const { lastVisibleDoc, limit: queryLimit = EXERCICIOS_PAGE_SIZE, searchTerm } = params;
   const exerciciosRef = collection(db, 'exerciciosModelos');
-  const snapshot = await getDocs(exerciciosRef);
-  if (snapshot.empty) {
-    return [];
+
+  let q = query(exerciciosRef);
+
+  // Apply search term if present
+  if (searchTerm) {
+    // Firestore does not support full-text search. This is a prefix search.
+    // For more advanced search, a dedicated search service (e.g., Algolia, ElasticSearch) would be needed.
+    // Ensure 'nome' field is indexed in Firestore for this query to work efficiently.
+    q = query(q, where('nome', '>=', searchTerm), where('nome', '<=', searchTerm + '\uf8ff'));
   }
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExercicioModelo));
-};
 
-export const getExerciciosModelosByIds = async (ids: string[]): Promise<ExercicioModelo[]> => {
-    if (!ids || ids.length === 0) {
-        return [];
-    }
+  // Always order for consistent pagination. 'nome' is a good candidate.
+  q = query(q, orderBy('nome'));
 
-    const exerciciosRef = collection(db, 'exerciciosModelos');
-    // Firestore 'in' query is limited to 30 elements. For more, you'd need multiple queries.
-    const q = query(exerciciosRef, where(documentId(), 'in', ids));
-    const snapshot = await getDocs(q);
+  // Apply startAfter for pagination
+  if (lastVisibleDoc) {
+    q = query(q, startAfter(lastVisibleDoc));
+  }
 
-    const modelos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExercicioModelo));
+  // Apply limit
+  q = query(q, limit(queryLimit));
 
-    // Firestore 'in' query doesn't guarantee order. Let's re-order.
-    const orderedModelos = ids.map(id => modelos.find(m => m.id === id)).filter(Boolean) as ExercicioModelo[];
-    return orderedModelos;
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) {
+    return { exercicios: [], lastVisibleDoc: null };
+  }
+
+  const exercicios = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ExercicioModelo));
+  const newLastVisibleDoc = snapshot.docs[snapshot.docs.length - 1];
+
+  return { exercicios, lastVisibleDoc: newLastVisibleDoc };
 };

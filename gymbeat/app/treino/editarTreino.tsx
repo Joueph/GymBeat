@@ -5,16 +5,17 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { GestureHandlerRootView, Swipeable, RectButton } from 'react-native-gesture-handler';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// import AsyncStorage from '@react-native-async-storage/async-storage'; // Removed for pagination
 import { useAuth } from '../authprovider';
 import { getTreinoById, addTreinoToFicha, updateTreino } from '../../services/treinoService';
-import { getExerciciosModelos } from '../../services/exercicioService'; // NOTE: This service function is assumed to support pagination via an `offset` parameter.
+import { getExerciciosModelos } from '../../services/exercicioService';
 import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import { Treino, DiaSemana } from '../../models/treino';
 import { Exercicio, ExercicioModelo } from '../../models/exercicio';
+import { DocumentSnapshot } from 'firebase/firestore'; // Import DocumentSnapshot
 
 const DIAS_SEMANA: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-const EXERCICIOS_CACHE_KEY = 'exerciciosModelosCache';
+// const EXERCICIOS_CACHE_KEY = 'exerciciosModelosCache'; // Removed for pagination
 
 // A new component to manage each video player instance
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
@@ -64,9 +65,10 @@ export default function EditarTreinoScreen() {
   
   // State for exercise models, now with pagination and caching
   const [exerciciosModelos, setExerciciosModelos] = useState<ExercicioModelo[]>([]);
-  const [loadingInitialExercicios, setLoadingInitialExercicios] = useState(false);
+  const [lastVisibleDoc, setLastVisibleDoc] = useState<DocumentSnapshot | null>(null); // For Firestore pagination
   const [loadingMoreExercicios, setLoadingMoreExercicios] = useState(false);
   const [allExerciciosLoaded, setAllExerciciosLoaded] = useState(false);
+  const EXERCICIOS_PAGE_SIZE = 20; // Define page size
 
   const [isModalVisible, setModalVisible] = useState(false);
   const [isExercicioModalVisible, setExercicioModalVisible] = useState(false);
@@ -78,7 +80,8 @@ export default function EditarTreinoScreen() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-
+  const [currentSearchInput, setCurrentSearchInput] = useState(''); // What the user types
+  const [activeSearchTerm, setActiveSearchTerm] = useState('');     // What is actively being searched for
   // This useEffect now only loads the Treino being edited
   useEffect(() => {
     const fetchTreinoData = async () => {
@@ -102,46 +105,43 @@ export default function EditarTreinoScreen() {
     fetchTreinoData();
   }, [treinoId]);
 
-  // New useEffect to load exercises from cache on mount
+  // Effect to handle loading exercises when modal opens or search term changes
   useEffect(() => {
-    const loadFromCache = async () => {
-      try {
-        const cachedData = await AsyncStorage.getItem(EXERCICIOS_CACHE_KEY);
-        if (cachedData) {
-          setExerciciosModelos(JSON.parse(cachedData));
-        }
-      } catch (error) {
-        console.error('Failed to load exercises from cache', error);
-      }
-    };
-    loadFromCache();
-  }, []);
+    if (isModalVisible) {
+      // Reset pagination state if a new search term is active or if we need to load initially
+      // This ensures that when a search term changes, we start from the first page of results
+      // or when the modal opens for the first time, we load the initial page.
+      setExerciciosModelos([]);
+      setLastVisibleDoc(null);
+      setAllExerciciosLoaded(false);
+      loadMoreExercicios();
+    }
+  }, [activeSearchTerm, isModalVisible]); // Depend on activeSearchTerm and isModalVisible
 
-  const loadMoreExercicios = useCallback(async (isInitial = false) => {
+  const loadMoreExercicios = useCallback(async () => {
     if (loadingMoreExercicios || allExerciciosLoaded) return;
 
-    if (isInitial) setLoadingInitialExercicios(true);
-    else setLoadingMoreExercicios(true);
-
+    setLoadingMoreExercicios(true);
     try {
-      // Assuming getExerciciosModelos can take an offset for pagination
-      const newExercicios = await getExerciciosModelos({ offset: exerciciosModelos.length });
+      const { exercicios: newExercicios, lastVisibleDoc: newLastVisibleDoc } = await getExerciciosModelos({
+        lastVisibleDoc: lastVisibleDoc,
+        limit: EXERCICIOS_PAGE_SIZE,
+        searchTerm: activeSearchTerm // Pass the active search term to the service
+      });
 
       if (newExercicios && newExercicios.length > 0) {
-        const updatedList = [...exerciciosModelos, ...newExercicios];
-        setExerciciosModelos(updatedList);
-        await AsyncStorage.setItem(EXERCICIOS_CACHE_KEY, JSON.stringify(updatedList));
+        setExerciciosModelos(prev => [...prev, ...newExercicios]);
+        setLastVisibleDoc(newLastVisibleDoc);
       } else {
         setAllExerciciosLoaded(true); // No more exercises to load
       }
     } catch (error) {
       console.error("Erro ao carregar mais exercícios:", error);
       Alert.alert("Erro", "Não foi possível carregar mais exercícios.");
-    } finally {
-      if (isInitial) setLoadingInitialExercicios(false);
-      else setLoadingMoreExercicios(false);
+    } finally { // Dependencies for useCallback
+      setLoadingMoreExercicios(false);
     }
-  }, [loadingMoreExercicios, allExerciciosLoaded, exerciciosModelos]);
+  }, [loadingMoreExercicios, allExerciciosLoaded, lastVisibleDoc, activeSearchTerm]);
 
   const handleSave = async () => {
     if (!user || !fichaId || !treino.nome) {
@@ -195,9 +195,8 @@ export default function EditarTreinoScreen() {
   };
 
   const openAddExercicioModal = () => {
-    if (exerciciosModelos.length === 0 && !allExerciciosLoaded) {
-      loadMoreExercicios(true);
-    }
+    setModalVisible(true);
+    // The useEffect for activeSearchTerm and isModalVisible will handle the initial load
     setModalVisible(true);
   };
 
@@ -205,6 +204,12 @@ export default function EditarTreinoScreen() {
     setModalVisible(false);
     setSelectedExercicioModelo(modelo);
     setEditingExercicioIndex(null); // Ensure we are in "add" mode
+    // Reset search and pagination states when moving to add/edit exercise modal
+    setCurrentSearchInput('');
+    setActiveSearchTerm('');
+    setSelectedGroup(null);
+    setExerciciosModelos([]);
+    setLastVisibleDoc(null);
     setSeries('');
     setRepeticoes('');
     setPeso('');
@@ -249,6 +254,14 @@ export default function EditarTreinoScreen() {
 
   const openEditExercicioModal = (exercicio: Exercicio, index: number) => {
     setModalVisible(false); // Close selection modal if open
+    // Reset search and pagination states when moving to add/edit exercise modal
+    setCurrentSearchInput('');
+    setActiveSearchTerm('');
+    setSelectedGroup(null);
+    setExerciciosModelos([]);
+    setLastVisibleDoc(null);
+    setAllExerciciosLoaded(false);
+
     setSelectedExercicioModelo(exercicio.modelo);
     setSeries(String(exercicio.series));
     setRepeticoes(exercicio.repeticoes);
@@ -257,11 +270,9 @@ export default function EditarTreinoScreen() {
     setExercicioModalVisible(true);
   };
 
-  const filteredExercicios = useMemo(() => {
-    return exerciciosModelos
-      .filter(ex => selectedGroup ? ex.grupoMuscular === selectedGroup : true)
-      .filter(ex => ex.nome.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [exerciciosModelos, searchTerm, selectedGroup]);
+  const filteredExercicios = useMemo(() => { // Filtered exercises now only filters by group, as search is handled by the backend
+    return exerciciosModelos.filter(ex => selectedGroup ? ex.grupoMuscular === selectedGroup : true);
+  }, [exerciciosModelos, selectedGroup]);
 
   const muscleGroups = useMemo(() => [...new Set(exerciciosModelos.map(e => e.grupoMuscular))], [exerciciosModelos]);
 
@@ -381,8 +392,32 @@ export default function EditarTreinoScreen() {
         <Modal visible={isModalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)} presentationStyle="pageSheet">
           <View style={styles.modalContainer}>
               <Text style={styles.modalTitle}>Selecionar Exercício</Text>
-              <TextInput style={styles.searchInput} placeholder="Buscar exercício..." value={searchTerm} onChangeText={setSearchTerm} placeholderTextColor="#888" />
-
+              <View style={styles.searchContainer}>
+                  <TextInput
+                      style={styles.searchInput}
+                      placeholder="Buscar exercício..."
+                      value={currentSearchInput}
+                      onChangeText={setCurrentSearchInput}
+                      placeholderTextColor="#888"
+                      onSubmitEditing={() => setActiveSearchTerm(currentSearchInput)} // Trigger search on submit
+                  />
+                  {currentSearchInput.length > 0 && (
+                      <TouchableOpacity
+                          style={styles.clearSearchButton}
+                          onPress={() => {
+                              setCurrentSearchInput('');
+                              setActiveSearchTerm('');
+                          }}
+                      >
+                          <FontAwesome name="times-circle" size={20} color="#888" />
+                      </TouchableOpacity>
+                  )}
+                  {currentSearchInput.length > 0 && (
+                      <TouchableOpacity style={styles.searchIconButton} onPress={() => setActiveSearchTerm(currentSearchInput)}>
+                          <FontAwesome name="search" size={20} color="#1cb0f6" />
+                      </TouchableOpacity>
+                  )}
+              </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.groupSelector} contentContainerStyle={{ paddingRight: 15 }}>
                   <TouchableOpacity style={[styles.groupButton, !selectedGroup && styles.groupSelected]} onPress={() => setSelectedGroup(null)}>
                       <Text style={styles.groupText}>Todos</Text>
@@ -397,8 +432,8 @@ export default function EditarTreinoScreen() {
               <FlatList
                   data={filteredExercicios}
                   keyExtractor={item => item.id}
-                  onEndReached={() => loadMoreExercicios()}
-                  onEndReachedThreshold={0.5}
+                  onEndReached={loadMoreExercicios} // Call loadMoreExercicios when scrolling to end
+                  onEndReachedThreshold={0.5} // Adjust as needed
                   ListFooterComponent={loadingMoreExercicios ? <ActivityIndicator style={{ marginVertical: 20 }} color="#fff" /> : null}
                   renderItem={({ item }) => {
                     // ALTERAÇÃO: A URL agora vem diretamente do campo 'imagemUrl' do modelo.
@@ -416,13 +451,22 @@ export default function EditarTreinoScreen() {
                     );
                   }}
                   ListEmptyComponent={
-                    loadingInitialExercicios ?
+                    loadingMoreExercicios ? // Use loadingMoreExercicios for initial and subsequent loads
                     <ActivityIndicator style={{ marginTop: 40 }} size="large" color="#fff" /> :
                     <Text style={styles.emptyListText}>Nenhum exercício encontrado.</Text>
                   }
               />
 
-              <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => {
+                  setModalVisible(false);
+                  // Reset search and pagination states when modal closes
+                  setCurrentSearchInput('');
+                  setActiveSearchTerm('');
+                  setSelectedGroup(null);
+                  setExerciciosModelos([]);
+                  setLastVisibleDoc(null);
+                  setAllExerciciosLoaded(false);
+              }}>
                   <Text style={styles.closeButtonText}>Fechar</Text>
               </TouchableOpacity>
           </View>
@@ -584,13 +628,26 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
   },
-  searchInput: {
-    backgroundColor: '#222',
-    color: '#fff',
-    padding: 12,
-    borderRadius: 8,
-    fontSize: 16,
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 15,
+    backgroundColor: '#222',
+    borderRadius: 8,
+    paddingRight: 10, // Space for icons
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    padding: 12, // Padding inside the text input
+    fontSize: 16,
+  },
+  clearSearchButton: {
+    padding: 5,
+    marginRight: 5,
+  },
+  searchIconButton: {
+    padding: 5,
   },
   groupSelector: { marginBottom: 15 },
   groupButton: { height: 40, paddingHorizontal: 16, backgroundColor: '#222', borderRadius: 20, marginRight: 10, justifyContent: 'center', paddingBottom: 2 },

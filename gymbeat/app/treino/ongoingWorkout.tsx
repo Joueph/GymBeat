@@ -1,0 +1,261 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Modal, FlatList } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { FontAwesome } from '@expo/vector-icons';
+import { useAuth } from '../authprovider';
+import { getTreinoById } from '../../services/treinoService';
+import { addLog } from '../../services/logService';
+import { Treino } from '../../models/treino';
+import { Log } from '../../models/log';
+
+export default function OngoingWorkoutScreen() {
+  const router = useRouter();
+  const { user } = useAuth();
+  // We'll get the treinoId and fichaId from the navigation parameters
+  const { treinoId, fichaId } = useLocalSearchParams();
+
+  const [treino, setTreino] = useState<Treino | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
+  const [completedSets, setCompletedSets] = useState(0);
+  const [horarioInicio, setHorarioInicio] = useState<Date | null>(null);
+  
+  const [isResting, setIsResting] = useState(false);
+  const [restTime, setRestTime] = useState(0);
+
+  const [isExerciseListVisible, setExerciseListVisible] = useState(false);
+
+  // Memoize the max rest time to avoid recalculation
+  const maxRestTime = useMemo(() => {
+    if (!treino) return 0;
+    return treino.intervalo.min * 60 + treino.intervalo.seg;
+  }, [treino]);
+
+  // Fetch workout data when the component mounts
+  useEffect(() => {
+    setHorarioInicio(new Date());
+    const fetchTreino = async () => {
+      if (typeof treinoId !== 'string') {
+        Alert.alert("Erro", "ID do treino inválido.");
+        router.back();
+        return;
+      }
+      try {
+        const treinoData = await getTreinoById(treinoId);
+        if (treinoData) {
+          if (!treinoData.exercicios || treinoData.exercicios.length === 0) {
+            Alert.alert("Treino Vazio", "Este treino não possui exercícios. Adicione exercícios para poder iniciá-lo.", [{ text: "OK", onPress: () => router.back() }]);
+            return;
+          }
+          setTreino(treinoData);
+          setRestTime(treinoData.intervalo.min * 60 + treinoData.intervalo.seg);
+        } else {
+          Alert.alert("Erro", "Treino não encontrado.");
+          router.back();
+        }
+      } catch (error) {
+        console.error("Failed to fetch workout:", error);
+        Alert.alert("Erro", "Não foi possível carregar o treino.");
+        router.back();
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTreino();
+  }, [treinoId]);
+
+  // Handles the countdown timer logic
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isResting && restTime > 0) {
+      interval = setInterval(() => {
+        setRestTime(prevTime => prevTime - 1);
+      }, 1000);
+    } else if (isResting && restTime === 0) {
+      setIsResting(false);
+      // Reset timer for the next rest period
+      setRestTime(maxRestTime);
+    }
+    return () => clearInterval(interval);
+  }, [isResting, restTime, maxRestTime]);
+
+  // Handles completing a set and moving to the next exercise or finishing the workout
+  const handleCompleteSet = async () => {
+    if (!treino || !user) return;
+
+    const currentExercise = treino.exercicios[currentExerciseIndex];
+    const newCompletedSets = completedSets + 1;
+
+    // Check if the current exercise is finished
+    if (newCompletedSets >= currentExercise.series) {
+      // Check if it's the last exercise of the workout
+      if (currentExerciseIndex < treino.exercicios.length - 1) {
+        setCurrentExerciseIndex(prev => prev + 1);
+        setCompletedSets(0);
+      } else {
+        // Workout finished!
+        const horarioFim = new Date();
+        const logData: Omit<Log, 'id'> = {
+          usuarioId: user.uid,
+          treino: treino,
+          exercicios: treino.exercicios,
+          exerciciosFeitos: treino.exercicios, // For simplicity, assumes all exercises were completed
+          horarioInicio: horarioInicio!,
+          horarioFim: horarioFim,
+        };
+
+        try {
+          await addLog(logData);
+          Alert.alert("Parabéns!", "Você concluiu o treino e seu progresso foi salvo!", [{ text: "OK", onPress: () => router.back() }]);
+        } catch (error) {
+          console.error("Failed to save workout log:", error);
+          Alert.alert("Erro", "Não foi possível salvar seu progresso, mas parabéns por concluir!", [{ text: "OK", onPress: () => router.back() }]);
+        }
+        return;
+      }
+    } else {
+      setCompletedSets(newCompletedSets);
+    }
+
+    // Start resting after a set is completed
+    setIsResting(true);
+  };
+  
+  // Formats seconds into a MM:SS string
+  const formatTime = (seconds: number) => {
+    const min = Math.floor(seconds / 60);
+    const sec = seconds % 60;
+    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  // Asks for confirmation before leaving the workout
+  const handleBack = () => {
+    Alert.alert(
+      "Sair do Treino?",
+      "Seu progresso não será salvo. Deseja continuar?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Sair", style: "destructive", onPress: () => router.back() },
+      ]
+    );
+  };
+
+  if (loading || !treino) {
+    return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
+  }
+
+  const currentExercise = treino.exercicios[currentExerciseIndex];
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+          <FontAwesome name="close" size={24} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Treino Rolando</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <View style={styles.content}>
+        <View style={styles.exerciseCard}>
+            <Text style={styles.exerciseName}>{currentExercise.modelo.nome}</Text>
+            <Text style={styles.exerciseDetails}>
+                {completedSets + 1}ª de {currentExercise.series} séries
+            </Text>
+            <Text style={styles.exerciseDetails}>
+                Repetições: {currentExercise.repeticoes}
+            </Text>
+            {currentExercise.peso ? <Text style={styles.exerciseDetails}>Peso: {currentExercise.peso}kg</Text> : null}
+        </View>
+
+        <View style={styles.timerContainer}>
+          <Text style={styles.timerLabel}>Tempo de Intervalo</Text>
+          <Text style={styles.timerText}>
+            {isResting ? formatTime(restTime) : formatTime(maxRestTime)}
+          </Text>
+        </View>
+
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity style={styles.actionButton} onPress={() => router.push(`/treino/editarTreino?fichaId=${fichaId}&treinoId=${treinoId}`)}>
+            <FontAwesome name="pencil" size={24} color="#fff" />
+            <Text style={styles.actionButtonText}>Editar</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.mainActionButton} onPress={handleCompleteSet}>
+            <FontAwesome name="check" size={40} color="#0d181c" />
+            <Text style={styles.mainActionButtonText}>Concluir Série</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionButton} onPress={() => setExerciseListVisible(true)}>
+            <FontAwesome name="list-ul" size={24} color="#fff" />
+            <Text style={styles.actionButtonText}>Lista</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Modal
+        visible={isExerciseListVisible}
+        animationType="slide"
+        onRequestClose={() => setExerciseListVisible(false)}
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Lista de Exercícios</Text>
+            <TouchableOpacity onPress={() => setExerciseListVisible(false)}>
+              <FontAwesome name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={treino.exercicios}
+            keyExtractor={(item, index) => `exercicio-lista-${index}`}
+            renderItem={({ item, index }) => {
+              const isCompleted = index < currentExerciseIndex;
+              const isCurrent = index === currentExerciseIndex;
+              return (
+                <View style={[
+                  styles.modalExerciseItem, 
+                  isCompleted && styles.completedItem,
+                  isCurrent && styles.currentItem
+                ]}>
+                  <Text style={[styles.modalExerciseName, isCompleted && {textDecorationLine: 'line-through'}]}>{item.modelo.nome}</Text>
+                  <Text style={styles.modalExerciseDetails}>{item.series}x {item.repeticoes}</Text>
+                </View>
+              );
+            }}
+          />
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: '#0d181c' },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0d181c' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 10 },
+  backButton: {},
+  headerTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
+  content: { flex: 1, justifyContent: 'space-around', alignItems: 'center', padding: 20 },
+  exerciseCard: { backgroundColor: '#1a2a33', padding: 20, borderRadius: 15, alignItems: 'center', width: '100%' },
+  exerciseName: { color: '#fff', fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
+  exerciseDetails: { color: '#ccc', fontSize: 18, marginTop: 4 },
+  timerContainer: { alignItems: 'center' },
+  timerLabel: { color: '#aaa', fontSize: 18, marginBottom: 10 },
+  timerText: { color: '#fff', fontSize: 72, fontWeight: 'bold', letterSpacing: 2 },
+  actionsContainer: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', width: '100%' },
+  actionButton: { alignItems: 'center', padding: 10, minWidth: 60 },
+  actionButtonText: { color: '#fff', marginTop: 8, fontSize: 12 },
+  mainActionButton: { backgroundColor: '#1cb0f6', width: 120, height: 120, borderRadius: 60, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#1cb0f6', shadowOpacity: 0.4, shadowRadius: 8 },
+  mainActionButtonText: { color: '#0d181c', fontWeight: 'bold', marginTop: 5, fontSize: 12 },
+  modalSafeArea: { flex: 1, backgroundColor: '#0d181c' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' },
+  modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
+  modalExerciseItem: { backgroundColor: '#1a2a33', paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#222' },
+  completedItem: { backgroundColor: '#1a2a33' },
+  currentItem: { borderLeftWidth: 4, borderLeftColor: '#1cb0f6', paddingLeft: 16 },
+  modalExerciseName: { color: '#fff', fontSize: 18 },
+  modalExerciseDetails: { color: '#aaa', fontSize: 14, marginTop: 4 },
+});

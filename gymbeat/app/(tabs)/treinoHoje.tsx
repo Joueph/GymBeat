@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated, ImageBackground, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated, ImageBackground, Image, TouchableOpacity } from 'react-native';
 import { Swipeable, GestureHandlerRootView, RectButton } from 'react-native-gesture-handler';
 import { FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '../authprovider';
@@ -20,6 +20,8 @@ export default function TreinoHojeScreen() {
   const router = useRouter();
   const [fichaAtiva, setFichaAtiva] = useState<Ficha | null>(null);
   const [treinoDeHoje, setTreinoDeHoje] = useState<Treino | null>(null);
+  const [nextWorkout, setNextWorkout] = useState<Treino | null>(null);
+  const [allWorkoutsInFicha, setAllWorkoutsInFicha] = useState<Treino[]>([]);
   const [fichasAnteriores, setFichasAnteriores] = useState<Ficha[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,6 +30,13 @@ export default function TreinoHojeScreen() {
       if (!user) return;
       setLoading(true);
       try {
+        // Reset states to avoid showing stale data
+        setFichaAtiva(null);
+        setTreinoDeHoje(null);
+        setNextWorkout(null);
+        setAllWorkoutsInFicha([]);
+        setFichasAnteriores([]);
+
         // Busca a ficha ativa e as fichas anteriores em paralelo
         const [ativa, inativas] = await Promise.all([
           getFichaAtiva(user.uid),
@@ -39,10 +48,27 @@ export default function TreinoHojeScreen() {
 
         if (ativa && ativa.treinos.length > 0) {
           const treinos = await getTreinosByIds(ativa.treinos);
+          setAllWorkoutsInFicha(treinos); // Store all workouts from the active ficha
+
           const hoje = new Date().getDay();
           const diaString = DIAS_SEMANA_MAP[hoje] as 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab';
           const treinoDoDia = treinos.find(t => t.diasSemana.includes(diaString)) || null;
           setTreinoDeHoje(treinoDoDia);
+
+          if (!treinoDoDia) {
+            // If no workout today, find the next one
+            let proximoTreino: Treino | null = null;
+            for (let i = 1; i <= 7; i++) {
+              const nextDayIndex = (hoje + i) % 7;
+              const nextDayString = DIAS_SEMANA_MAP[nextDayIndex];
+              const foundTreino = treinos.find(t => t.diasSemana.includes(nextDayString));
+              if (foundTreino) {
+                proximoTreino = foundTreino;
+                break; // Found the next workout, stop searching
+              }
+            }
+            setNextWorkout(proximoTreino);
+          }
         }
       } catch (err) {
         Alert.alert("Erro", "Não foi possível carregar os dados de treino.");
@@ -126,15 +152,47 @@ export default function TreinoHojeScreen() {
 
         {/* Card do Treino do Dia */}
         {treinoDeHoje ? (
-          <View style={styles.cardTreinoHoje}>
-            <Text style={styles.treinoHojeTitle}>{treinoDeHoje.nome}</Text>
-            <Text style={styles.treinoHojeSubtitle}>Intervalo: {treinoDeHoje.intervalo.min}m {treinoDeHoje.intervalo.seg}s</Text>
-            <Text style={styles.treinoHojeExercicios}>{treinoDeHoje.exercicios.length} exercícios</Text>
-          </View>
+          <TouchableOpacity onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${fichaAtiva!.id}&treinoId=${treinoDeHoje!.id}`)}>
+            <View style={styles.cardTreinoHoje}>
+              <Text style={styles.treinoHojeTitle}>{treinoDeHoje.nome}</Text>
+              <Text style={styles.treinoHojeSubtitle}>Intervalo: {treinoDeHoje.intervalo.min}m {treinoDeHoje.intervalo.seg}s</Text>
+              <Text style={styles.treinoHojeExercicios}>{treinoDeHoje.exercicios.length} exercícios</Text>
+            </View>
+          </TouchableOpacity>
         ) : fichaAtiva ? (
-          <View style={[styles.cardTreinoHoje, styles.cardDescanso]}>
-              <Text style={styles.treinoHojeTitle}>Hoje é dia de descanso!</Text>
-          </View>
+          <>
+            {nextWorkout ? (
+              <TouchableOpacity onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${fichaAtiva!.id}&treinoId=${nextWorkout!.id}`)}>
+                <View style={[styles.cardTreinoHoje, styles.cardNextWorkout]}>
+                  <Text style={styles.nextWorkoutLabel}>Próximo Treino</Text>
+                  <Text style={styles.treinoHojeTitle}>{nextWorkout.nome}</Text>
+                  <Text style={styles.treinoHojeSubtitle}>{nextWorkout.exercicios.length} exercícios</Text>
+                </View>
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.cardTreinoHoje, styles.cardDescanso]}>
+                <Text style={styles.treinoHojeTitle}>Nenhum treino agendado</Text>
+                <Text style={styles.treinoHojeSubtitle}>Adicione treinos à sua ficha ativa.</Text>
+              </View>
+            )}
+
+            {allWorkoutsInFicha.length > 0 && (
+              <>
+                <Text style={styles.sectionTitle}>Todos os Treinos da Ficha</Text>
+                {allWorkoutsInFicha.map(treino => (
+                  <TouchableOpacity key={treino.id} onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${fichaAtiva!.id}&treinoId=${treino.id}`)}>
+                    <View style={styles.otherWorkoutCard}>
+                      <View>
+                        <Text style={styles.otherWorkoutTitle}>{treino.nome}</Text>
+                        <Text style={styles.otherWorkoutInfo}>{treino.exercicios.length} exercícios</Text>
+                      </View>
+                      <Text style={styles.otherWorkoutDays}>{treino.diasSemana.join(', ').toUpperCase()}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+          </>
         ) : null}
 
         {/* Lista de Fichas Anteriores */}
@@ -183,15 +241,29 @@ const styles = StyleSheet.create({
     fichaAtivaTitle: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
     fichaAtivaSubtitle: { fontSize: 14, color: '#ccc' },
     cardTreinoHoje: { backgroundColor: '#4CAF50', padding: 25, borderRadius: 12, marginBottom: 30, alignItems: 'center' },
+    cardNextWorkout: { backgroundColor: '#1cb0f6' },
+    nextWorkoutLabel: { color: '#fff', fontSize: 16, marginBottom: 5, opacity: 0.8 },
     treinoHojeTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
     treinoHojeSubtitle: { fontSize: 16, color: '#fff', marginTop: 5 },
     treinoHojeExercicios: { fontSize: 16, color: '#fff', marginTop: 10, fontWeight: '500' },
     cardDescanso: { backgroundColor: '#2a3b42'},
     sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginTop: 20, marginBottom: 10 },
-    cardFichaAnterior: { backgroundColor: '#222', borderRadius: 8, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' },
+    cardFichaAnterior: { backgroundColor: '#1a2a33', borderRadius: 8, flexDirection: 'row', alignItems: 'center', overflow: 'hidden' },
     fichaAnteriorImage: { width: 60, height: 60, marginRight: 15 },
-    fichaAnteriorTitle: { fontSize: 16, color: '#aaa', flex: 1 },
+    fichaAnteriorTitle: { fontSize: 16, color: '#fff', flex: 1 },
     emptyText: { color: '#aaa', textAlign: 'center', marginVertical: 20 },
+    otherWorkoutCard: {
+      backgroundColor: '#1a2a33',
+      borderRadius: 8,
+      padding: 15,
+      marginBottom: 10,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    otherWorkoutTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+    otherWorkoutInfo: { color: '#aaa', fontSize: 14, marginTop: 4 },
+    otherWorkoutDays: { color: '#1cb0f6', fontSize: 12, fontWeight: 'bold' },
     deleteBox: {
       backgroundColor: '#ff3b30',
       justifyContent: 'center',

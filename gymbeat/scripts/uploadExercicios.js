@@ -18,7 +18,7 @@ const exerciciosCollection = db.collection('exerciciosModelos');
 
 // --- CAMINHO PARA A PASTA PRINCIPAL ---
 // Coloque o caminho para a pasta que contém os grupos musculares (ex: 'Costas', 'Peito')
-const baseFolderPath = path.join(__dirname, 'Imagens Otimizadas em Webm'); // Adapte o nome da pasta se necessário
+const baseFolderPath = path.join(__dirname, 'Imagens em MP4'); // Adapte o nome da pasta se necessário
 
 async function uploadExercicios() {
   if (!fs.existsSync(baseFolderPath)) {

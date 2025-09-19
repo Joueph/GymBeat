@@ -1,19 +1,58 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Modal, FlatList, Animated, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { GestureHandlerRootView, Swipeable, RectButton } from 'react-native-gesture-handler';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../authprovider';
 import { getTreinoById, addTreinoToFicha, updateTreino } from '../../services/treinoService';
-import { getExerciciosModelos } from '../../services/exercicioService';
-import { Video } from 'expo-av';
+import { getExerciciosModelos } from '../../services/exercicioService'; // NOTE: This service function is assumed to support pagination via an `offset` parameter.
+import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import { Treino, DiaSemana } from '../../models/treino';
 import { Exercicio, ExercicioModelo } from '../../models/exercicio';
 
 const DIAS_SEMANA: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+const EXERCICIOS_CACHE_KEY = 'exerciciosModelosCache';
 
+// A new component to manage each video player instance
+export function VideoListItem({ uri, style }: { uri: string; style: any }) {
+  const player = useVideoPlayer(uri, (player) => {
+    player.loop = true;
+    player.muted = true;
+    player.play();
+  });
+
+  // useEffect para verificar o status da URL do vídeo
+  useEffect(() => {
+    const verificarStatusDoVideo = async () => {
+      if (!uri) return;
+
+      console.log(`[LOG] Verificando URL: ${uri}`);
+
+      try {
+        // >>>>> AQUI É FEITO O FETCH <<<<<
+        const response = await fetch(uri, { method: 'HEAD' }); 
+
+        console.log(`[LOG] Resposta do Servidor - Status: ${response.status}`);
+        // ... resto do código de log ...
+        
+      } catch (error) {
+        console.error('[DIAGNÓSTICO] ❌ Erro de Rede: ...', error);
+      }
+    };
+
+    verificarStatusDoVideo();
+
+    // Cleanup do player
+    return () => {
+      player.release();
+    };
+  }, [uri, player]); // Adicionamos 'uri' à lista de dependências
+
+  return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
+}
 export default function EditarTreinoScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -22,8 +61,13 @@ export default function EditarTreinoScreen() {
   const [treino, setTreino] = useState<Partial<Treino>>({ nome: '', diasSemana: [], intervalo: { min: 1, seg: 0 }, exercicios: [] });
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-
+  
+  // State for exercise models, now with pagination and caching
   const [exerciciosModelos, setExerciciosModelos] = useState<ExercicioModelo[]>([]);
+  const [loadingInitialExercicios, setLoadingInitialExercicios] = useState(false);
+  const [loadingMoreExercicios, setLoadingMoreExercicios] = useState(false);
+  const [allExerciciosLoaded, setAllExerciciosLoaded] = useState(false);
+
   const [isModalVisible, setModalVisible] = useState(false);
   const [isExercicioModalVisible, setExercicioModalVisible] = useState(false);
   const [selectedExercicioModelo, setSelectedExercicioModelo] = useState<ExercicioModelo | null>(null);
@@ -35,26 +79,69 @@ export default function EditarTreinoScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
 
+  // This useEffect now only loads the Treino being edited
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchTreinoData = async () => {
+      if (!treinoId) {
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
       try {
-        const [modelos, treinoData] = await Promise.all([
-          getExerciciosModelos(),
-          treinoId ? getTreinoById(treinoId as string) : Promise.resolve(null)
-        ]);
-        setExerciciosModelos(modelos);
+        const treinoData = await getTreinoById(treinoId as string);
         if (treinoData) {
           setTreino(treinoData);
         }
       } catch (error) {
-        Alert.alert("Erro", "Não foi possível carregar os dados.");
+        Alert.alert("Erro", "Não foi possível carregar os dados do treino.");
         console.error(error);
       } finally {
         setLoading(false);
       }
     };
-    fetchData();
+    fetchTreinoData();
   }, [treinoId]);
+
+  // New useEffect to load exercises from cache on mount
+  useEffect(() => {
+    const loadFromCache = async () => {
+      try {
+        const cachedData = await AsyncStorage.getItem(EXERCICIOS_CACHE_KEY);
+        if (cachedData) {
+          setExerciciosModelos(JSON.parse(cachedData));
+        }
+      } catch (error) {
+        console.error('Failed to load exercises from cache', error);
+      }
+    };
+    loadFromCache();
+  }, []);
+
+  const loadMoreExercicios = useCallback(async (isInitial = false) => {
+    if (loadingMoreExercicios || allExerciciosLoaded) return;
+
+    if (isInitial) setLoadingInitialExercicios(true);
+    else setLoadingMoreExercicios(true);
+
+    try {
+      // Assuming getExerciciosModelos can take an offset for pagination
+      const newExercicios = await getExerciciosModelos({ offset: exerciciosModelos.length });
+
+      if (newExercicios && newExercicios.length > 0) {
+        const updatedList = [...exerciciosModelos, ...newExercicios];
+        setExerciciosModelos(updatedList);
+        await AsyncStorage.setItem(EXERCICIOS_CACHE_KEY, JSON.stringify(updatedList));
+      } else {
+        setAllExerciciosLoaded(true); // No more exercises to load
+      }
+    } catch (error) {
+      console.error("Erro ao carregar mais exercícios:", error);
+      Alert.alert("Erro", "Não foi possível carregar mais exercícios.");
+    } finally {
+      if (isInitial) setLoadingInitialExercicios(false);
+      else setLoadingMoreExercicios(false);
+    }
+  }, [loadingMoreExercicios, allExerciciosLoaded, exerciciosModelos]);
 
   const handleSave = async () => {
     if (!user || !fichaId || !treino.nome) {
@@ -107,10 +194,20 @@ export default function EditarTreinoScreen() {
     }));
   };
 
+  const openAddExercicioModal = () => {
+    if (exerciciosModelos.length === 0 && !allExerciciosLoaded) {
+      loadMoreExercicios(true);
+    }
+    setModalVisible(true);
+  };
+
   const openExercicioModal = (modelo: ExercicioModelo) => {
     setModalVisible(false);
     setSelectedExercicioModelo(modelo);
     setEditingExercicioIndex(null); // Ensure we are in "add" mode
+    setSeries('');
+    setRepeticoes('');
+    setPeso('');
     setExercicioModalVisible(true);
   };
 
@@ -270,7 +367,7 @@ export default function EditarTreinoScreen() {
           }
           ListFooterComponent={
             <>
-              <TouchableOpacity style={styles.addButton} onPress={() => setModalVisible(true)}>
+              <TouchableOpacity style={styles.addButton} onPress={openAddExercicioModal}>
                 <Text style={styles.addButtonText}>+ Adicionar Exercício</Text>
               </TouchableOpacity>
 
@@ -300,18 +397,31 @@ export default function EditarTreinoScreen() {
               <FlatList
                   data={filteredExercicios}
                   keyExtractor={item => item.id}
-                  renderItem={({ item }) => (
-                      <TouchableOpacity style={styles.modeloCard} onPress={() => openExercicioModal(item)}>
-                          <Video
-                              source={{ uri: `https://firebasestorage.googleapis.com/v0/b/gymbeat-153s.appspot.com/o/exercicios%2F${encodeURIComponent(item.grupoMuscular)}%2F${encodeURIComponent(item.nome)}.webm?alt=media` }}
-                              style={styles.modeloImage}
-                              shouldPlay
-                              isLooping
-                              isMuted />
-                          <Text style={styles.modeloName} numberOfLines={2}>{item.nome}</Text>
-                      </TouchableOpacity>
-                  )}
-                  ListEmptyComponent={<Text style={styles.emptyListText}>Nenhum exercício encontrado.</Text>} />
+                  onEndReached={() => loadMoreExercicios()}
+                  onEndReachedThreshold={0.5}
+                  ListFooterComponent={loadingMoreExercicios ? <ActivityIndicator style={{ marginVertical: 20 }} color="#fff" /> : null}
+                  renderItem={({ item }) => {
+                    // ALTERAÇÃO: A URL agora vem diretamente do campo 'imagemUrl' do modelo.
+                    const videoUri = item.imagemUrl;
+                    
+                    // Opcional: manter o log para depuração
+                    console.log("URL do vídeo do modelo:", videoUri); 
+                    
+                    return (
+                        <TouchableOpacity style={styles.modeloCard} onPress={() => openExercicioModal(item)}>
+                            {/* O componente VideoListItem recebe a nova URI sem precisar de outras mudanças */}
+                            <VideoListItem style={styles.modeloVideo} uri={videoUri} />
+                            <Text style={styles.modeloName} numberOfLines={2}>{item.nome}</Text>
+                        </TouchableOpacity>
+                    );
+                  }}
+                  ListEmptyComponent={
+                    loadingInitialExercicios ?
+                    <ActivityIndicator style={{ marginTop: 40 }} size="large" color="#fff" /> :
+                    <Text style={styles.emptyListText}>Nenhum exercício encontrado.</Text>
+                  }
+              />
+
               <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
                   <Text style={styles.closeButtonText}>Fechar</Text>
               </TouchableOpacity>
@@ -325,8 +435,15 @@ export default function EditarTreinoScreen() {
         >
             <View style={styles.centeredView}>
                 <View style={styles.addExercicioModalView}>
-                    <Text style={styles.modalText}>Adicionar {selectedExercicioModelo?.nome}</Text>
-
+                    {selectedExercicioModelo?.imagemUrl && (
+                        <VideoListItem
+                            uri={selectedExercicioModelo.imagemUrl}
+                            style={styles.addExercicioModalVideo}
+                        />
+                    )}
+                    <Text style={styles.modalText}>
+                        {editingExercicioIndex !== null ? 'Editar' : 'Adicionar'} {selectedExercicioModelo?.nome}
+                    </Text>
                     <TextInput
                         style={styles.modalInput}
                         placeholder="Séries"
@@ -349,11 +466,17 @@ export default function EditarTreinoScreen() {
                         onChangeText={setPeso} />
 
                     <View style={styles.modalButtons}>
-                        <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setExercicioModalVisible(false)}>
+                        <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => {
+                            setExercicioModalVisible(false);
+                            // Se estiver adicionando um novo exercício (não editando), reabra o modal de seleção.
+                            if (editingExercicioIndex === null) {
+                                setModalVisible(true);
+                            }
+                        }}>
                             <Text style={styles.textStyle}>Cancelar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExercicio}>
-                            <Text style={styles.textStyle}>Adicionar</Text>
+                            <Text style={styles.textStyle}>{editingExercicioIndex !== null ? 'Salvar' : 'Adicionar'}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -386,7 +509,7 @@ const styles = StyleSheet.create({
   label: { fontSize: 16, color: '#ccc', marginBottom: 10, marginTop: 10 },
   input: { backgroundColor: '#222', color: '#fff', padding: 15, borderRadius: 8, fontSize: 16, marginBottom: 20 },
   diasContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  diaButton: { paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#222', borderRadius: 8 },
+  diaButton: { paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#222', borderRadius: 8 , flexGrow: 1, alignItems: 'center', marginHorizontal: 2},
   diaSelected: { backgroundColor: '#1cb0f6' },
   diaText: { color: '#fff', fontWeight: 'bold' },
   intervaloContainer: {
@@ -470,11 +593,11 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   groupSelector: { marginBottom: 15 },
-  groupButton: { paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#222', borderRadius: 20, marginRight: 10, justifyContent: 'center' },
+  groupButton: { height: 40, paddingHorizontal: 16, backgroundColor: '#222', borderRadius: 20, marginRight: 10, justifyContent: 'center', paddingBottom: 2 },
   groupSelected: { backgroundColor: '#1cb0f6' },
   groupText: { color: '#fff', fontWeight: '500', textAlign: 'center' },
   modeloCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', padding: 10, borderRadius: 8, marginBottom: 10 },
-  modeloImage: { width: 50, height: 50, borderRadius: 5, marginRight: 15, backgroundColor: '#333', resizeMode: 'cover' },
+  modeloVideo: { width: 50, height: 50, borderRadius: 5, marginRight: 15, backgroundColor: '#333' },
   modeloName: { color: '#fff', fontSize: 16, flex: 1, flexWrap: 'wrap' },
   emptyListText: { color: '#aaa', textAlign: 'center', marginTop: 40 },
   closeButton: { backgroundColor: '#ff3b30', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 15, marginBottom: 20 },
@@ -501,6 +624,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 5
+  },
+  addExercicioModalVideo: {
+    width: 100,
+    height: 100,
+    borderRadius: 10,
+    marginBottom: 15,
+    backgroundColor: '#333',
   },
   modalText: {
     marginBottom: 15,

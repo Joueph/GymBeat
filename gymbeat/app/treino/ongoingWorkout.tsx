@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Modal, FlatList } from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Modal, FlatList, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
@@ -24,6 +24,12 @@ export default function OngoingWorkoutScreen() {
   const [isResting, setIsResting] = useState(false);
   const [restTime, setRestTime] = useState(0);
 
+  // State for the exercise edit modal
+  const [isEditExerciseModalVisible, setEditExerciseModalVisible] = useState(false);
+  const [editingSeries, setEditingSeries] = useState('');
+  const [editingReps, setEditingReps] = useState('');
+  const [editingWeight, setEditingWeight] = useState('');
+
   const [isExerciseListVisible, setExerciseListVisible] = useState(false);
 
   // Memoize the max rest time to avoid recalculation
@@ -31,6 +37,20 @@ export default function OngoingWorkoutScreen() {
     if (!treino) return 0;
     return treino.intervalo.min * 60 + treino.intervalo.seg;
   }, [treino]);
+
+  // Open modal to edit current exercise's sets, reps, and weight
+  const handleEdit = useCallback(() => {
+    if (!treino) return;
+    const currentExercise = treino.exercicios[currentExerciseIndex];
+    setEditingSeries(String(currentExercise.series));
+    setEditingReps(currentExercise.repeticoes);
+    setEditingWeight(String(currentExercise.peso || ''));
+    setEditExerciseModalVisible(true);
+  }, [treino, currentExerciseIndex]);
+
+  const handleShowList = useCallback(() => {
+    setExerciseListVisible(true);
+  }, []);
 
   // Fetch workout data when the component mounts
   useEffect(() => {
@@ -123,6 +143,31 @@ export default function OngoingWorkoutScreen() {
     setIsResting(true);
   };
   
+  const handleSaveExerciseChanges = () => {
+    if (!treino) return;
+
+    const seriesNum = parseInt(editingSeries, 10);
+    const weightNum = parseFloat(editingWeight); // parseFloat('') is NaN
+
+    if (isNaN(seriesNum) || !editingReps) {
+      Alert.alert("Erro", "Séries e repetições são obrigatórios.");
+      return;
+    }
+
+    const updatedExercicios = [...treino.exercicios];
+    const exerciseToUpdate = { ...updatedExercicios[currentExerciseIndex] };
+
+    exerciseToUpdate.series = seriesNum;
+    exerciseToUpdate.repeticoes = editingReps;
+    // If weight is not a valid number (e.g., empty string), set it to undefined
+    exerciseToUpdate.peso = isNaN(weightNum) ? undefined : weightNum;
+
+    updatedExercicios[currentExerciseIndex] = exerciseToUpdate;
+
+    setTreino(prevTreino => prevTreino ? { ...prevTreino, exercicios: updatedExercicios } : null);
+    setEditExerciseModalVisible(false);
+  };
+
   // Formats seconds into a MM:SS string
   const formatTime = (seconds: number) => {
     const min = Math.floor(seconds / 60);
@@ -147,6 +192,53 @@ export default function OngoingWorkoutScreen() {
   }
 
   const currentExercise = treino.exercicios[currentExerciseIndex];
+
+  const renderExerciseProgressItem = ({ item, index }: { item: Treino['exercicios'][0], index: number }) => {
+    const isCompleted = index < currentExerciseIndex;
+    const isCurrent = index === currentExerciseIndex;
+    const totalExercises = treino.exercicios.length;
+
+    // The track is composed of two halves to allow for different colors
+    const TopTrack = () => (
+        <View style={{
+            position: 'absolute',
+            top: 0,
+            bottom: '50%',
+            width: 2,
+            backgroundColor: (isCompleted || isCurrent) ? '#1cb0f6' : '#333',
+            opacity: index === 0 ? 0 : 1,
+        }} />
+    );
+
+    const BottomTrack = () => (
+        <View style={{
+            position: 'absolute',
+            top: '50%',
+            bottom: 0,
+            width: 2,
+            backgroundColor: isCompleted ? '#1cb0f6' : '#333',
+            opacity: index === totalExercises - 1 ? 0 : 1,
+        }} />
+    );
+
+    return (
+        <View style={styles.progressListItem}>
+            <View style={styles.timelineContainer}>
+                <TopTrack />
+                <BottomTrack />
+                <View style={[
+                    styles.timelineDot,
+                    isCompleted && styles.completedDot,
+                    isCurrent && styles.currentDot,
+                ]} />
+            </View>
+            <View style={styles.exerciseContent}>
+                <Text style={[styles.modalExerciseName, isCompleted && { textDecorationLine: 'line-through', opacity: 0.7 }]}>{item.modelo.nome}</Text>
+                <Text style={styles.modalExerciseDetails}>{item.series}x {item.repeticoes} {item.peso ? `| ${item.peso}kg` : ''}</Text>
+            </View>
+        </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -178,7 +270,7 @@ export default function OngoingWorkoutScreen() {
         </View>
 
         <View style={styles.actionsContainer}>
-          <TouchableOpacity style={styles.actionButton} onPress={() => router.push(`/treino/editarTreino?fichaId=${fichaId}&treinoId=${treinoId}`)}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleEdit}>
             <FontAwesome name="pencil" size={24} color="#fff" />
             <Text style={styles.actionButtonText}>Editar</Text>
           </TouchableOpacity>
@@ -188,18 +280,19 @@ export default function OngoingWorkoutScreen() {
             <Text style={styles.mainActionButtonText}>Concluir Série</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton} onPress={() => setExerciseListVisible(true)}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleShowList}>
             <FontAwesome name="list-ul" size={24} color="#fff" />
             <Text style={styles.actionButtonText}>Lista</Text>
           </TouchableOpacity>
         </View>
       </View>
-
+      
+      {/* CHANGED: Modal animation type to 'fade' for smoother, more consistent experience */}
       <Modal
         visible={isExerciseListVisible}
         animationType="slide"
-        onRequestClose={() => setExerciseListVisible(false)}
         presentationStyle="pageSheet"
+        onRequestClose={() => setExerciseListVisible(false)}
       >
         <SafeAreaView style={styles.modalSafeArea}>
           <View style={styles.modalHeader}>
@@ -211,22 +304,54 @@ export default function OngoingWorkoutScreen() {
           <FlatList
             data={treino.exercicios}
             keyExtractor={(item, index) => `exercicio-lista-${index}`}
-            renderItem={({ item, index }) => {
-              const isCompleted = index < currentExerciseIndex;
-              const isCurrent = index === currentExerciseIndex;
-              return (
-                <View style={[
-                  styles.modalExerciseItem, 
-                  isCompleted && styles.completedItem,
-                  isCurrent && styles.currentItem
-                ]}>
-                  <Text style={[styles.modalExerciseName, isCompleted && {textDecorationLine: 'line-through'}]}>{item.modelo.nome}</Text>
-                  <Text style={styles.modalExerciseDetails}>{item.series}x {item.repeticoes}</Text>
-                </View>
-              );
-            }}
+            renderItem={renderExerciseProgressItem}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20 }}
           />
         </SafeAreaView>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isEditExerciseModalVisible}
+        onRequestClose={() => setEditExerciseModalVisible(false)}
+      >
+        <View style={styles.centeredView}>
+            <View style={styles.editExerciseModalView}>
+                <Text style={styles.modalText}>
+                    Editar {currentExercise.modelo.nome}
+                </Text>
+                <TextInput
+                    style={styles.modalInput}
+                    placeholder="Séries"
+                    placeholderTextColor="#888"
+                    keyboardType="number-pad"
+                    value={editingSeries}
+                    onChangeText={setEditingSeries} />
+                <TextInput
+                    style={styles.modalInput}
+                    placeholder="Repetições (ex: 8-12)"
+                    placeholderTextColor="#888"
+                    value={editingReps}
+                    onChangeText={setEditingReps} />
+                <TextInput
+                    style={styles.modalInput}
+                    placeholder="Peso (kg, opcional)"
+                    placeholderTextColor="#888"
+                    keyboardType="numeric"
+                    value={editingWeight}
+                    onChangeText={setEditingWeight} />
+
+                <View style={styles.modalButtons}>
+                    <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setEditExerciseModalVisible(false)}>
+                        <Text style={styles.textStyle}>Cancelar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExerciseChanges}>
+                        <Text style={styles.textStyle}>Salvar</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
       </Modal>
     </SafeAreaView>
   );
@@ -238,7 +363,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 10 },
   backButton: {},
   headerTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-  content: { flex: 1, justifyContent: 'space-around', alignItems: 'center', padding: 20 },
+  content: { flex: 1, justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingBottom: 40 },
   exerciseCard: { backgroundColor: '#1a2a33', padding: 20, borderRadius: 15, alignItems: 'center', width: '100%' },
   exerciseName: { color: '#fff', fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
   exerciseDetails: { color: '#ccc', fontSize: 18, marginTop: 4 },
@@ -253,9 +378,97 @@ const styles = StyleSheet.create({
   modalSafeArea: { flex: 1, backgroundColor: '#0d181c' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' },
   modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-  modalExerciseItem: { backgroundColor: '#1a2a33', paddingVertical: 15, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#222' },
-  completedItem: { backgroundColor: '#1a2a33' },
-  currentItem: { borderLeftWidth: 4, borderLeftColor: '#1cb0f6', paddingLeft: 16 },
-  modalExerciseName: { color: '#fff', fontSize: 18 },
+  progressListItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    minHeight: 80,
+  },
+  timelineContainer: {
+    width: 30,
+    alignItems: 'center',
+    alignSelf: 'stretch',
+  },
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#333',
+    position: 'absolute',
+    top: 24,
+  },
+  exerciseContent: {
+    flex: 1,
+    paddingLeft: 10,
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
+  completedDot: {
+    backgroundColor: '#1cb0f6',
+  },
+  currentDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#0d181c',
+    borderWidth: 3,
+    borderColor: '#1cb0f6',
+    top: 21,
+  },
+  modalExerciseName: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   modalExerciseDetails: { color: '#aaa', fontSize: 14, marginTop: 4 },
+  // Edit Exercise Modal Styles
+  centeredView: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  editExerciseModalView: {
+    margin: 20,
+    backgroundColor: "#1a2a33",
+    borderRadius: 20,
+    padding: 35,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 2
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5
+  },
+  modalText: {
+    marginBottom: 15,
+    textAlign: "center",
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold'
+  },
+  modalInput: {
+    backgroundColor: '#222',
+    color: '#fff',
+    padding: 10,
+    borderRadius: 8,
+    fontSize: 16,
+    marginBottom: 15,
+    width: 200,
+    textAlign: 'center'
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginTop: 10,
+  },
+  button: {
+    borderRadius: 10,
+    padding: 10,
+    elevation: 2,
+    flex: 1,
+    marginHorizontal: 5,
+  },
+  buttonClose: { backgroundColor: "#ff3b30" },
+  buttonAdd: { backgroundColor: "#1cb0f6" },
+  textStyle: { color: "white", fontWeight: "bold", textAlign: "center" },
 });

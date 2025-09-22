@@ -1,0 +1,310 @@
+[
+    {
+        "Dias Da Semana": "Seg",
+        "Exercícios - rel": "Supino na máquina , Remada sentado com cabo pegada fechada , Cadeira extensora , Mesa flexora , Rosca Direta Cross , Tríceps pulley corda , Abdominal Sit-up",
+        "Ficha": "TREINO DE CORPO INTEIRO",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Qua",
+        "Exercícios - rel": "Supino Reto , Puxada Alta , Agachamento , Máquina de Adução de Quadril , Máquina de Abdução de Quadril , Rosca Direta com Barra , Tríceps pulley barra , Ab infra",
+        "Ficha": "TREINO DE CORPO INTEIRO",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Sex",
+        "Exercícios - rel": "Supino na máquina , Remada Sentada com Anilhas , Cadeira extensora , Cadeira flexora , Rosca Direta Cross , Tríceps pulley corda , Abdominal Sit-up",
+        "Ficha": "TREINO DE CORPO INTEIRO",
+        "Intervalo": "60",
+        "Nome": "Treino C"
+    },
+    {
+        "Dias Da Semana": "Seg",
+        "Exercícios - rel": "Supino Reto , Puxada Alta , Agachamento , Máquina de Adução de Quadril , Máquina de Abdução de Quadril , Rosca Direta com Barra , Tríceps pulley barra , Ab infra",
+        "Ficha": "TREINO CORPO INTEIRO II",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Qua",
+        "Exercícios - rel": "Supino na máquina , Remada Sentada com Cabo , Cadeira extensora , Mesa flexora , Rosca Direta Cross , Tríceps pulley corda , Abdominal Sit-up",
+        "Ficha": "TREINO CORPO INTEIRO II",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Sex",
+        "Exercícios - rel": "Supino Reto , Puxada Alta , Agachamento , Máquina de Adução de Quadril , Máquina de Abdução de Quadril , Rosca Direta com Barra , Tríceps pulley barra , Ab infra",
+        "Ficha": "TREINO CORPO INTEIRO II",
+        "Intervalo": "60",
+        "Nome": "Treino C"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Supino na máquina , Supino declinada na máquina , Crucifixo Inclinado Cross , Puxada Alta , Remada Sentada com Cabo , Remada sentado com cabo pegada fechada , Rosca direta com barra w , Tríceps pulley corda",
+        "Ficha": "SUPERIOR / INFERIOR AB",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Agachamento , Agachamento Búlgaro com Halteres , Cadeira extensora , Máquina de Adução de Quadril , Máquina de Abdução de Quadril , Afundo com Halteres , Mesa flexora , Abdominal Sit-up",
+        "Ficha": "SUPERIOR / INFERIOR AB",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Flexão de braço , Supino inclinado com barra , Voador na Máquina , Tríceps pulley corda , Tríceps pulley corda , Agachamento , Cadeira extensora , Máquina de Adução de Quadril , Abdominal Oblíquo",
+        "Ficha": "AGONISTA / SINERGISTA AB",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Puxada Alta , Remada Sentada Triângulo Corda , Remada Sentada com Cabo , Rosca martelo , Rosca Inversa com Halteres , Stiff com barra , Mesa flexora , Máquina de Abdução de Quadril , Prancha",
+        "Ficha": "AGONISTA / SINERGISTA AB",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Supino na máquina , Voador na Máquina , Remada Sentada Triângulo Corda , Remada Sentada com Cabo , Rosca direta com barra w , Tríceps pulley corda , Abdominal Sit-up , Ab infra",
+        "Ficha": "SUPERIOR / INFERIOR AB",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Agachamento , Afundo na Máquina Smith , Máquina de Abdução de Quadril , Máquina de Adução de Quadril , Stiff com barra , Mesa flexora , Quatro Apoios",
+        "Ficha": "SUPERIOR / INFERIOR AB",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Supino Reto , Voador na Máquina , Elevação lateral na máquina , Tríceps pulley corda , Agachamento , Cadeira extensora , Máquina de Adução de Quadril , Abdominal Sit-up , Abdominal Oblíquo",
+        "Ficha": "AGONISTA / SINERGISTA AB",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Remada Sentada com Cabo , Remada Sentada Triângulo Corda , Rosca Direta Cross , Stiff com barra , Mesa flexora , Máquina de Abdução de Quadril , Hiperextensão , Prancha",
+        "Ficha": "AGONISTA / SINERGISTA AB",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Supino Reto , Supino inclinado com barra , Crucifixo com halteres , Voador na Máquina , Tríceps pulley corda , Tríceps francês na polia com corda",
+        "Ficha": "6X na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Remada Sentada com Anilhas , Remada Alta com Cabo , Remada Sentada com Corda na Polia , Remada sentado com cabo pegada fechada , Rosca direta com barra w , Rosca scott alternados com halteres",
+        "Ficha": "6X na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Qua , Sab",
+        "Exercícios - rel": "Agachamento , Agachamento Búlgaro com Halteres , Cadeira extensora , Máquina de Adução de Quadril , Stiff com barra , Cadeira flexora , Máquina de Abdução de Quadril",
+        "Ficha": "6X na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino C"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Supino com Halteres , Supino Inclinado com Halteres , Voador na Máquina , Desenvolvimento de ombros , Elevação lateral de braços com cabo , Tríceps Francês com Halteres , Tríceps testa com barra",
+        "Ficha": "6X na semana II",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Puxada Alta Invertida , Puxada Alta com Triângulo , Serrote , Voador invertido , Rosca scott com halteres , Rosca martelo com corda",
+        "Ficha": "6X na semana II",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Qua , Sab",
+        "Exercícios - rel": "Leg Press , Afundo na Máquina Smith , Cadeira extensora , Máquina de Adução de Quadril , Máquina de Abdução de Quadril , Mesa flexora , Elevação de Panturrilha no Leg Press",
+        "Ficha": "6X na semana II",
+        "Intervalo": "60",
+        "Nome": "Treino C"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Agachamento , Afundo na Máquina Smith , Cadeira extensora , Leg Press , Máquina de Adução de Quadril",
+        "Ficha": "6x na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Supino com Halteres , Voador na Máquina , Tríceps pulley corda , Puxada Alta com Triângulo , Serrote , Rosca direta com barra w",
+        "Ficha": "6x na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Qua , Sab",
+        "Exercícios - rel": "Levantamento Terra , Stiff com barra , Mesa flexora , Máquina de Abdução de Quadril , Hiperextensão",
+        "Ficha": "6x na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino C"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Agachamento , Afundo na Máquina Smith , Afundo com Halteres , Cadeira extensora , Leg Press , Máquina de Adução de Quadril",
+        "Ficha": "6x na semana II",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Supino com Halteres , Voador na Máquina , Tríceps testa com barra , Puxada Alta , Remada Sentada Triângulo Corda , Rosca direta com barra w",
+        "Ficha": "6x na semana II",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Qua , Sab",
+        "Exercícios - rel": "Agachamento Sumô com Barra , Quatro Apoios , Glúteos na Polia Baixa , Abdução de quadril com cabo , Elevação Pélvica Com Barra",
+        "Ficha": "6x na semana II",
+        "Intervalo": "60",
+        "Nome": "Treino C"
+    },
+    {
+        "Dias Da Semana": "Seg",
+        "Exercícios - rel": "Supino Reto , Supino inclinado com barra , Supino com barra declinado , Cross over polia baixa , Voador na Máquina , Tríceps testa com barra , Tríceps francês unilateral no cabo , Tríceps pulley corda",
+        "Ficha": "4x na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter",
+        "Exercícios - rel": "Puxada Alta , Puxada Alta com Triângulo , Pulldown com corda , Remada Curvada com Pegada Invertida na Barra , Remada T invertida com alavanca , Rosca scott com halteres , Rosca Banco Inclinado , Rosca martelo com corda",
+        "Ficha": "4x na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Qui",
+        "Exercícios - rel": "Agachamento , Leg Press , Cadeira extensora , Afundo com Halteres , Stiff com barra , Mesa flexora , Elevação de Panturrilha Sentado com Peso , Panturrilha em Pé no Smith",
+        "Ficha": "4x na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino C"
+    },
+    {
+        "Dias Da Semana": "Sex",
+        "Exercícios - rel": "Desenvolvimento Arnold , Elevação lateral de halteres inclinada , Elevação lateral com halteres , Crucifixo invertido no banco inclinado , Encolhimento com Halteres , Rosca de Punho Reversa com Barra , Rosca de punho com barra",
+        "Ficha": "4x na semana I",
+        "Intervalo": "60",
+        "Nome": "Treino D"
+    },
+    {
+        "Dias Da Semana": "Seg , Qui",
+        "Exercícios - rel": "Supino na máquina , Supino declinada na máquina , Crucifixo Inclinado Cross , Puxada Alta , Remada Sentada com Cabo , Remada sentado com cabo pegada fechada , Rosca direta com barra w , Tríceps pulley corda",
+        "Ficha": "SUPERIOR / INFERIOR AB",
+        "Intervalo": "60",
+        "Nome": "Treino A"
+    },
+    {
+        "Dias Da Semana": "Ter , Sex",
+        "Exercícios - rel": "Agachamento , Agachamento Búlgaro com Halteres , Cadeira extensora , Máquina de Adução de Quadril , Máquina de Abdução de Quadril , Afundo com Halteres , Mesa flexora , Abdominal Sit-up",
+        "Ficha": "SUPERIOR / INFERIOR AB",
+        "Intervalo": "60",
+        "Nome": "Treino B"
+    },
+    {
+        "Dias Da Semana": "Seg",
+        "Exercícios - rel": "Supino com Halteres , Supino Inclinado com Halteres , Cross over polia Alta , Crucifixo com halteres , Crucifixo com Halteres Inclinado , Tríceps pulley corda , Tríceps testa com barra , Tríceps Coice com Cabo",
+        "Ficha": "4x na semana II",
+        "Intervalo": "60",
+        "Nome": "Peito & Tríceps"
+    },
+    {
+        "Dias Da Semana": "Ter",
+        "Exercícios - rel": "Barra fixa , Remada Sentada Triângulo Corda , Remada Curvada no Smith , Serrote , Remada Sentada com Cabo , Rosca direta com barra w , Rosca scott com halteres , Rosca concentrada",
+        "Ficha": "4x na semana II",
+        "Intervalo": "60",
+        "Nome": "Costas & Bíceps"
+    },
+    {
+        "Dias Da Semana": "Qui",
+        "Exercícios - rel": "Agachamento , Afundo com Halteres , Cadeira extensora , Stiff com barra , Mesa flexora , Leg Press , Elevação de Panturrilha no Leg Press horizontal , Elevação de Panturrilha no Smith",
+        "Ficha": "4x na semana II",
+        "Intervalo": "60",
+        "Nome": "Coxas & Panturrilhas"
+    },
+    {
+        "Dias Da Semana": "Sex",
+        "Exercícios - rel": "Desenvolvimento militar com barra , Elevação frontal com halteres , Elevação lateral com halteres , Crucifixo inverso unilateral com cabo , Giro Russo , Elevação de pernas suspensa , Rosca de punho com barra , Suspensão na barra",
+        "Ficha": "4x na semana II",
+        "Intervalo": "60",
+        "Nome": "Ombros, abdômen & antebraço"
+    },
+    {
+        "Dias Da Semana": "Seg",
+        "Exercícios - rel": "Agachamento , Leg Press , Agachamento Búlgaro com Barra , Afundo na Máquina Smith , Cadeira extensora , Elevação de Panturrilha Sentado com Barra , Elevação de Panturrilha no Smith",
+        "Ficha": "F - 4 dias na semana I",
+        "Intervalo": "60",
+        "Nome": "Anterior de pernas & Panturrilhas"
+    },
+    {
+        "Dias Da Semana": "Ter",
+        "Exercícios - rel": "Levantamento Terra , Stiff com barra , Mesa flexora , Máquina de Abdução de Quadril , Elevação Pélvica na Máquina de Extensão de Pernas , Hiperextensão , Abdominal Sit-up , Ab infra",
+        "Ficha": "F - 4 dias na semana I",
+        "Intervalo": "60",
+        "Nome": "Posterior de pernas & Abdômen"
+    },
+    {
+        "Dias Da Semana": "Qui",
+        "Exercícios - rel": "Supino com Halteres , Crucifixo com halteres , Puxada Alta , Remada Curvada com Barra , Rosca Inversa com Halteres , Rosca martelo com corda , Tríceps Francês com Halteres , Tríceps no Banco",
+        "Ficha": "F - 4 dias na semana I",
+        "Intervalo": "60",
+        "Nome": "Membros Superiores"
+    },
+    {
+        "Dias Da Semana": "Sex",
+        "Exercícios - rel": "Agachamento Sumô com Barra , Levantamento Terra , Glúteos na Polia Baixa , Quatro Apoios , Elevação Pélvica Com Barra , Elevação de Panturrilha Sentado com Alavanca , Elevação de Panturrilha no Smith , Abdominal Sit-up",
+        "Ficha": "F - 4 dias na semana I",
+        "Intervalo": "60",
+        "Nome": "Glúteos, panturrilha &abdômen"
+    },
+    {
+        "Dias Da Semana": "Seg",
+        "Exercícios - rel": "Puxada Alta , Remada curvada com halteres , Remada Sentada Triângulo Corda , Voador invertido , Encolhimento com Cabo , Tríceps pulley corda , Tríceps Coice com Halteres",
+        "Ficha": "F - 4 dias na semana II",
+        "Intervalo": "60",
+        "Nome": "Membro superior posterior"
+    },
+    {
+        "Dias Da Semana": "Ter",
+        "Exercícios - rel": "Agachamento , Leg Press , Agachamento Búlgaro com Barra , Agachamento Frontal com haltere , Cadeira extensora , Abdominal Sit-up , Ab infra",
+        "Ficha": "F - 4 dias na semana II",
+        "Intervalo": "60",
+        "Nome": "Anterior de pernas & abdômen"
+    },
+    {
+        "Dias Da Semana": "Qui",
+        "Exercícios - rel": "Supino Reto , Crucifixo com halteres , Voador na Máquina , Rosca direta com barra w , Rosca Direta Cross , Desenvolvimento de ombros , Elevação lateral com halteres",
+        "Ficha": "F - 4 dias na semana II",
+        "Intervalo": "60",
+        "Nome": "Membro superior anterior"
+    },
+    {
+        "Dias Da Semana": "Sex",
+        "Exercícios - rel": "Levantamento Terra , Stiff com barra , Cadeira flexora , Elevação Pélvica Na Máquina , Hiperextensão , Elevação de Panturrilha no Leg Press horizontal , Elevação de Panturrilha no Smith",
+        "Ficha": "F - 4 dias na semana II",
+        "Intervalo": "60",
+        "Nome": "Posterior de pernas & panturrilha"
+    }
+]

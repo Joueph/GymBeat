@@ -1,0 +1,114 @@
+[
+    {
+        "Dificuldade": "Iniciante",
+        "Gênero da ficha": "",
+        "Nome": "TREINO DE CORPO INTEIRO",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B , Treino C"
+    },
+    {
+        "Dificuldade": "Iniciante",
+        "Gênero da ficha": "",
+        "Nome": "TREINO CORPO INTEIRO II",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B , Treino C"
+    },
+    {
+        "Dificuldade": "Iniciante",
+        "Gênero da ficha": "Homem",
+        "Nome": "SUPERIOR / INFERIOR AB",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B"
+    },
+    {
+        "Dificuldade": "Iniciante",
+        "Gênero da ficha": "Homem",
+        "Nome": "AGONISTA / SINERGISTA AB",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B"
+    },
+    {
+        "Dificuldade": "Iniciante",
+        "Gênero da ficha": "Mulher",
+        "Nome": "SUPERIOR / INFERIOR AB",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B"
+    },
+    {
+        "Dificuldade": "Iniciante",
+        "Gênero da ficha": "Mulher",
+        "Nome": "AGONISTA / SINERGISTA AB",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B"
+    },
+    {
+        "Dificuldade": "Iniciante , Intermediário",
+        "Gênero da ficha": "Homem",
+        "Nome": "6X na semana I",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B , Treino C"
+    },
+    {
+        "Dificuldade": "Iniciante , Intermediário",
+        "Gênero da ficha": "Homem",
+        "Nome": "6X na semana II",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B , Treino C"
+    },
+    {
+        "Dificuldade": "Iniciante , Intermediário",
+        "Gênero da ficha": "Mulher",
+        "Nome": "6x na semana I",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B , Treino C"
+    },
+    {
+        "Dificuldade": "Iniciante , Intermediário",
+        "Gênero da ficha": "Mulher",
+        "Nome": "6x na semana II",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B , Treino C"
+    },
+    {
+        "Dificuldade": "Intermediário",
+        "Gênero da ficha": "Homem",
+        "Nome": "4x na semana I",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Treino A , Treino B , Treino C , Treino D"
+    },
+    {
+        "Dificuldade": "Intermediário",
+        "Gênero da ficha": "Homem",
+        "Nome": "4x na semana II",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Peito & Tríceps , Costas & Bíceps , Coxas & Panturrilhas , Ombros, abdômen & antebraço"
+    },
+    {
+        "Dificuldade": "Intermediário",
+        "Gênero da ficha": "Mulher",
+        "Nome": "F - 4 dias na semana I",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Anterior de pernas & Panturrilhas , Posterior de pernas & Abdômen , Membros Superiores , Glúteos, panturrilha &abdômen"
+    },
+    {
+        "Dificuldade": "Intermediário",
+        "Gênero da ficha": "Mulher",
+        "Nome": "F - 4 dias na semana II",
+        "Tempo para expiração": "2",
+        "Tipo de Ficha": "Criado pela GymBeat",
+        "Treinos": "Membro superior posterior , Anterior de pernas & abdômen , Membro superior anterior , Posterior de pernas & panturrilha"
+    }
+]

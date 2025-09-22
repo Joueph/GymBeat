@@ -46,19 +46,26 @@ async function uploadExercicios() {
       for (const file of files) {
         const fileExtension = path.extname(file).toLowerCase();
         
-        // Verifica se o arquivo é .webm OU .mp4
-        if (fileExtension === '.webm' || fileExtension === '.mp4') {
+        // Verifica se o arquivo é .webm, .mp4 ou .webp
+        if (['.webm', '.mp4', '.webp'].includes(fileExtension)) {
           filesProcessed++;
           const filePath = path.join(groupFolderPath, file);
           const exerciseName = path.basename(file, fileExtension).replace(/L /g, '');
           const muscleGroup = groupFolder;
 
           console.log(`  -> Processando: "${exerciseName}" (${muscleGroup})`);
-          
-          // Define o tipo de conteúdo com base na extensão
-          const contentType = fileExtension === '.webm' ? 'video/webm' : 'video/mp4';
 
-          // 1. Upload do vídeo para o Firebase Storage
+          // Define o tipo de conteúdo com base na extensão
+          let contentType;
+          if (fileExtension === '.webm') {
+            contentType = 'video/webm';
+          } else if (fileExtension === '.mp4') {
+            contentType = 'video/mp4';
+          } else { // .webp
+            contentType = 'image/webp';
+          }
+
+          // 1. Upload do arquivo para o Firebase Storage
           const destination = `exercicios/${muscleGroup}/${file}`;
           await bucket.upload(filePath, {
             destination: destination,
@@ -84,7 +91,7 @@ async function uploadExercicios() {
         }
       }
       if (filesProcessed === 0) {
-        console.warn(`  ⚠️ AVISO: Nenhum arquivo .webm ou .mp4 encontrado na pasta "${groupFolder}".`);
+        console.warn(`  ⚠️ AVISO: Nenhum arquivo .webm, .mp4 ou .webp encontrado na pasta "${groupFolder}".`);
       }
     }
     console.log('\n🎉 Processo finalizado!');

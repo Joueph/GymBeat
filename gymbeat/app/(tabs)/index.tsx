@@ -1,6 +1,6 @@
 // joueph/gymbeat/GymBeat-Android/gymbeat/app/(tabs)/index.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, Pressable, ActivityIndicator, Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { FontAwesome } from '@expo/vector-icons';
@@ -14,7 +14,17 @@ import { Treino } from '../../models/treino';
 import { Log } from '../../models/log';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+
+// Helper para converter Timestamps do Firestore e outros formatos para um objeto Date.
+const toDate = (date: any): Date | null => {
+  if (!date) return null;
+  // Se for um objeto Timestamp do Firestore, use o método toDate()
+  if (typeof date.toDate === 'function') return date.toDate();
+  // Tenta criar uma data a partir do valor (pode ser string, número ou já um Date)
+  const d = new Date(date);
+  return isNaN(d.getTime()) ? null : d;
+};
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -26,51 +36,55 @@ export default function HomeScreen() {
   const [profile, setProfile] = useState<Usuario | null>(null);
   const [isModalVisible, setModalVisible] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (user) {
-        try {
-          // Fetch logs, treinos, and friends in parallel
-          const [userLogs, userTreinos, userProfile] = await Promise.all([
-            getLogsByUsuarioId(user.uid),
-            getTreinosByUsuarioId(user.uid),
-            getUserProfile(user.uid),
-          ]);
-
-          setLogs(userLogs);
-          setTreinos(userTreinos);
-          setProfile(userProfile);
-
-          if (userProfile && userProfile.amizades) {
-            const friendsData = await Promise.all(
-              userProfile.amizades.map(async (friendId) => {
-                const friendProfile = await getUserProfile(friendId);
-                // Check for mutual friendship
-                if (friendProfile && friendProfile.amizades?.includes(user.uid)) {
-                   // Check if friend has trained today based on the 'lastTrained' field
-                  const today = new Date().toDateString();
-                  let hasTrainedToday = false;
-                  if (friendProfile.lastTrained) {
-                    const lastTrainedDate = (friendProfile.lastTrained as any).toDate ? (friendProfile.lastTrained as any).toDate() : new Date(friendProfile.lastTrained);
-                    hasTrainedToday = lastTrainedDate.toDateString() === today;
+  useFocusEffect(
+    useCallback(() => {
+      const fetchData = async () => {
+        if (user) {
+          setLoading(true);
+          try {
+            // Fetch logs, treinos, and friends in parallel
+            const [userLogs, userTreinos, userProfile] = await Promise.all([
+              getLogsByUsuarioId(user.uid),
+              getTreinosByUsuarioId(user.uid),
+              getUserProfile(user.uid),
+            ]);
+  
+            setLogs(userLogs);
+            setTreinos(userTreinos);
+            setProfile(userProfile);
+  
+            if (userProfile && userProfile.amizades) {
+              const friendsData = await Promise.all(
+                userProfile.amizades.map(async (friendId) => {
+                  const friendProfile = await getUserProfile(friendId);
+                  // Check for mutual friendship
+                  if (friendProfile && friendProfile.amizades?.includes(user.uid)) {
+                     // Check if friend has trained today based on the 'lastTrained' field
+                    const today = new Date().toDateString();
+                    let hasTrainedToday = false;
+                    if (friendProfile.lastTrained) {
+                      const lastTrainedDate = toDate(friendProfile.lastTrained);
+                      if (lastTrainedDate) {
+                        hasTrainedToday = lastTrainedDate.toDateString() === today;
+                      }
+                    }
+                    return { ...friendProfile, hasTrainedToday: hasTrainedToday };
                   }
-                  return { ...friendProfile, hasTrainedToday: hasTrainedToday };
-                }
-                return null;
-              })
-            );
-            setFriends(friendsData.filter(Boolean) as (Usuario & { hasTrainedToday: boolean })[]);
+                  return null;
+                })
+              );
+              setFriends(friendsData.filter(Boolean) as (Usuario & { hasTrainedToday: boolean })[]);
+            }
+          } catch (error) {
+            console.error("Erro ao buscar dados:", error);
+          } finally {
+            setLoading(false);
           }
-        } catch (error) {
-          console.error("Erro ao buscar dados:", error);
-        } finally {
-          setLoading(false);
         }
-      }
-    };
-
-    fetchData();
-  }, [user]);
+      };
+      fetchData();
+    }, [user])
+  );
 
   const [waveAnimation] = useState(new Animated.Value(0));
 
@@ -119,13 +133,13 @@ export default function HomeScreen() {
     const today = new Date();
     const currentDay = today.getDay();
  
-    const loggedDays = new Set(logs.map(log => {
-      // Firestore Timestamps precisam ser convertidos para Datas JS
-      const logDate = log.horarioFim && typeof (log.horarioFim as any).toDate === 'function'
-        ? (log.horarioFim as any).toDate()
-        : new Date(log.horarioFim as any);
-      return logDate.toDateString();
-    }));
+    const loggedDays = new Set(
+      logs.map(log => {
+        const logDate = toDate(log.horarioFim);
+        return logDate ? logDate.toDateString() : null;
+      })
+      .filter((d): d is string => d !== null)
+    );
 
     return (
       <View style={styles.calendarContainer}>

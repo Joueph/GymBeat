@@ -5,8 +5,8 @@ const path = require('path');
 // --- CONFIGURAÇÃO ---
 // 1. Coloque o caminho para o seu arquivo de chave de conta de serviço
 const serviceAccount = require('./serviceAccountKey.json');
-// 2. Coloque o caminho para a pasta que contém os arquivos JSON das fichas
-const fichasJsonPath = path.join(__dirname, 'fichas_modelos'); // Pasta para colocar os JSONs
+// 2. Coloque o caminho para o seu arquivo JSON de fichas
+const fichasJsonPath = path.join(__dirname, 'fichas_com_treinos.json'); // Arquivo JSON com as fichas
 
 // --- INICIALIZAÇÃO DO FIREBASE ---
 admin.initializeApp({
@@ -14,17 +14,6 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
-
-// Mapeamento dos dias da semana do JSON para o formato do app ('seg', 'ter', etc.)
-const dayMapping = {
-    'segunda': 'seg',
-    'terça': 'ter',
-    'quarta': 'qua',
-    'quinta': 'qui',
-    'sexta': 'sex',
-    'sábado': 'sab',
-    'domingo': 'dom',
-};
 
 /**
  * Busca todos os exercícios modelo do Firestore e os retorna em um Map
@@ -37,7 +26,8 @@ async function fetchAllExerciciosModelos() {
     const exerciciosModelosMap = new Map();
     const snapshot = await db.collection('exerciciosModelos').get();
     snapshot.forEach(doc => {
-        const normalizedName = doc.data().nome.trim();
+        // Normaliza o nome para minúsculas para busca case-insensitive
+        const normalizedName = doc.data().nome.trim().toLowerCase();
         exerciciosModelosMap.set(normalizedName, { id: doc.id, ...doc.data() });
     });
     console.log(`✅ ${exerciciosModelosMap.size} exercícios modelo carregados na memória.`);
@@ -45,12 +35,11 @@ async function fetchAllExerciciosModelos() {
 }
 
 /**
- * Processa e faz o upload de fichas de treino a partir de arquivos JSON.
+ * Processa e faz o upload de fichas de treino a partir de um arquivo JSON.
  */
 async function uploadFichas() {
     if (!fs.existsSync(fichasJsonPath)) {
-        console.error(`❌ ERRO: A pasta de fichas JSON não foi encontrada em: ${fichasJsonPath}`);
-        console.log('Crie a pasta e coloque seus arquivos .json de ficha de treino dentro dela.');
+        console.error(`❌ ERRO: O arquivo de fichas JSON não foi encontrado em: ${fichasJsonPath}`);
         return;
     }
 
@@ -58,90 +47,95 @@ async function uploadFichas() {
     const exerciciosModelosMap = await fetchAllExerciciosModelos();
 
     try {
-        const jsonFiles = fs.readdirSync(fichasJsonPath).filter(file => path.extname(file).toLowerCase() === '.json');
+        const fileContent = fs.readFileSync(fichasJsonPath, 'utf-8');
+        const fichasArray = JSON.parse(fileContent);
 
-        if (jsonFiles.length === 0) {
-            console.warn(`⚠️ AVISO: Nenhum arquivo .json encontrado na pasta "${fichasJsonPath}".`);
+        if (!Array.isArray(fichasArray) || fichasArray.length === 0) {
+            console.warn(`⚠️ AVISO: Nenhum dado de ficha encontrado ou o formato é inválido em "${path.basename(fichasJsonPath)}". O arquivo deve conter um array de fichas.`);
             return;
         }
 
-        console.log(`\nIniciando processamento de ${jsonFiles.length} arquivo(s) JSON...`);
+        console.log(`\nIniciando processamento de ${fichasArray.length} ficha(s) do arquivo JSON...`);
 
-        for (const jsonFile of jsonFiles) {
-            const filePath = path.join(fichasJsonPath, jsonFile);
-            const fileContent = fs.readFileSync(filePath, 'utf-8');
-            const fichaData = JSON.parse(fileContent);
-
-            const fichaKey = Object.keys(fichaData)[0];
-            const fichaContent = fichaData[fichaKey];
-            
-            console.log(`\n--- Processando Ficha: "${fichaKey}" ---`);
+        for (const fichaData of fichasArray) {
+            console.log(`\n--- Processando Ficha: "${fichaData.Nome}" ---`);
 
             // 1. Criar o documento da Ficha Modelo com seus metadados
             const fichaMetadata = {
-                nome: fichaContent.nome || fichaKey.replace(/_/g, ' '), // Usa o nome do JSON ou a chave do arquivo
-                nivel: fichaContent.nivel || 'N/A',
-                sexo: fichaContent.sexo || 'N/A',
-                dificuldade: fichaContent.dificuldade || 'N/A',
-                tipo_plano: fichaContent.tipo_plano || 'free',
-                tempo_ficha: fichaContent.tempo_ficha || 'N/A',
+                nome: fichaData.Nome,
+                dificuldade: fichaData.Dificuldade,
+                sexo: fichaData['Gênero da ficha'] || 'Ambos',
+                tempo_ficha: fichaData['Tempo para expiração'] || '2',
+                tipo: fichaData['Tipo de Ficha'] || 'Criado pela GymBeat',
             };
 
             const fichaDocRef = await db.collection('fichasModelos').add(fichaMetadata);
             console.log(`✅ Ficha "${fichaMetadata.nome}" criada com ID: ${fichaDocRef.id}`);
 
-            // 2. Iterar sobre os treinos (ex: "Treino AB", "Treino AB2")
-            const treinoKeys = Object.keys(fichaContent).filter(k => typeof fichaContent[k] === 'object' && !['nivel', 'sexo', 'dificuldade', 'tipo_plano', 'tempo_ficha'].includes(k));
+            // 2. Iterar sobre os treinos da ficha
+            if (!fichaData.Treinos || !Array.isArray(fichaData.Treinos)) {
+                console.warn(`  ⚠️ AVISO: Ficha "${fichaData.Nome}" não contém treinos ou o formato está incorreto. Pulando treinos.`);
+                continue;
+            }
 
-            for (const treinoKey of treinoKeys) {
-                const treinoContent = fichaContent[treinoKey];
+            const treinoIds = [];
 
-                // 3. Iterar sobre os dias (ex: "segunda", "quarta")
-                // Cada dia será um documento de 'treino' separado na subcoleção da ficha
-                for (const diaKey of Object.keys(treinoContent)) {
-                    const mappedDay = dayMapping[diaKey.toLowerCase()];
-                    if (!mappedDay) {
-                        console.warn(`  ⚠️ Dia "${diaKey}" ignorado (mapeamento não encontrado).`);
-                        continue;
-                    }
+            for (const treinoData of fichaData.Treinos) {
+                console.log(`  -> Preparando Treino: "${treinoData.Nome}"`);
 
-                    const treinoNome = `${treinoKey} (${diaKey})`;
-                    console.log(`  -> Preparando Treino: "${treinoNome}"`);
+                // 3. Mapear dias da semana
+                const diasSemana = treinoData['Dias Da Semana']
+                    .split(',')
+                    .map(d => d.trim().toLowerCase())
+                    .filter(d => d); // Filtra strings vazias
 
-                    const exerciciosDoDia = treinoContent[diaKey];
-                    const exerciciosParaFirestore = [];
+                if (diasSemana.length === 0) {
+                    console.warn(`     ⚠️ Treino "${treinoData.Nome}" não tem dias da semana definidos. Pulando.`);
+                    continue;
+                }
 
-                    // 4. Processar cada exercício daquele dia
-                    for (const exercicioJson of exerciciosDoDia) {
-                        const nomeExercicio = exercicioJson['EXERCÍCIO'].trim();
-                        const modelo = exerciciosModelosMap.get(nomeExercicio);
+                // 4. Processar cada exercício do treino
+                const exerciciosParaFirestore = [];
+                for (const nomeExercicio of treinoData.Exercícios) {
+                    const trimmedName = nomeExercicio.trim();
+                    const modelo = exerciciosModelosMap.get(trimmedName.toLowerCase());
 
-                        if (modelo) {
-                            exerciciosParaFirestore.push({
-                                modelo: modelo,
-                                modeloId: modelo.id,
-                                series: parseInt(exercicioJson['SÉRIES'], 10) || 3,
-                                repeticoes: exercicioJson['REPETIÇÕES'] || '10-12',
-                                carga: exercicioJson['CARGA'] || 'N/A', // Preserva o campo 'CARGA' do JSON
-                                peso: 0, // Padrão do app
-                            });
-                        } else {
-                            console.warn(`     ❌ Exercício "${nomeExercicio}" não encontrado no banco de dados e será ignorado.`);
-                        }
-                    }
-
-                    if (exerciciosParaFirestore.length > 0) {
-                        // 5. Criar o documento do Treino na subcoleção da Ficha
-                        await fichaDocRef.collection('treinos').add({
-                            nome: treinoNome,
-                            diasSemana: [mappedDay],
-                            intervalo: { min: 1, seg: 30 }, // Intervalo padrão
-                            exercicios: exerciciosParaFirestore,
+                    if (modelo) {
+                        exerciciosParaFirestore.push({
+                            modelo: modelo,
+                            modeloId: modelo.id,
+                            series: 3, // Valor padrão
+                            repeticoes: '10-12', // Valor padrão
+                            carga: 'N/A', // Valor padrão
+                            peso: 0, // Padrão do app
                         });
-                        console.log(`     ✅ Treino "${treinoNome}" com ${exerciciosParaFirestore.length} exercícios adicionado à ficha.`);
+                    } else {
+                        console.warn(`     ❌ Exercício "${trimmedName}" não encontrado no banco de dados e será ignorado.`);
                     }
                 }
+
+                if (exerciciosParaFirestore.length > 0) {
+                    // 5. Criar o documento do Treino na coleção raiz 'treinosModelos'
+                    const intervaloSeg = parseInt(treinoData.Intervalo, 10) || 60;
+                    const treinoDocRef = await db.collection('treinosModelos').add({
+                        nome: treinoData.Nome,
+                        diasSemana: diasSemana,
+                        intervalo: {
+                            min: Math.floor(intervaloSeg / 60),
+                            seg: intervaloSeg % 60
+                        },
+                        exercicios: exerciciosParaFirestore,
+                    });
+                    treinoIds.push(treinoDocRef.id);
+                    console.log(`     ✅ Treino Modelo "${treinoData.Nome}" criado com ID: ${treinoDocRef.id}.`);
+                } else {
+                    console.log(`     ℹ️ Treino "${treinoData.Nome}" não continha exercícios válidos e não foi adicionado.`);
+                }
             }
+
+            // 6. Atualizar a ficha modelo com os IDs dos treinos
+            await fichaDocRef.update({ treinos: treinoIds });
+            console.log(`  -> ✅ Ficha atualizada com ${treinoIds.length} referência(s) de treino.`);
         }
         console.log('\n🎉 Processo de upload de fichas finalizado com sucesso!');
     } catch (error) {

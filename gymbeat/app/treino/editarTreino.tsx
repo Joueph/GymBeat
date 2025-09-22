@@ -11,8 +11,18 @@ import { getTreinoById, addTreinoToFicha, updateTreino } from '../../services/tr
 import { getExerciciosModelos } from '../../services/exercicioService';
 import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import { Treino, DiaSemana } from '../../models/treino';
-import { Exercicio, ExercicioModelo } from '../../models/exercicio';
+
+// NOTE: The Exercicio model needs to be updated to support per-set data.
+// The 'series: number', 'repeticoes: string', and 'peso: number' should be replaced with 'series: Serie[]'
+import { Exercicio, ExercicioModelo, Serie } from '../../models/exercicio'; // Keep this line as is
 import { DocumentSnapshot } from 'firebase/firestore'; // Import DocumentSnapshot
+
+// This interface should be in your `models/exercicio.ts` file
+// export interface Serie {
+//   id: string; // Unique ID for keys in draggable list
+//   repeticoes: string;
+//   peso?: number;
+// }
 
 const DIAS_SEMANA: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
 // const EXERCICIOS_CACHE_KEY = 'exerciciosModelosCache'; // Removed for pagination
@@ -74,10 +84,8 @@ export default function EditarTreinoScreen() {
   const [isExercicioModalVisible, setExercicioModalVisible] = useState(false);
   const [selectedExercicioModelo, setSelectedExercicioModelo] = useState<ExercicioModelo | null>(null);
   const [editingExercicioIndex, setEditingExercicioIndex] = useState<number | null>(null);
-  const [series, setSeries] = useState('');
-  const [repeticoes, setRepeticoes] = useState('');
-  const [peso, setPeso] = useState('');
-
+  // New state to manage the list of sets for an exercise
+  const [sets, setSets] = useState<Partial<Serie>[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [currentSearchInput, setCurrentSearchInput] = useState(''); // What the user types
@@ -210,24 +218,25 @@ export default function EditarTreinoScreen() {
     setSelectedGroup(null);
     setExerciciosModelos([]);
     setLastVisibleDoc(null);
-    setSeries('');
-    setRepeticoes('');
-    setPeso('');
+    // Initialize with one default set when adding a new exercise
+    setSets([{ id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10 }]);
     setExercicioModalVisible(true);
   };
 
   const handleSaveExercicio = () => {
-    if (!selectedExercicioModelo || !series || !repeticoes) {
-      Alert.alert("Erro", "Séries e repetições são obrigatórios.");
+    if (!selectedExercicioModelo || sets.length === 0 || sets.some(s => !s.repeticoes)) {
+      Alert.alert("Erro", "O exercício deve ter pelo menos uma série e todas as séries devem ter repetições definidas.");
       return;
     }
 
     const novoExercicio: Exercicio = {
       modelo: selectedExercicioModelo,
       modeloId: selectedExercicioModelo.id,
-      series: parseInt(series, 10),
-      repeticoes: repeticoes,
-      peso: peso ? parseFloat(peso) : 0,
+      series: sets.map((s, index) => ({
+        id: s.id || `set-${Date.now()}-${index}`,
+        repeticoes: s.repeticoes || '',
+        peso: s.peso || 0,
+      })),
     };
 
     if (editingExercicioIndex !== null) {
@@ -243,9 +252,7 @@ export default function EditarTreinoScreen() {
     setExercicioModalVisible(false);
     setSelectedExercicioModelo(null);
     setEditingExercicioIndex(null);
-    setSeries('');
-    setRepeticoes('');
-    setPeso('');
+    setSets([]);
   };
 
   const removeExercicio = (index: number) => {
@@ -263,12 +270,28 @@ export default function EditarTreinoScreen() {
     setAllExerciciosLoaded(false);
 
     setSelectedExercicioModelo(exercicio.modelo);
-    setSeries(String(exercicio.series));
-    setRepeticoes(exercicio.repeticoes);
-    setPeso(String(exercicio.peso || ''));
+    // @ts-ignore - Assuming old and new structures might coexist during transition
+    if (exercicio.series && typeof exercicio.series !== 'number') {
+      // New structure
+      setSets(exercicio.series);
+    } else {
+      // Old structure: convert to new structure for editing
+      const numberOfSets = (exercicio as any).series || 1;
+      const newSets = Array.from({ length: numberOfSets }, (_, i) => ({
+        id: `set-${Date.now()}-${i}`,
+        repeticoes: (exercicio as any).repeticoes || '8-12',
+        peso: (exercicio as any).peso || 0,
+      }));
+      setSets(newSets);
+    }
     setEditingExercicioIndex(index);
     setExercicioModalVisible(true);
   };
+
+  const totalSets = useMemo(() => {
+    // @ts-ignore
+    return (item: Exercicio) => (item.series && typeof item.series !== 'number') ? item.series.length : item.series;
+  }, []);
 
   const filteredExercicios = useMemo(() => { // Filtered exercises now only filters by group, as search is handled by the backend
     return exerciciosModelos.filter(ex => selectedGroup ? ex.grupoMuscular === selectedGroup : true);
@@ -326,7 +349,7 @@ export default function EditarTreinoScreen() {
         >
           <View style={{flex: 1}}>
               <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
-              <Text style={styles.exercicioDetails}>{item.series}x {item.repeticoes} {item.peso ? `| ${item.peso}kg` : ''}</Text>
+              <Text style={styles.exercicioDetails}>{totalSets(item)} séries</Text>
           </View>
           <FontAwesome name="bars" size={20} color="#666" style={{ marginLeft: 15 }} />
         </TouchableOpacity>
@@ -488,30 +511,60 @@ export default function EditarTreinoScreen() {
                     <Text style={styles.modalText}>
                         {editingExercicioIndex !== null ? 'Editar' : 'Adicionar'} {selectedExercicioModelo?.nome}
                     </Text>
-                    <TextInput
-                        style={styles.modalInput}
-                        placeholder="Séries"
-                        placeholderTextColor="#888"
-                        keyboardType="number-pad"
-                        value={series}
-                        onChangeText={setSeries} />
-                    <TextInput
-                        style={styles.modalInput}
-                        placeholder="Repetições (ex: 8-12)"
-                        placeholderTextColor="#888"
-                        value={repeticoes}
-                        onChangeText={setRepeticoes} />
-                    <TextInput
-                        style={styles.modalInput}
-                        placeholder="Peso (kg, opcional)"
-                        placeholderTextColor="#888"
-                        keyboardType="numeric"
-                        value={peso}
-                        onChangeText={setPeso} />
+
+                    <DraggableFlatList
+                      data={sets}
+                      containerStyle={{ maxHeight: 250, width: '100%' }}
+                      keyExtractor={(item) => item.id!}
+                      onDragEnd={({ data }) => setSets(data)}
+                      renderItem={({ item, drag, isActive, getIndex }) => {
+                        const index = getIndex();
+                        if (index === undefined) return null;
+                        return (
+                          <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#222' }]}>
+                            <TouchableOpacity onLongPress={drag}>
+                               <FontAwesome name="bars" size={20} color="#666" style={{ marginRight: 10 }} />
+                            </TouchableOpacity>
+                            <Text style={styles.setText}>Série {index + 1}</Text>
+                            <TextInput
+                              style={styles.setInput}
+                              placeholder="Reps"
+                              placeholderTextColor="#888"
+                              value={item.repeticoes}
+                              onChangeText={(text) => {
+                                const newSets = [...sets];
+                                newSets[index].repeticoes = text;
+                                setSets(newSets);
+                              }}
+                            />
+                            <TextInput
+                              style={styles.setInput}
+                              placeholder="kg"
+                              placeholderTextColor="#888"
+                              keyboardType="numeric"
+                              value={String(item.peso || '')}
+                              onChangeText={(text) => {
+                                const newSets = [...sets];
+                                newSets[index].peso = parseFloat(text) || 0;
+                                setSets(newSets);
+                              }}
+                            />
+                            <TouchableOpacity onPress={() => setSets(sets.filter((_, i) => i !== index))}>
+                                <FontAwesome name="trash" size={20} color="#ff3b30" />
+                            </TouchableOpacity>
+                          </View>
+                        )
+                      }}
+                    />
+
+                    <TouchableOpacity style={styles.addSetButton} onPress={() => setSets([...sets, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 0 }])}>
+                      <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+                    </TouchableOpacity>
 
                     <View style={styles.modalButtons}>
                         <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => {
                             setExercicioModalVisible(false);
+                            setSets([]);
                             // Se estiver adicionando um novo exercício (não editando), reabra o modal de seleção.
                             if (editingExercicioIndex === null) {
                                 setModalVisible(true);
@@ -730,4 +783,30 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center"
   },
+  setRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    width: '100%',
+  },
+  setText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginRight: 'auto',
+  },
+  setInput: {
+    backgroundColor: '#333',
+    color: '#fff',
+    padding: 8,
+    borderRadius: 5,
+    width: 60,
+    textAlign: 'center',
+    marginHorizontal: 5,
+  },
+  addSetButton: { padding: 10, marginTop: 10 },
+  addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },
+
 });

@@ -14,6 +14,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebaseconfig'; // Sua configuração do Firebase
 import { Ficha } from '../models/ficha';
+import { FichaModelo } from '@/models/fichaModelo';
+import { Serie } from '@/models/exercicio';
+import { getTreinosModelosByIds } from './treinoService';
 
 // Referência para a coleção 'fichas' no Firestore
 const fichasCollection = collection(db, 'fichas');
@@ -52,6 +55,75 @@ export const getFichaAtiva = async (usuarioId: string): Promise<Ficha | null> =>
  * @param usuarioId O ID do usuário.
  * @param fichaId O ID da ficha a ser ativada.
  */
+
+/**
+ * Fetches all workout plan templates from the 'fichasModelos' collection.
+ */
+export const getFichasModelos = async (): Promise<FichaModelo[]> => {
+  const fichasRef = collection(db, 'fichasModelos');
+  const snapshot = await getDocs(fichasRef);
+  const fichas: FichaModelo[] = [];
+  snapshot.forEach(doc => {
+    fichas.push({ id: doc.id, ...doc.data() } as FichaModelo);
+  });
+  return fichas;
+};
+
+export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: string): Promise<string> => {
+  // 1. Fetch all treinoModelo documents associated with the fichaModelo
+  const treinosModelos = await getTreinosModelosByIds(fichaModelo.treinos);
+
+  // 2. Create new 'treino' documents for the user based on the models
+  const newTreinoIds: string[] = [];
+  for (const treinoModelo of treinosModelos) {
+    const { id, ...treinoData } = treinoModelo; // exclude the model's id
+
+    // Convert exercises to the new Serie[] structure if they are in the old format
+    const convertedExercicios = treinoData.exercicios.map(ex => {
+      const oldEx = ex as any;
+      if (typeof oldEx.series === 'number' && !Array.isArray(oldEx.series)) {
+        const newSeries: Serie[] = Array.from({ length: oldEx.series }, (_, i) => ({
+          id: `set-${Date.now()}-${i}`,
+          repeticoes: oldEx.repeticoes || '8-12',
+          peso: oldEx.peso || 0,
+        }));
+        return { ...ex, series: newSeries };
+      }
+      return ex;
+    });
+
+    const newTreinoData = {
+      ...treinoData,
+      exercicios: convertedExercicios,
+      usuarioId: userId,
+      dataCriacao: serverTimestamp(),
+      logs: [],
+    };
+    const treinoDocRef = await addDoc(collection(db, 'treinos'), newTreinoData);
+    newTreinoIds.push(treinoDocRef.id);
+  }
+
+  // 3. Create a new 'ficha' document for the user
+  const expirationDate = new Date();
+  expirationDate.setMonth(expirationDate.getMonth() + (parseInt(fichaModelo.tempo_ficha, 10) || 2));
+
+  const newFichaData = {
+    usuarioId: userId,
+    nome: fichaModelo.nome,
+    treinos: newTreinoIds,
+    dataExpiracao: expirationDate,
+    opcoes: 'Programa de treinamento',
+    ativa: false, // Start as inactive, user can activate it later
+    imagemUrl: fichaModelo.imagemUrl || '',
+  };
+
+  const fichaDocRef = await addDoc(collection(db, 'fichas'), newFichaData);
+
+  // 4. Return the ID of the newly created user ficha
+  return fichaDocRef.id;
+};
+
+
 export const setFichaAtiva = async (usuarioId: string, fichaId: string): Promise<void> => {
   try {
     // 1. Pega todas as fichas do usuário

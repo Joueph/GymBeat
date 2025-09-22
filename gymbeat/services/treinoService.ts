@@ -12,9 +12,11 @@ import {
   documentId,
 } from 'firebase/firestore';
 import { db } from '../firebaseconfig';
-import { Treino } from '../models/treino';
+import { Treino, DiaSemana } from '../models/treino';
+import { TreinoModelo } from '@/models/treinoModelo';
 
 const treinosCollection = collection(db, 'treinos');
+const treinosModelosCollection = collection(db, 'treinosModelos');
 
 export const getTreinoById = async (treinoId: string): Promise<Treino | null> => {
     try {
@@ -44,6 +46,30 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
         return treinos;
     } catch (error) {
         console.error('Erro ao buscar treinos por IDs: ', error);
+        throw error;
+    }
+};
+
+export const getTreinosModelosByIds = async (treinoIds: string[]): Promise<TreinoModelo[]> => {
+    if (!treinoIds || treinoIds.length === 0) {
+        return [];
+    }
+    try {
+        const q = query(treinosModelosCollection, where(documentId(), 'in', treinoIds));
+        const querySnapshot = await getDocs(q);
+        const treinos: TreinoModelo[] = [];
+        querySnapshot.forEach((doc) => {
+            treinos.push({ id: doc.id, ...doc.data() } as TreinoModelo);
+        });
+
+        // Sort the results to match the order of the original treinoIds array
+        const sortedTreinos = treinoIds
+            .map(id => treinos.find(t => t.id === id))
+            .filter((t): t is TreinoModelo => t !== undefined);
+
+        return sortedTreinos;
+    } catch (error) {
+        console.error('Erro ao buscar treinos modelos por IDs: ', error);
         throw error;
     }
 };

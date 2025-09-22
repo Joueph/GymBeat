@@ -6,11 +6,15 @@ export interface ExercicioModelo {
   tipo: string;
 }
 
+export interface Serie {
+  id: string;
+  repeticoes: string;
+  peso?: number;
+}
+
 export interface Exercicio {
   modelo: ExercicioModelo;
   modeloId: string;
-  series: number;
-  repeticoes: string;
-  peso?: number;
+  series: Serie[];
   // Outros campos como tempo de descanso, anotações, etc. podem ser adicionados aqui
 }

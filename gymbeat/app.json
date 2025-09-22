@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "GymBeat",
-    "slug": "gymbeat",
+    "name": "Gym Beat",
+    "slug": "gym-beat",
     "version": "0.5.0",
     "orientation": "portrait",
     "icon": "./assets/images/logo.jpg",
@@ -30,9 +30,8 @@
       "favicon": "./assets/images/favicon.png"
     },
     "extra": {
-      // The `eas build:configure` command will automatically generate and fill in this value.
       "eas": {
-        "projectId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        "projectId": "7d0ea763-8a86-4f57-acb6-2c999b4b7490"
       }
     }
   }

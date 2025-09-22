@@ -15,7 +15,7 @@ const InitialLayout = () => {
     // Se o usuário está logado, mas está tentando acessar uma tela de autenticação,
     // redirecione-o para a tela principal do aplicativo.
     if (user && inAuthGroup) {
-      router.replace('/(tabs)');
+      router.replace('/');
     // Se o usuário NÃO está logado e NÃO está em uma tela de autenticação,
     // redirecione-o para a tela de login.
     } else if (!user && !inAuthGroup) {

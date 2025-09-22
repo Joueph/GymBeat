@@ -43,7 +43,13 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
         querySnapshot.forEach((doc) => {
             treinos.push({ id: doc.id, ...doc.data() } as Treino);
         });
-        return treinos;
+
+        // Sort the results to match the order of the original treinoIds array
+        const sortedTreinos = treinoIds
+            .map(id => treinos.find(t => t.id === id))
+            .filter((t): t is Treino => t !== undefined);
+
+        return sortedTreinos;
     } catch (error) {
         console.error('Erro ao buscar treinos por IDs: ', error);
         throw error;
@@ -123,3 +129,5 @@ export const getTreinosByUsuarioId = async (usuarioId: string): Promise<Treino[]
     throw error;
   }
 };
+
+export { DiaSemana };

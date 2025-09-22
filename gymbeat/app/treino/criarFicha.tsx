@@ -17,7 +17,12 @@ export default function CriarFichaScreen() {
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
-    if (typeof fichaId !== 'string') return;
+    if (typeof fichaId !== 'string') {
+      Alert.alert("Erro", "Nenhuma ficha selecionada para edição.");
+      router.back();
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const fichaData = await getFichaById(fichaId);

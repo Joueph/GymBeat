@@ -5,7 +5,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '../authprovider';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { getFichaAtiva } from '../../services/fichaService';
-import { getTreinosByIds } from '../../services/treinoService';
+import { getTreinosByIds, DiaSemana } from '../../services/treinoService';
 import { Ficha } from '../../models/ficha';
 import { Treino } from '../../models/treino';
 
@@ -54,7 +54,7 @@ export default function TreinoHojeScreen() {
 
             // Encontra o treino de hoje
             const hoje = new Date().getDay();
-            const diaString = DIAS_SEMANA_MAP[hoje];
+            const diaString = DIAS_SEMANA_MAP[hoje] as DiaSemana;
             const treinoDoDia = treinosData.find(t => t.diasSemana.includes(diaString));
 
             setTreinoDeHoje(treinoDoDia || null);
@@ -164,7 +164,7 @@ export default function TreinoHojeScreen() {
           <View style={styles.centeredEmpty}>
             <Text style={styles.emptyText}>Nenhuma ficha ativa.</Text>
             <Text style={styles.emptySubText}>Vá para a aba 'Workouts' para ativar uma ficha.</Text>
-            <TouchableOpacity style={styles.callToActionButton} onPress={() => router.push('/(tabs)/workouts')}>
+            <TouchableOpacity style={styles.callToActionButton} onPress={() => router.push('/workouts')}>
               <Text style={styles.callToActionText}>Ver Workouts</Text>
             </TouchableOpacity>
           </View>

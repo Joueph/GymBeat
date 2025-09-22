@@ -26,7 +26,7 @@ export default function CadastroScreen() {
       await createUserProfileDocument(user, { nome, isPro: false });
 
       Alert.alert("Sucesso!", "Conta criada com sucesso!");
-      router.replace("/(tabs)");
+      router.replace("/treinoHoje");
     } catch (error: any) {
       Alert.alert("Erro no Cadastro", error.message);
     }

@@ -13,8 +13,9 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     setErrorMessage(""); // limpa mensagens anteriores
     try {
+      // A navegação após o login é gerenciada globalmente pelo _layout.tsx.
+      // Apenas realizamos o login aqui.
       await signInWithEmailAndPassword(auth, email, senha);
-      router.replace("./(tabs)/index"); // navegação correta
     } catch (error: any) {
       setErrorMessage(error.message); // atualiza feedback
     }

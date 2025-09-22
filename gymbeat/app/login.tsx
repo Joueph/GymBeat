@@ -50,11 +50,12 @@ export default function LoginScreen() {
 
       {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
-      <Button title="Entrar" onPress={handleLogin} color="#4CAF50" />
+      <Button title="Entrar" onPress={handleLogin} color="#1cb0f6" />
 
       <View style={{ marginTop: 20 }}>
         <Button
           title="Ir para Cadastro"
+          color="#555"
           onPress={() => router.push("./cadastro")}
         />
       </View>
@@ -89,7 +90,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: "#4CAF50",
+    borderColor: "#1cb0f6",
   },
   error: {
     color: "#ff5555",

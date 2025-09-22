@@ -19,7 +19,9 @@ const AuthContext = createContext<AuthContextType>({
   initialized: false,
 });
 
-export const useAuth = () => useContext(AuthContext);
+export function useAuth() {
+  return useContext(AuthContext);
+}
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -27,14 +29,12 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      // This listener is called whenever the user's sign-in state changes.
       setUser(currentUser);
-      if (!initialized) {
-        setInitialized(true);
-      }
+      setInitialized(true); // Set initialized to true once we get the first auth status.
     });
-
-    return () => unsubscribe();
-  }, [initialized]);
+    return unsubscribe; // Unsubscribe from the listener when the component unmounts.
+  }, []);
 
   if (!initialized) {
     return (

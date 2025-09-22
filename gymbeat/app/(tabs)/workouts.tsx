@@ -3,22 +3,18 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, ActivityIndi
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
-import { Swipeable, GestureHandlerRootView, RectButton } from 'react-native-gesture-handler';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useAuth } from '../authprovider';
-import { getFichasModelos, copyFichaModeloToUser, getFichasByUsuarioId, setFichaAtiva } from '../../services/fichaService';
+import { getFichasModelos, copyFichaModeloToUser } from '../../services/fichaService';
 import { getTreinosModelosByIds } from '../../services/treinoService';
 import { FichaModelo } from '../../models/fichaModelo';
 import { TreinoModelo } from '../../models/treinoModelo';
-import { Ficha } from '../../models/ficha';
-
-const AnimatedIcon = Animated.createAnimatedComponent(FontAwesome);
 
 export default function WorkoutsScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [fichasModelos, setFichasModelos] = useState<FichaModelo[]>([]);
-  const [userFichas, setUserFichas] = useState<Ficha[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setModalVisible] = useState(false);
   const [selectedFicha, setSelectedFicha] = useState<FichaModelo | null>(null);
@@ -35,12 +31,8 @@ export default function WorkoutsScreen() {
         }
         setLoading(true);
         try {
-          const [modelos, minhasFichas] = await Promise.all([
-            getFichasModelos(),
-            getFichasByUsuarioId(user.uid)
-          ]);
+          const modelos = await getFichasModelos();
           setFichasModelos(modelos);
-          setUserFichas(minhasFichas.sort((a, b) => (a.ativa === b.ativa) ? 0 : a.ativa ? -1 : 1));
         } catch (error) {
           console.error("Erro ao buscar fichas modelo:", error);
           Alert.alert("Erro", "Não foi possível carregar os dados.");
@@ -95,40 +87,6 @@ export default function WorkoutsScreen() {
     setTreinos([]);
   };
 
-  const handleSetFichaAtiva = async (fichaId: string) => {
-    if (!user) return;
-    const originalFichas = [...userFichas];
-    // Optimistic update
-    const newFichas = userFichas.map(f => ({ ...f, ativa: f.id === fichaId }));
-    setUserFichas(newFichas.sort((a, b) => (a.ativa === b.ativa) ? 0 : a.ativa ? -1 : 1));
-
-    try {
-      await setFichaAtiva(user.uid, fichaId);
-    } catch (error) {
-      console.error("Erro ao ativar ficha:", error);
-      Alert.alert("Erro", "Não foi possível ativar a ficha.");
-      // Revert on error
-      setUserFichas(originalFichas);
-    }
-  };
-
-  const renderActivateAction = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, ficha: Ficha) => {
-    if (ficha.ativa) {
-      return null;
-    }
-    const scale = dragX.interpolate({
-      inputRange: [0, 80],
-      outputRange: [0, 1],
-      extrapolate: 'clamp',
-    });
-
-    return (
-      <RectButton style={styles.activateBox} onPress={() => handleSetFichaAtiva(ficha.id)}>
-        <AnimatedIcon name="check" size={28} color="white" style={{ transform: [{ scale }] }} />
-      </RectButton>
-    );
-  };
-
   const renderFichaItem = ({ item }: { item: FichaModelo }) => (
     <TouchableOpacity style={styles.card} onPress={() => handleSelectFicha(item)}>
       <View style={styles.cardContent}>
@@ -139,23 +97,6 @@ export default function WorkoutsScreen() {
         </View>
       </View>
     </TouchableOpacity>
-  );
-
-  const renderUserFichaItem = ({ item }: { item: Ficha }) => (
-    <Swipeable
-      renderLeftActions={(progress, dragX) => renderActivateAction(progress, dragX, item)}
-      overshootLeft={false}
-    >
-      <TouchableOpacity style={styles.card} onPress={() => router.push(`/treino/criarFicha?fichaId=${item.id}`)}>
-        {item.ativa && <View style={styles.activeIndicator} />}
-        <View style={styles.cardContent}>
-          <Text style={styles.cardTitle}>{item.nome}</Text>
-          <View style={styles.cardDetails}>
-            <Text style={styles.cardDetailText}>{item.treinos.length} {item.treinos.length === 1 ? 'treino' : 'treinos'}</Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Swipeable>
   );
 
   const renderTreinoDetailItem = ({ item }: { item: TreinoModelo }) => (
@@ -176,23 +117,7 @@ export default function WorkoutsScreen() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.listContainer}>
-          <Text style={styles.headerTitle}>Meus Planos</Text>
-          {userFichas.length > 0 ? (
-            <FlatList
-              data={userFichas}
-              renderItem={renderUserFichaItem}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              extraData={userFichas}
-            />
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>Você ainda não possui fichas.</Text>
-              <Text style={styles.emptySubText}>Copie um modelo abaixo ou crie uma do zero na tela Home.</Text>
-            </View>
-          )}
-
-          <Text style={[styles.headerTitle, { marginTop: 30 }]}>Modelos de Treino</Text>
+          <Text style={styles.headerTitle}>Modelos de Treino</Text>
           <FlatList
             data={fichasModelos}
             renderItem={renderFichaItem}
@@ -308,19 +233,6 @@ const styles = StyleSheet.create({
     color: '#888',
     textAlign: 'center',
     marginTop: 5,
-  },
-  activateBox: {
-    backgroundColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-    borderRadius: 12,
-  },
-  activeIndicator: {
-    position: 'absolute',
-    left: 0, top: 0, bottom: 0,
-    width: 5,
-    backgroundColor: '#1cb0f6',
   },
   // Modal Styles
   modalContainer: {

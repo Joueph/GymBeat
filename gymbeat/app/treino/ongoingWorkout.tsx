@@ -19,17 +19,12 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
     player.play();
   });
 
-  // useEffect para verificar o status da URL do vídeo
+  // useEffect for player cleanup.
   useEffect(() => {
-    const checkVideoStatus = async () => {
-      if (!uri) return;
-      try {
-        await fetch(uri, { method: 'HEAD' });
-      } catch (error) {
-        console.error('[DIAGNÓSTICO] ❌ Erro de Rede ao buscar vídeo: ', error);
-      }
-    };
-    checkVideoStatus();
+    // The pre-flight network request and diagnostic logs have been removed
+    // to prepare the component for production.
+
+    // Cleanup the player when the component unmounts or the URI changes.
     return () => {
       player.release();
     };

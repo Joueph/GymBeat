@@ -35,28 +35,15 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
     player.play();
   });
 
-  // useEffect para verificar o status da URL do vídeo
+  // useEffect for player cleanup.
   useEffect(() => {
-    const verificarStatusDoVideo = async () => {
-      if (!uri) return;
+    // The pre-flight network request to check video status has been removed
+    // to improve performance, especially on screens with many videos.
+    // It's better to handle potential loading errors gracefully, for example
+    // by using the `onError` prop on the <Video> component to show a placeholder.
+    // Diagnostic console logs have also been removed for production.
 
-      console.log(`[LOG] Verificando URL: ${uri}`);
-
-      try {
-        // >>>>> AQUI É FEITO O FETCH <<<<<
-        const response = await fetch(uri, { method: 'HEAD' }); 
-
-        console.log(`[LOG] Resposta do Servidor - Status: ${response.status}`);
-        // ... resto do código de log ...
-        
-      } catch (error) {
-        console.error('[DIAGNÓSTICO] ❌ Erro de Rede: ...', error);
-      }
-    };
-
-    verificarStatusDoVideo();
-
-    // Cleanup do player
+    // Cleanup the player when the component unmounts or the URI changes.
     return () => {
       player.release();
     };

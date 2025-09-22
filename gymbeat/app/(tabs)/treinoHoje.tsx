@@ -1,13 +1,17 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated, ImageBackground, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Alert, Animated, ImageBackground, TouchableOpacity, FlatList } from 'react-native';
 import { Swipeable, GestureHandlerRootView, RectButton } from 'react-native-gesture-handler';
 import { FontAwesome } from '@expo/vector-icons';
 import { useAuth } from '../authprovider';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { getFichaAtiva } from '../../services/fichaService';
+import { getFichaAtiva, getFichasByUsuarioId, setFichaAtiva as setFichaAtivaService } from '../../services/fichaService';
 import { getTreinosByIds, DiaSemana } from '../../services/treinoService';
+import { getLogsByUsuarioId } from '../../services/logService';
 import { Ficha } from '../../models/ficha';
 import { Treino } from '../../models/treino';
+import { Log } from '../../models/log';
+import { Exercicio } from '../../models/exercicio';
+
 
 const DIAS_SEMANA_ORDEM: { [key: string]: number } = {
   'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6
@@ -19,13 +23,71 @@ const DIAS_SEMANA_MAP: { [key: number]: string } = {
 
 const AnimatedIcon = Animated.createAnimatedComponent(FontAwesome);
 
-export default function TreinoHojeScreen() {
+// Helper para converter Timestamps do Firestore e outros formatos para um objeto Date.
+const toDate = (date: any): Date | null => {
+  if (!date) return null;
+  if (typeof date.toDate === 'function') return date.toDate();
+  const d = new Date(date);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const LogItem = ({ log }: { log: Log }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const getMaxWeight = (exercicio: Exercicio) => {
+    if (!exercicio.series || exercicio.series.length === 0) {
+      return 0;
+    }
+    // @ts-ignore - Lida com a estrutura antiga de dados para compatibilidade
+    if (typeof exercicio.series === 'number') {
+        return (exercicio as any).peso || 0;
+    }
+    return Math.max(...exercicio.series.map(s => s.peso || 0));
+  };
+
+  const logDate = toDate(log.horarioFim) || new Date();
+  const startTime = toDate(log.horarioInicio);
+  const endTime = toDate(log.horarioFim);
+  let durationText = '';
+  if (startTime && endTime) {
+    const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+    durationText = ` • ${durationMinutes} min`;
+  }
+
+  return (
+    <View style={styles.logCard}>
+      <TouchableOpacity onPress={() => setExpanded(!expanded)} style={styles.logHeader}>
+        <View>
+          <Text style={styles.logTitle}>{log.treino.nome}</Text>
+          <Text style={styles.logDate}>
+            {logDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}{durationText}
+          </Text>
+        </View>
+        <FontAwesome name={expanded ? "chevron-up" : "chevron-down"} size={16} color="#ccc" />
+      </TouchableOpacity>
+      {expanded && (
+        <View style={styles.logDetails}>
+          {log.exerciciosFeitos.map((ex, index) => (
+            <View key={index} style={styles.logExercicio}>
+              <Text style={styles.logExercicioName}>{ex.modelo.nome}</Text>
+              <Text style={styles.logExercicioInfo}>Carga Máx: {getMaxWeight(ex)} kg</Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+};
+
+export default function MeusTreinosScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [fichaAtiva, setFichaAtiva] = useState<Ficha | null>(null);
+  const [userFichas, setUserFichas] = useState<Ficha[]>([]);
   const [treinoDeHoje, setTreinoDeHoje] = useState<Treino | null>(null);
   const [outrosTreinos, setOutrosTreinos] = useState<Treino[]>([]);
   const [loading, setLoading] = useState(true);
+  const [logs, setLogs] = useState<Log[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -36,8 +98,15 @@ export default function TreinoHojeScreen() {
         }
         setLoading(true);
         try {
-          const ativa = await getFichaAtiva(user.uid);
+          const [ativa, minhasFichas, userLogs] = await Promise.all([
+            getFichaAtiva(user.uid),
+            getFichasByUsuarioId(user.uid),
+            getLogsByUsuarioId(user.uid)
+          ]);
+
           setFichaAtiva(ativa);
+          setUserFichas(minhasFichas.sort((a, b) => (a.ativa === b.ativa) ? 0 : (a.ativa ? -1 : 1)));
+          setLogs(userLogs.sort((a, b) => (toDate(b.horarioFim)?.getTime() || 0) - (toDate(a.horarioFim)?.getTime() || 0)));
 
           setTreinoDeHoje(null);
           setOutrosTreinos([]);
@@ -72,11 +141,48 @@ export default function TreinoHojeScreen() {
     }, [user])
   );
 
+  const handleSetFichaAtiva = async (fichaId: string) => {
+    if (!user) return;
+    const originalFichas = [...userFichas];
+    // Atualização otimista da UI
+    const newFichas = userFichas.map(f => ({ ...f, ativa: f.id === fichaId }));
+    setUserFichas(newFichas.sort((a, b) => (a.ativa === b.ativa) ? 0 : (a.ativa ? -1 : 1)));
+
+    try {
+      await setFichaAtivaService(user.uid, fichaId);
+      const novaFichaAtiva = newFichas.find(f => f.id === fichaId) || null;
+      setFichaAtiva(novaFichaAtiva);
+
+      // Atualiza os treinos da semana com base na nova ficha ativa
+      if (novaFichaAtiva && novaFichaAtiva.treinos.length > 0) {
+        const treinosData = await getTreinosByIds(novaFichaAtiva.treinos);
+        treinosData.sort((a, b) => {
+            const diaA = a.diasSemana[0];
+            const diaB = b.diasSemana[0];
+            return (DIAS_SEMANA_ORDEM[diaA] ?? 7) - (DIAS_SEMANA_ORDEM[diaB] ?? 7);
+        });
+        const hoje = new Date().getDay();
+        const diaString = DIAS_SEMANA_MAP[hoje] as DiaSemana;
+        const treinoDoDia = treinosData.find(t => t.diasSemana.includes(diaString));
+        setTreinoDeHoje(treinoDoDia || null);
+        setOutrosTreinos(treinosData.filter(t => t.id !== treinoDoDia?.id));
+      } else {
+        setTreinoDeHoje(null);
+        setOutrosTreinos([]);
+      }
+    } catch (error) {
+      console.error("Erro ao ativar ficha:", error);
+      Alert.alert("Erro", "Não foi possível ativar a ficha.");
+      // Reverte em caso de erro
+      setUserFichas(originalFichas);
+    }
+  };
+
   const handleEditFicha = (fichaId: string) => {
     router.push(`/treino/criarFicha?fichaId=${fichaId}`);
   };
 
-  const renderLeftActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, fichaId: string) => {
+  const renderEditAction = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, fichaId: string) => {
     const scale = dragX.interpolate({
       inputRange: [0, 80],
       outputRange: [0, 1],
@@ -90,6 +196,39 @@ export default function TreinoHojeScreen() {
     );
   };
 
+  const renderActivateAction = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>, ficha: Ficha) => {
+    if (ficha.ativa) {
+      return null;
+    }
+    const scale = dragX.interpolate({
+      inputRange: [0, 80],
+      outputRange: [0, 1],
+      extrapolate: 'clamp',
+    });
+
+    return (
+      <RectButton style={styles.activateBox} onPress={() => handleSetFichaAtiva(ficha.id)}>
+        <AnimatedIcon name="check" size={28} color="white" style={{ transform: [{ scale }] }} />
+      </RectButton>
+    );
+  };
+
+  const renderUserFichaItem = ({ item }: { item: Ficha }) => (
+    <Swipeable
+      renderLeftActions={(progress, dragX) => renderActivateAction(progress, dragX, item)}
+      overshootLeft={false}
+      enabled={!item.ativa}
+    >
+      <TouchableOpacity style={styles.card} onPress={() => router.push(`/treino/criarFicha?fichaId=${item.id}`)}>
+        {item.ativa && <View style={styles.activeIndicator} />}
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle}>{item.nome}</Text>
+          <Text style={styles.cardDetailText}>{item.treinos.length} {item.treinos.length === 1 ? 'treino' : 'treinos'}</Text>
+        </View>
+      </TouchableOpacity>
+    </Swipeable>
+  );
+
   if (loading) {
     return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
   }
@@ -99,11 +238,28 @@ export default function TreinoHojeScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ScrollView style={styles.container}>
+        <Text style={styles.sectionTitle}>Meus Planos</Text>
+        {userFichas.length > 0 ? (
+          <FlatList
+            data={userFichas}
+            renderItem={renderUserFichaItem}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+            extraData={userFichas}
+            style={{ marginBottom: 20 }}
+          />
+        ) : ( // Changed from styles.emptyContainer to styles.emptyTreinoContainer
+          <View style={styles.emptyTreinoContainer}>
+            <Text style={styles.emptyText}>Você ainda não possui fichas.</Text>
+            <Text style={styles.emptySubText}>Copie um modelo da aba 'Treinos' ou crie uma do zero na tela Home.</Text>
+          </View>
+        )}
+
         {fichaAtiva ? (
           <>
             <View style={{ marginBottom: 30 }}>
               <Swipeable
-                renderLeftActions={(progress, dragX) => renderLeftActions(progress, dragX, fichaAtiva.id)}
+                renderLeftActions={(progress, dragX) => renderEditAction(progress, dragX, fichaAtiva.id)}
                 overshootLeft={false}
               >
                 <ImageBackground 
@@ -112,6 +268,7 @@ export default function TreinoHojeScreen() {
                   imageStyle={{ borderRadius: 12 }}
                 >
                   <View style={styles.cardOverlay}>
+                    <Text style={styles.fichaAtivaLabel}>PLANO ATIVO</Text>
                     <Text style={styles.fichaAtivaTitle}>{fichaAtiva.nome}</Text>
                     <Text style={styles.fichaAtivaSubtitle}>
                       {totalTreinos} {totalTreinos === 1 ? 'treino' : 'treinos'}
@@ -138,7 +295,7 @@ export default function TreinoHojeScreen() {
 
             {outrosTreinos.length > 0 && (
               <>
-                <Text style={styles.sectionTitle}>Outros Treinos</Text>
+                <Text style={styles.sectionTitle}>Outros Treinos da Semana</Text>
                 {outrosTreinos.map(treino => (
                   <TouchableOpacity key={treino.id} onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${fichaAtiva.id}&treinoId=${treino.id}`)}>
                     <View style={styles.otherWorkoutCard}>
@@ -156,17 +313,30 @@ export default function TreinoHojeScreen() {
             {!treinoDeHoje && outrosTreinos.length === 0 && (
               <View style={styles.emptyTreinoContainer}>
                 <Text style={styles.emptyText}>Nenhum treino nesta ficha.</Text>
-                <Text style={styles.emptySubText}>Edite a ficha para adicionar treinos.</Text>
+                <TouchableOpacity onPress={() => handleEditFicha(fichaAtiva.id)}>
+                    <Text style={styles.linkText}>Edite a ficha para adicionar treinos.</Text>
+                </TouchableOpacity>
               </View>
             )}
           </>
         ) : (
           <View style={styles.centeredEmpty}>
             <Text style={styles.emptyText}>Nenhuma ficha ativa.</Text>
-            <Text style={styles.emptySubText}>Vá para a aba 'Workouts' para ativar uma ficha.</Text>
-            <TouchableOpacity style={styles.callToActionButton} onPress={() => router.push('/workouts')}>
-              <Text style={styles.callToActionText}>Ver Workouts</Text>
-            </TouchableOpacity>
+            <Text style={styles.emptySubText}>Deslize um plano para a direita para ativá-lo.</Text>
+          </View>
+        )}
+
+        <Text style={[styles.sectionTitle, { marginTop: 30 }]}>Histórico de Sessões</Text>
+        {logs.length > 0 ? (
+          <FlatList
+            data={logs}
+            renderItem={({ item }) => <LogItem log={item} />}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+          />
+        ) : (
+          <View style={styles.emptyTreinoContainer}>
+            <Text style={styles.emptyText}>Você ainda não completou nenhum treino.</Text>
           </View>
         )}
       </ScrollView>
@@ -176,6 +346,27 @@ export default function TreinoHojeScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#0d181c', padding: 15 },
+    card: {
+      backgroundColor: '#1a2a33',
+      borderRadius: 12,
+      marginBottom: 10,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: '#2a3b42',
+    },
+    cardContent: {
+      padding: 15,
+    },
+    cardTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: '#fff',
+    },
+    cardDetailText: {
+      fontSize: 14,
+      color: '#ccc',
+      marginTop: 5,
+    },
     cardFichaAtiva: { 
       backgroundColor: '#1a2a33', 
       borderRadius: 12, 
@@ -188,7 +379,14 @@ const styles = StyleSheet.create({
       borderBottomLeftRadius: 12,
       borderBottomRightRadius: 12,
     },
-    fichaAtivaTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+    fichaAtivaLabel: {
+      fontSize: 10,
+      fontWeight: 'bold',
+      color: '#1cb0f6',
+      letterSpacing: 1,
+      marginBottom: 4,
+    },
+    fichaAtivaTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
     fichaAtivaSubtitle: { fontSize: 14, color: '#ccc' },
     cardTreinoHoje: {
       backgroundColor: '#1cb0f6',
@@ -223,7 +421,7 @@ const styles = StyleSheet.create({
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      paddingTop: '40%',
+      paddingVertical: 40,
     },
     otherWorkoutCard: {
       backgroundColor: '#1a2a33',
@@ -245,16 +443,56 @@ const styles = StyleSheet.create({
       borderRadius: 12,
       height: '100%',
     },
-    callToActionButton: {
-      marginTop: 20,
-      backgroundColor: '#1cb0f6',
-      paddingVertical: 12,
-      paddingHorizontal: 25,
-      borderRadius: 8,
+    activateBox: {
+      backgroundColor: '#4CAF50',
+      justifyContent: 'center',
+      alignItems: 'center',
+      width: 80,
     },
-    callToActionText: {
+    activeIndicator: {
+      position: 'absolute',
+      left: 0, top: 0, bottom: 0,
+      width: 5,
+      backgroundColor: '#1cb0f6',
+    },
+    linkText: {
+      color: '#1cb0f6',
+      marginTop: 10,
+      fontWeight: 'bold',
+    },
+    // Log Styles
+    logCard: {
+      backgroundColor: '#1a2a33',
+      borderRadius: 8,
+      marginBottom: 10,
+      padding: 15,
+    },
+    logHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    logTitle: {
       color: '#fff',
       fontSize: 16,
       fontWeight: 'bold',
     },
+    logDate: {
+      color: '#aaa',
+      fontSize: 12,
+      marginTop: 4,
+    },
+    logDetails: {
+      marginTop: 15,
+      borderTopWidth: 1,
+      borderTopColor: '#2a3b42',
+      paddingTop: 10,
+    },
+    logExercicio: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingVertical: 5,
+    },
+    logExercicioName: { color: '#ccc', fontSize: 14 },
+    logExercicioInfo: { color: '#fff', fontSize: 14, fontWeight: '500' },
 });

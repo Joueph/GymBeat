@@ -3,15 +3,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, Pressable, ActivityIndicator, Animated } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../authprovider';
 import { getLogsByUsuarioId } from '../../services/logService';
-import { addFicha } from '../../services/fichaService';
-import { getTreinosByUsuarioId } from '../../services/treinoService';
+import { addFicha, getFichaAtiva } from '../../services/fichaService';
+import { getTreinosByIds } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { Usuario } from '../../models/usuario';
-import { Treino } from '../../models/treino';
+import { DiaSemana, Treino } from '../../models/treino';
 import { Log } from '../../models/log';
+import { Ficha } from '../../models/ficha';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -26,6 +27,24 @@ const toDate = (date: any): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+// Helper para obter o início da semana (domingo) para uma data.
+const getStartOfWeek = (date: Date): Date => {
+    const d = new Date(date);
+    const day = d.getDay(); // 0 para Domingo
+    const diff = d.getDate() - day;
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+const DIAS_SEMANA_MAP: { [key: number]: string } = {
+  0: 'dom', 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sab'
+};
+
+const DIAS_SEMANA_ABREV: { [key: string]: string } = {
+  'dom': 'dom', 'seg': 'seg', 'ter': 'ter', 'qua': 'qua', 'qui': 'qui', 'sex': 'sex', 'sab': 'sáb'
+};
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const [logs, setLogs] = useState<Log[]>([]);
@@ -33,8 +52,10 @@ export default function HomeScreen() {
   const [treinos, setTreinos] = useState<Treino[]>([]);
   const [friends, setFriends] = useState<Usuario[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
   const [profile, setProfile] = useState<Usuario | null>(null);
   const [isModalVisible, setModalVisible] = useState(false);
+  const [weeklyStats, setWeeklyStats] = useState({ workoutsThisWeek: 0, streak: 0, goal: 2 });
 
   useFocusEffect(
     useCallback(() => {
@@ -42,16 +63,60 @@ export default function HomeScreen() {
         if (user) {
           setLoading(true);
           try {
-            // Fetch logs, treinos, and friends in parallel
-            const [userLogs, userTreinos, userProfile] = await Promise.all([
+            // Fetch logs, profile, and active ficha in parallel
+            const [userLogs, userProfile, fichaAtiva] = await Promise.all([
               getLogsByUsuarioId(user.uid),
-              getTreinosByUsuarioId(user.uid),
               getUserProfile(user.uid),
+              getFichaAtiva(user.uid),
             ]);
   
             setLogs(userLogs);
-            setTreinos(userTreinos);
             setProfile(userProfile);
+            setActiveFicha(fichaAtiva);
+
+            // Calcular estatísticas semanais
+            const streakGoal = userProfile?.streakGoal || 2;
+
+            // 1. Calcular treinos nesta semana
+            const today = new Date();
+            const startOfThisWeek = getStartOfWeek(today);
+            const workoutsThisWeek = userLogs.filter(log => {
+                const logDate = toDate(log.horarioFim);
+                return logDate && logDate >= startOfThisWeek;
+            }).length;
+
+            // 2. Calcular sequência (streak)
+            let streak = 0;
+            if (userLogs.length > 0) {
+                const workoutsByWeek: { [weekStart: string]: number } = {};
+                userLogs.forEach(log => {
+                    const logDate = toDate(log.horarioFim);
+                    if (logDate) {
+                        const weekStartDate = getStartOfWeek(logDate);
+                        const weekStartString = weekStartDate.toISOString().split('T')[0];
+                        workoutsByWeek[weekStartString] = (workoutsByWeek[weekStartString] || 0) + 1;
+                    }
+                });
+
+                let weekToCheck = getStartOfWeek(new Date());
+                while (true) {
+                    const weekString = weekToCheck.toISOString().split('T')[0];
+                    if (workoutsByWeek[weekString] && workoutsByWeek[weekString] >= streakGoal) {
+                        streak++;
+                        weekToCheck.setDate(weekToCheck.getDate() - 7);
+                    } else {
+                        break; // A sequência é interrompida na primeira semana que não atinge a meta.
+                    }
+                }
+            }
+            setWeeklyStats({ workoutsThisWeek, streak, goal: streakGoal });
+
+            if (fichaAtiva && fichaAtiva.treinos.length > 0) {
+              const userTreinos = await getTreinosByIds(fichaAtiva.treinos);
+              setTreinos(userTreinos);
+            } else {
+              setTreinos([]);
+            }
   
             if (userProfile && userProfile.amizades) {
               const friendsData = await Promise.all(
@@ -141,6 +206,8 @@ export default function HomeScreen() {
       .filter((d): d is string => d !== null)
     );
 
+    const scheduledDays = new Set(treinos.flatMap(t => t.diasSemana));
+
     return (
       <View style={styles.calendarContainer}>
         {weekDays.map((day, index) => {
@@ -148,11 +215,14 @@ export default function HomeScreen() {
           date.setDate(today.getDate() - (currentDay - index));
           const isPastOrToday = index <= currentDay;
           const isLogged = loggedDays.has(date.toDateString());
+          const dayString: DiaSemana = DIAS_SEMANA_MAP[index] as DiaSemana;
+          const isScheduled = scheduledDays.has(dayString);
  
           const dayStyles = [
             styles.dayContainer,
             isPastOrToday && styles.progressionOverlay,
             isLogged && styles.loggedDay,
+            isScheduled && styles.scheduledDay,
           ];
           return (
             <View key={day} style={dayStyles}>
@@ -166,57 +236,115 @@ export default function HomeScreen() {
   };
 
   const renderNextWorkout = () => {
-    if (treinos.length > 0) {
-      const nextTreino = treinos[0]; // Simple logic: gets the first workout
-      const lastLog = logs.find(log => log.treino.id === nextTreino.id);
-      const duration = lastLog ? `${Math.round((new Date(lastLog.horarioFim).getTime() - new Date(lastLog.horarioInicio).getTime()) / 60000)} min` : "N/A";
-
-      return (
-        <View style={styles.duolingoCard}>
-          <ThemedText type="subtitle" style={styles.cardTitle}>Próximo Treino: {nextTreino.nome}</ThemedText>
-          <ThemedText style={styles.cardText}>Duração Média: {duration}</ThemedText>
-          <ThemedText style={styles.cardText}>Exercícios: {nextTreino.exercicios.map(e => e.modelo.nome).join(', ')}</ThemedText>
-          <TouchableOpacity style={styles.startButton}>
-            <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Começar Treino</ThemedText>
-          </TouchableOpacity>
-        </View>
-      );
-    } else {
+    if (treinos.length === 0 || !activeFicha) {
       return null;
     }
+
+    const hoje = new Date().getDay();
+    let proximoTreino: Treino | undefined;
+    let diaDoTreino: number = -1;
+
+    // 1. Find today's workout
+    const diaStringHoje = DIAS_SEMANA_MAP[hoje] as DiaSemana;
+    proximoTreino = treinos.find(t => t.diasSemana.includes(diaStringHoje));
+
+    if (proximoTreino) {
+      diaDoTreino = hoje;
+    } else {
+      // 2. If no workout today, find the next one
+      for (let i = 1; i < 7; i++) {
+        const proximoDiaIndex = (hoje + i) % 7;
+        const proximoDiaString = DIAS_SEMANA_MAP[proximoDiaIndex] as DiaSemana;
+        const treinoEncontrado = treinos.find(t => t.diasSemana.includes(proximoDiaString));
+        if (treinoEncontrado) {
+          proximoTreino = treinoEncontrado;
+          diaDoTreino = proximoDiaIndex;
+          break;
+        }
+      }
+    }
+
+    if (!proximoTreino) {
+      return null; // No workouts scheduled at all
+    }
+
+    const titulo = diaDoTreino === hoje ? "Treino de Hoje" : `Treino de ${DIAS_SEMANA_ABREV[DIAS_SEMANA_MAP[diaDoTreino]]}`;
+    
+    const nextTreino = proximoTreino;
+    const lastLog = logs.find(log => log.treino.id === nextTreino.id);
+    const duration = lastLog ? `${Math.round((toDate(lastLog.horarioFim)!.getTime() - toDate(lastLog.horarioInicio)!.getTime()) / 60000)} min` : "N/A";
+    const numExercicios = nextTreino.exercicios.length;
+
+    return (
+      <View>
+        <ThemedText type="subtitle" style={styles.cardTitle}>{titulo}</ThemedText>
+        <View style={styles.nextWorkoutCard}>
+          <View style={styles.workoutInfoContainer}>
+            <View style={styles.workoutTitleContainer}>
+              <MaterialCommunityIcons name="dumbbell" size={20} color="#ccc" />
+              <ThemedText style={styles.workoutName}>{nextTreino.nome}</ThemedText>
+            </View>
+            <View style={styles.workoutDetailsContainer}>
+              <FontAwesome name="bars" size={16} color="#ccc" />
+              <ThemedText style={styles.workoutDetailText}>{numExercicios} {numExercicios === 1 ? 'exercício' : 'exercícios'}</ThemedText>
+              <FontAwesome name="clock-o" size={16} color="#ccc" style={{ marginLeft: 15 }} />
+              <ThemedText style={styles.workoutDetailText}>{duration}</ThemedText>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
+            <ThemedText style={styles.startButtonText}>Começar</ThemedText>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
   };
 
   if (loading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
   }
 
-  const ListHeader = () => (
-    <>
-      <View style={styles.headerContainer}>
-        <View style={{ gap: 5, flexDirection: 'column', alignItems: 'flex-start', paddingBottom: 5 , paddingTop: 10}}>
-          <ThemedText style={styles.smallGreeting}>Olá,</ThemedText>
-          <ThemedText style={styles.largeUsername}>{profile?.nome}</ThemedText>
+  const ListHeader = () => {
+    const workoutsThisWeekMet = weeklyStats.workoutsThisWeek >= weeklyStats.goal;
+    return (
+      <>
+        <View style={styles.headerContainer}>
+          <View style={{ gap: 5, flexDirection: 'column', alignItems: 'flex-start', paddingBottom: 5 , paddingTop: 10}}>
+            <ThemedText style={styles.smallGreeting}>Olá,</ThemedText>
+            <ThemedText style={styles.largeUsername}>{profile?.nome}</ThemedText>
+          </View>
+          <Animated.Text style={[styles.waveEmoji, { transform: [{ rotate: waveRotation }] }]}>
+            👋
+          </Animated.Text>
         </View>
-        <Animated.Text style={[styles.waveEmoji, { transform: [{ rotate: waveRotation }] }]}>
-          👋
-        </Animated.Text>
-      </View>
-      <ThemedView style={styles.section}>
-        {renderWeeklyCalendar()}
-      </ThemedView>
-      <ThemedView style={styles.section}>
-        {renderNextWorkout()}
-      </ThemedView>
-      <ThemedView style={styles.section}>
-        <TouchableOpacity style={styles.newSheetButton} onPress={() => setModalVisible(true)}>
-          <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Criar Nova Ficha</ThemedText>
-        </TouchableOpacity>
-      </ThemedView>
-      <ThemedView style={styles.section}>
-        <ThemedText type="subtitle" style={{ marginBottom: 10 }}>Amigos</ThemedText>
-      </ThemedView>
-    </>
-  );
+        <ThemedView style={styles.section}>
+          {renderWeeklyCalendar()}
+        </ThemedView>
+        <ThemedView style={styles.section}>
+          {renderNextWorkout()}
+        </ThemedView>
+        <ThemedView style={styles.section}>
+          <View style={styles.statsContainer}>
+            <View style={[styles.statBox, workoutsThisWeekMet && styles.statBoxMet]}>
+              <ThemedText style={styles.statValue}>{weeklyStats.workoutsThisWeek}/{weeklyStats.goal}</ThemedText>
+              <ThemedText style={styles.statLabel}>Treinos na semana</ThemedText>
+            </View>
+            <View style={styles.statBox}>
+              <ThemedText style={styles.statValue}>{weeklyStats.streak}</ThemedText>
+              <ThemedText style={styles.statLabel}>Semanas em sequência</ThemedText>
+            </View>
+          </View>
+        </ThemedView>
+        <ThemedView style={styles.section}>
+          <TouchableOpacity style={styles.newSheetButton} onPress={() => setModalVisible(true)}>
+            <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Criar Nova Ficha</ThemedText>
+          </TouchableOpacity>
+        </ThemedView>
+        <ThemedView style={styles.section}>
+          <ThemedText type="subtitle" style={{ marginBottom: 10 }}>Amigos</ThemedText>
+        </ThemedView>
+      </>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -353,6 +481,10 @@ const styles = StyleSheet.create({
   loggedDay: {
     backgroundColor: '#DAA520', // Dourado Pastel
   },
+  scheduledDay: {
+    borderWidth: 1.5,
+    borderColor: '#a78bfa',
+  },
   dayText: {
     fontWeight: 'bold',
     color: '#E0E0E0',
@@ -361,32 +493,79 @@ const styles = StyleSheet.create({
     marginTop: 5,
     color: '#FFFFFF',
   },
-  duolingoCard: {
+  nextWorkoutCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 15,
     padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   cardTitle: {
     color: '#fff',
     marginBottom: 10,
   },
-  cardText: {
+  workoutInfoContainer: {
+    flex: 1,
+    marginRight: 15,
+  },
+  workoutTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  workoutName: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 18,
+    marginLeft: 10,
+  },
+  workoutDetailsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  workoutDetailText: {
     color: '#ccc',
-    marginBottom: 5,
+    fontSize: 14,
+    marginLeft: 5,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    gap: 10,
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 15,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statBoxMet: {
+    backgroundColor: 'rgba(218, 165, 32, 0.2)',
+    borderColor: '#DAA520',
+  },
+  statValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#ccc',
+    marginTop: 5,
+    textAlign: 'center',
   },
   startButton: {
     backgroundColor: '#58CC02',
-    padding: 15,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
     borderRadius: 10,
-    alignItems: 'center',
-    marginTop: 15,
-  },
-  actionButton: {
-    backgroundColor: '#1cb0f6',
-    padding: 10,
-    borderRadius: 8,
   },
   friendItem: {
     flexDirection: 'row',
@@ -395,6 +574,11 @@ const styles = StyleSheet.create({
     padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  startButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   friendName: {
     fontSize: 16,

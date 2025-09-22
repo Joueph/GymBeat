@@ -32,14 +32,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="workouts"
         options={{
-          title: "Workouts",
+          title: "Treinos",
           tabBarIcon: ({ color }) => <TabBarIcon name="book" color={color} />,
         }}
       />
       <Tabs.Screen
         name="treinoHoje"
         options={{
-          title: "Treino de Hoje",
+          title: "Meus treinos",
           tabBarIcon: ({ color }) => <TabBarIcon name="fire" color={color} />,
         }}
       />

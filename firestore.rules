@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can read any profile, but only write to their own.
+    // This is useful for features like viewing friends' profiles.
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId;
+    }
+
+    // Users can only read and write their own Fichas.
+    match /fichas/{fichaId} {
+      allow read, update, delete: if request.auth.uid == resource.data.usuarioId;
+      allow create: if request.auth.uid == request.resource.data.usuarioId;
+    }
+
+    // Users can only read and write their own Treinos.
+    match /treinos/{treinoId} {
+      allow read, update, delete: if request.auth.uid == resource.data.usuarioId;
+      allow create: if request.auth.uid == request.resource.data.usuarioId;
+    }
+
+    // Users can create and read their own workout logs.
+    match /logs/{logId} {
+      allow read: if request.auth.uid == resource.data.usuarioId;
+      allow create: if request.auth.uid == request.resource.data.usuarioId;
+    }
+
+    // --- Public Model Collections ---
+    // Any authenticated user can read the public models.
+    // Writes are disabled from the client to prevent tampering.
+
+    match /fichasModelos/{fichaModeloId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Disable client-side writes
+    }
+
+    match /treinosModelos/{treinoModeloId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Disable client-side writes
+    }
+
+    match /exerciciosModelos/{exercicioModeloId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Disable client-side writes
+    }
+  }
+}

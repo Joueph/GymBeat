@@ -7,6 +7,7 @@ import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Animated, FlatList, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
 import { DiaSemana, Treino } from '../../models/treino';
@@ -276,26 +277,24 @@ export default function HomeScreen() {
     const numExercicios = nextTreino.exercicios.length;
 
     return (
-      <View>
+      <View style={styles.nextWorkoutCard}>
         <ThemedText type="subtitle" style={styles.cardTitle}>{titulo}</ThemedText>
-        <TouchableOpacity onPress={() => router.push(`/treino/editarTreino?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
-          <View style={styles.nextWorkoutCard}>
-            <View style={styles.workoutInfoContainer}>
-              <View style={styles.workoutTitleContainer}>
-                <MaterialCommunityIcons name="dumbbell" size={20} color="#ccc" />
-                <ThemedText style={styles.workoutName}>{nextTreino.nome}</ThemedText>
-              </View>
-              <View style={styles.workoutDetailsContainer}>
-                <FontAwesome name="bars" size={16} color="#ccc" />
-                <ThemedText style={styles.workoutDetailText}>{numExercicios} {numExercicios === 1 ? 'exercício' : 'exercícios'}</ThemedText>
-                <FontAwesome name="clock-o" size={16} color="#ccc" style={{ marginLeft: 15 }} />
-                <ThemedText style={styles.workoutDetailText}>{duration}</ThemedText>
-              </View>
+        <TouchableOpacity style={styles.workoutContent} onPress={() => router.push(`/treino/editarTreino?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
+          <View style={styles.workoutInfoContainer}>
+            <View style={styles.workoutTitleContainer}>
+              <MaterialCommunityIcons name="dumbbell" size={20} color="#ccc" />
+              <ThemedText style={styles.workoutName}>{nextTreino.nome}</ThemedText>
             </View>
-            <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
-              <ThemedText style={styles.startButtonText}>Começar</ThemedText>
-            </TouchableOpacity>
+            <View style={styles.workoutDetailsContainer}>
+              <FontAwesome name="bars" size={16} color="#ccc" />
+              <ThemedText style={styles.workoutDetailText}>{numExercicios} {numExercicios === 1 ? 'exercício' : 'exercícios'}</ThemedText>
+              <FontAwesome name="clock-o" size={16} color="#ccc" style={{ marginLeft: 15 }} />
+              <ThemedText style={styles.workoutDetailText}>{duration}</ThemedText>
+            </View>
           </View>
+          <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
+            <ThemedText style={styles.startButtonText}>Começar</ThemedText>
+          </TouchableOpacity>
         </TouchableOpacity>
       </View>
     );
@@ -311,12 +310,12 @@ export default function HomeScreen() {
       <>
         <View style={styles.headerContainer}>
           <View style={{ gap: 5, flexDirection: 'column', alignItems: 'flex-start', paddingBottom: 5 , paddingTop: 10}}>
-            <ThemedText style={styles.smallGreeting}>Olá,</ThemedText>
+            <ThemedText style={styles.smallGreeting}>Olá,          <Animated.Text style={[styles.waveEmoji, { transform: [{ rotate: waveRotation }] }]}>
+            👋
+          </Animated.Text></ThemedText>
             <ThemedText style={styles.largeUsername}>{profile?.nome}</ThemedText>
           </View>
-          <Animated.Text style={[styles.waveEmoji, { transform: [{ rotate: waveRotation }] }]}>
-            👋
-          </Animated.Text>
+
         </View>
         <ThemedView style={styles.section}>
           {renderWeeklyCalendar()}
@@ -351,74 +350,78 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={friends}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.friendItem}>
-            <ThemedText style={styles.friendName}>{item.nome}</ThemedText>
-            <View style={styles.friendStatus}>
-              {item.hasTrainedToday ? (
-                <>
-                  <FontAwesome name="check-circle" size={16} color="#58CC02" />
-                  <ThemedText style={styles.friendStatusText}> Treinou Hoje</ThemedText>
-                </>
-              ) : (
-                <>
-                  <FontAwesome name="times-circle" size={16} color="#ff3b30" />
-                  <ThemedText style={styles.friendStatusText}> Não treinou</ThemedText>
-                </>
-              )}
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.container}>
+        <FlatList
+          data={friends}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <View style={styles.friendItem}>
+              <ThemedText style={styles.friendName}>{item.nome}</ThemedText>
+              <View style={styles.friendStatus}>
+                {item.hasTrainedToday ? (
+                  <>
+                    <FontAwesome name="check-circle" size={16} color="#58CC02" />
+                    <ThemedText style={styles.friendStatusText}> Treinou Hoje</ThemedText>
+                  </>
+                ) : (
+                  <>
+                    <FontAwesome name="times-circle" size={16} color="#ff3b30" />
+                    <ThemedText style={styles.friendStatusText}> Não treinou</ThemedText>
+                  </>
+                )}
+              </View>
             </View>
-          </View>
-        )}
-        ListEmptyComponent={
-          <View style={styles.emptyFriendsContainer}>
-            <ThemedText style={styles.emptyFriendsText}>
-              Você ainda não tem amigos. Adicione amigos para ver a atividade deles aqui!
-            </ThemedText>
-          </View>
-        }
-        ListHeaderComponent={ListHeader}
-      />
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={isModalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <BlurView intensity={50} tint="dark" style={styles.blurContainer}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
+          )}
+          ListEmptyComponent={
+            <View style={styles.emptyFriendsContainer}>
+              <ThemedText style={styles.emptyFriendsText}>
+                Você ainda não tem amigos. Adicione amigos para ver a atividade deles aqui!
+              </ThemedText>
+            </View>
+          }
+          ListHeaderComponent={ListHeader}
+        />
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={isModalVisible}
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <BlurView intensity={50} tint="dark" style={styles.blurContainer}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
 
-          <View style={styles.modalView}>
-            <ThemedText type="title" style={{ marginBottom: 15 }}>Criar Nova Ficha</ThemedText>
-            <ThemedText style={{ marginBottom: 20, textAlign: 'center' }}>
-              Comece um novo plano de treino. Você pode montar sua própria ficha ou usar um de nossos modelos pré-definidos.
-            </ThemedText>
-            <TouchableOpacity style={styles.modalButton} onPress={handleCreateNewFicha}>
-              <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Criar Ficha do Zero</ThemedText>
-            </TouchableOpacity>
+            <View style={styles.modalView}>
+              <ThemedText type="title" style={{ marginBottom: 15 }}>Criar Nova Ficha</ThemedText>
+              <ThemedText style={{ marginBottom: 20, textAlign: 'center' }}>
+                Comece um novo plano de treino. Você pode montar sua própria ficha ou usar um de nossos modelos pré-definidos.
+              </ThemedText>
+              <TouchableOpacity style={styles.modalButton} onPress={handleCreateNewFicha}>
+                <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Criar Ficha do Zero</ThemedText>
+              </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.modalButton, {  borderBlockColor: '#58CC02' }]} onPress={() => {
-              setModalVisible(false);
-              router.push('/(tabs)/workouts');
-            }}>
-              <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Ver Modelos</ThemedText>
-            </TouchableOpacity>
-          </View>
-        </BlurView>
-      </Modal>
-    </View>
+              <TouchableOpacity style={[styles.modalButton, {  borderBlockColor: '#58CC02' }]} onPress={() => {
+                setModalVisible(false);
+                router.push('/(tabs)/workouts');
+              }}>
+                <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Ver Modelos</ThemedText>
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+        </Modal>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#030405',
+  },
   container: {
     flex: 1,
     paddingHorizontal: 10,
-    paddingTop: 15,
-    backgroundColor: '#00141c',
   },
 headerContainer: {
   flexDirection: 'row',
@@ -434,16 +437,23 @@ headerContainer: {
     fontSize: 25,
     fontWeight: 'bold',
     color: '#ccc',
+    paddingTop: 10,
+    justifyContent: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    flexShrink: 1,
+    gap: 5,
   },
 largeUsername: {
   fontSize: 45,
   fontWeight: 'bold',
   color: '#fff',
-  paddingTop: 20, // Adicionado para evitar corte no topo
+  paddingTop: 20,
+  paddingBottom: 15,
   flexWrap: 'wrap',
-  flexShrink: 1,   // <-- permite encolher
   flexGrow: 1,     // <-- ocupa espaço disponível
-  minWidth: 0,     // <-- garante quebra correta
+  zIndex: 2,
 },
 
 
@@ -453,6 +463,7 @@ largeUsername: {
   },
   section: {
     marginBottom: 15,
+    backgroundColor: '#030405',
   },
   transparentSection: {
     marginTop: 20,
@@ -463,13 +474,13 @@ largeUsername: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#00141c',
+    backgroundColor: '#030405',
   },
   calendarContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     padding: 5,
-    backgroundColor: '#00141c',
+    backgroundColor: '#141414',
     borderRadius: 15,
     borderWidth: 1,
     borderColor: '#ffffff29',
@@ -488,14 +499,14 @@ largeUsername: {
 
   },
   progressionOverlay: {
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: '#ffffff1a',
   },
   loggedDay: {
     backgroundColor: '#DAA520', // Dourado Pastel
   },
   scheduledDay: {
     borderWidth: 1.5,
-    borderColor: '#6572ff9b',
+    borderColor: '#ffffff1a',
   },
   
   dayText: {
@@ -507,17 +518,21 @@ largeUsername: {
     color: '#FFFFFF',
   },
   nextWorkoutCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.0)',
-    padding: 5,
+    backgroundColor: '#141414',
+    padding: 15,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: '#ffffff29',
+  },
+  workoutContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   cardTitle: {
     color: '#fff',
-    marginBottom: 10,
-  },
-  workoutInfoContainer: {
+    marginBottom: 15,
+  },  workoutInfoContainer: {
     flex: 1,
     marginRight: 15,
   },
@@ -547,12 +562,12 @@ largeUsername: {
     gap: 10,
     paddingTop: 10,
     paddingBottom: 10,
-    backgroundColor: '#00141c',
+    backgroundColor: '#030405',
   },
 statBox: {
   flex: 1,
   minWidth: 0,          // <-- evita truncar o texto
-  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  backgroundColor: '#ffffff1a',
   borderRadius: 15,
   padding: 20,
   borderWidth: 1,
@@ -640,7 +655,7 @@ statLabel: {
   },
   modalView: {
     width: '100%',
-    backgroundColor: '#0d181c',
+    backgroundColor: '#030405',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 35,

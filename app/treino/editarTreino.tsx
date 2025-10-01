@@ -346,7 +346,7 @@ export default function EditarTreinoScreen() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#0d181c' }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#030405' }}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
             <Text style={styles.backButtonText}>‹</Text>
@@ -571,7 +571,7 @@ export default function EditarTreinoScreen() {
   );
 }
 const styles = StyleSheet.create({
-  container: { padding: 15 },
+  container: { padding: 15, backgroundColor: '#030405',},
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -579,7 +579,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingTop: 10,
     paddingBottom: 10,
-    backgroundColor: '#0d181c',
+    backgroundColor: '#030405',
   },
   backButton: {
     padding: 5,
@@ -617,26 +617,29 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginTop: 10, marginBottom: 10 },
   exercicioCard: {
-    backgroundColor: '#222',
+    backgroundColor: '#141414',
     padding: 15,
     borderRadius: 8,
     marginBottom: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
   },
   exercicioName: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   exercicioDetails: { color: '#aaa', fontSize: 14, marginTop: 4 },
   addButton: {
     borderWidth: 1,
-    borderColor: '#4CAF50',
+    borderColor: '#ffffffee',
     borderStyle: 'dashed',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
     marginTop: 10,
+    backgroundColor: '#121212',
   },
-  addButtonText: { color: '#4CAF50', fontSize: 16, fontWeight: 'bold' },
+  addButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   saveButton: { backgroundColor: '#1cb0f6', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 30, marginBottom: 50 },
   saveButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   deleteBox: {

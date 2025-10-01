@@ -12,7 +12,7 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db } from '../firebaseconfig';
 import { Ficha } from '../models/ficha';
 import { FichaModelo } from '../models/fichaModelo';
 import { TreinoModelo } from '../models/treinoModelo';

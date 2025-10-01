@@ -5,17 +5,17 @@ import { useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Button,
-    Image,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Button,
+  Image,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { auth } from "../firebaseConfig";
+import { auth } from "../firebaseconfig";
 import { uploadImageAndGetURL } from '../services/storageService'; // Assumimos que esta função existe
 import { createUserProfileDocument } from "../userService"; // Assumimos que esta função aceita os novos campos
 

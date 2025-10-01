@@ -1,6 +1,6 @@
 import { User } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
-import { db } from "./firebaseConfig";
+import { db } from "./firebaseconfig";
 import { Usuario } from "./models/usuario"; // Importe a interface Usuario
 
 /**

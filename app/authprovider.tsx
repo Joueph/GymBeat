@@ -6,7 +6,7 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import { auth } from "../firebaseConfig";
+import { auth } from "../firebaseconfig";
 
 export type AuthContextType = {
   user: User | null;

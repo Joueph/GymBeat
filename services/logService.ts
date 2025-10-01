@@ -1,5 +1,5 @@
 import { addDoc, collection, getDocs, orderBy, query, where } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db } from '../firebaseconfig';
 import { Log } from '../models/log';
 
 const logsCollection = collection(db, 'logs');

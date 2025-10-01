@@ -1,5 +1,5 @@
 import { collection, DocumentSnapshot, getDocs, limit, orderBy, query, startAfter, where } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db } from '../firebaseconfig';
 import { ExercicioModelo } from '../models/exercicio';
 
 const EXERCICIOS_PAGE_SIZE = 20; // Define a default page size

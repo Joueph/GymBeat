@@ -1,5 +1,5 @@
 import { addDoc, collection, doc, documentId, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { db } from '../firebaseconfig';
 import { Exercicio, ExercicioModelo } from '../models/exercicio';
 import { Ficha } from '../models/ficha';
 import { Treino } from '../models/treino';

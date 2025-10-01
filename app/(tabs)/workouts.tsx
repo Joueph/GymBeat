@@ -4,7 +4,7 @@ import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
+import AnimatedGradientBorderButton from '../../components/AnimatedGradientBorderButton';
 import { FichaModelo } from '../../models/fichaModelo';
 import { TreinoModelo } from '../../models/treinoModelo';
 import { copyFichaModeloToUser, getFichasModelos } from '../../services/fichaService';
@@ -166,13 +166,13 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
             )}
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.copyButton} onPress={handleCopyFicha} disabled={isCopying}>
+              <AnimatedGradientBorderButton onPress={handleCopyFicha} disabled={isCopying}>
                 {isCopying ? (
-                  <ActivityIndicator color="#0d181c" />
+                  <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.copyButtonText}>Usar este plano de treino</Text>
                 )}
-              </TouchableOpacity>
+              </AnimatedGradientBorderButton>
             </View>
           </View>
         </Modal>
@@ -184,129 +184,111 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0d181c',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#0d181c',
+    backgroundColor: '#030405',
   },
   listContainer: {
     padding: 15,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 15,
+    marginBottom: 20,
   },
   card: {
-    backgroundColor: '#1a2a33',
+    backgroundColor: '#141414',
     borderRadius: 12,
-    marginBottom: 15,
+    marginBottom: 10,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#2a3b42',
+    borderColor: '#ffffff1a',
   },
   cardContent: {
-    padding: 20,
+    padding: 15,
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 10,
   },
   cardDetails: {
     flexDirection: 'row',
-    gap: 15,
+    marginTop: 5,
   },
   cardDetailText: {
     fontSize: 14,
     color: '#ccc',
-    backgroundColor: '#2a3b42',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    overflow: 'hidden', // for iOS to respect borderRadius
+    marginRight: 10,
+    textTransform: 'capitalize',
   },
   emptyText: {
     color: '#aaa',
     textAlign: 'center',
-    marginTop: 50,
+    marginTop: 20,
     fontSize: 16,
   },
-  emptyContainer: {
-    paddingVertical: 20,
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#030405',
   },
-  emptySubText: {
-    color: '#888',
-    textAlign: 'center',
-    marginTop: 5,
-  },
-  // Modal Styles
   modalContainer: {
     flex: 1,
-    backgroundColor: '#0d181c',
+    backgroundColor: '#030405',
+    padding: 20,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    marginBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#2a3b42',
+    borderBottomColor: '#ffffff1a',
+    paddingBottom: 20,
   },
   modalTitle: {
     fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
-    flex: 1,
-    marginRight: 10,
   },
   modalList: {
-    padding: 20,
+    paddingBottom: 20,
   },
   treinoContainer: {
-    backgroundColor: '#1a2a33',
-    borderRadius: 10,
+    backgroundColor: '#141414',
+    borderRadius: 8,
     padding: 15,
-    marginBottom: 15,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
   },
   treinoTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
   },
   treinoDays: {
     fontSize: 12,
-    fontWeight: 'bold',
     color: '#1cb0f6',
-    marginTop: 4,
-    marginBottom: 10,
+    marginTop: 5,
   },
   exercicioText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#ccc',
-    lineHeight: 22,
+    marginLeft: 10,
+    marginTop: 3,
   },
   modalFooter: {
-    padding: 20,
+    marginTop: 20,
+    marginBottom: 10,
     borderTopWidth: 1,
-    borderTopColor: '#2a3b42',
-    backgroundColor: '#0d181c',
-  },
-  copyButton: {
-    backgroundColor: '#1cb0f6',
-    padding: 15,
-    borderRadius: 10,
-    alignItems: 'center',
+    borderTopColor: '#ffffff1a',
+    padding: 10,
   },
   copyButtonText: {
     color: '#fff',
-    fontSize: 18,
     fontWeight: 'bold',
+    fontSize: 16,
   },
 });

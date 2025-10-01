@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Modal, FlatList, TextInput, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { FontAwesome } from '@expo/vector-icons';
-import { VideoView as Video, useVideoPlayer } from 'expo-video';
-import { useAuth } from '../authprovider';
-import { getTreinoById } from '../../services/treinoService';
-import { addLog } from '../../services/logService';
-import { Treino } from '../../models/treino';
-import { Log } from '../../models/log';
 import { Exercicio, Serie } from '@/models/exercicio';
+import { FontAwesome } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { VideoView as Video, useVideoPlayer } from 'expo-video';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Log } from '../../models/log';
+import { Treino } from '../../models/treino';
+import { addLog } from '../../services/logService';
+import { getTreinoById } from '../../services/treinoService';
+import { useAuth } from '../authprovider';
 
 // A new component to manage each video player instance
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
@@ -452,19 +452,21 @@ export default function OngoingWorkoutScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0d181c' },
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0d181c' },
+  safeArea: { flex: 1, backgroundColor: '#030405' },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#030405' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 10 },
   backButton: {},
   headerTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
   content: { flex: 1, justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingBottom: 40 },
   exerciseCard: {
-    backgroundColor: '#1a2a33',
+    backgroundColor: '#141414',
     borderRadius: 15,
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     padding: 10,
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
   },
   exerciseVideo: {
     width: 80,

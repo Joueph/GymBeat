@@ -9,7 +9,7 @@ import { signOut } from "firebase/auth";
 import { ActivityIndicator, Alert, Button, Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { auth } from "../../firebaseConfig";
+import { auth } from "../../firebaseconfig";
 import { Usuario } from "../../models/usuario";
 import { getLogsByUsuarioId } from "../../services/logService";
 import { uploadImageAndGetURL } from "../../services/storageService";
@@ -219,7 +219,7 @@ const handleUpdate = async () => {
   }
 
   return (
-    <View style={{flex: 1, backgroundColor: "#0d181c"}}>
+    <View style={{flex: 1, backgroundColor: "#030405"}}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
         <Text style={styles.title}>Seu Perfil</Text>
         <TouchableOpacity onPress={handlePickImage} disabled={uploading}>
@@ -228,7 +228,7 @@ const handleUpdate = async () => {
           ) : (
             <View style={styles.pfpPlaceholder}><Text style={styles.placeholderText}>+</Text></View>
           )}
-          {uploading && <ActivityIndicator style={styles.uploadIndicator} size="large" color="#4CAF50" />}
+          {uploading && <ActivityIndicator style={styles.uploadIndicator} size="large" color="#ffffff1a" />}
         </TouchableOpacity>
         <Text style={styles.profileName}>{profile.nome}</Text>
         <Text style={styles.emailText}>{user?.email}</Text>
@@ -307,7 +307,7 @@ const handleUpdate = async () => {
               </TouchableOpacity>
 
               {showDatePicker && (
-                <DateTimePicker testID="dateTimePicker" value={toDate(profile.dataNascimento) || new Date()} mode="date" display="default" onChange={handleDateChange} maximumDate={new Date()} themeVariant="dark" textColor="white" style={{ backgroundColor: '#173F5F' }} />
+                <DateTimePicker testID="dateTimePicker" value={toDate(profile.dataNascimento) || new Date()} mode="date" display="default" onChange={handleDateChange} maximumDate={new Date()} themeVariant="dark" textColor="white" style={{ backgroundColor: '#141414' }} />
               )}
 
               <Text style={styles.label}>Plano</Text>
@@ -321,7 +321,7 @@ const handleUpdate = async () => {
               )}
 
               <View style={{ width: '100%', marginTop: 20 }}>
-                <Button title="Salvar Alterações" onPress={handleUpdate} color="#4CAF50" />
+                <Button title="Salvar Alterações" onPress={handleUpdate} color="#141414" />
               </View>
               
               <View style={{ marginTop: 40, width: '100%' }}>
@@ -341,7 +341,7 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     marginBottom: 10,
     borderWidth: 2,
-    borderColor: '#4CAF50',
+    borderColor: '#ffffff1a',
   },
   pfpPlaceholder: {
     width: 120,
@@ -349,8 +349,8 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     marginBottom: 10,
     borderWidth: 2,
-    borderColor: '#4CAF50',
-    backgroundColor: '#173F5F',
+    borderColor: '#ffffff1a',
+    backgroundColor: '#141414',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -372,16 +372,16 @@ const styles = StyleSheet.create({
     bottom: 0,
   },
   scrollView: {
-    backgroundColor: "#0d181c",
+    backgroundColor: "#030405",
   },
   modalScrollView: {
-    backgroundColor: "#0d181c",
+    backgroundColor: "#030405",
   },
   container: {
     flexGrow: 1,
     alignItems: "center",
     padding: 20,
-    backgroundColor: "#0d181c",
+    backgroundColor: "#030405",
   },
   title: { fontSize: 28, fontWeight: "bold", color: "#fff", marginBottom: 20, alignSelf: 'flex-start' },
   profileName: {
@@ -400,20 +400,20 @@ const styles = StyleSheet.create({
   },
   input: {
     width: "100%",
-    backgroundColor: "#173F5F",
+    backgroundColor: "#141414",
     color: "#fff",
     borderRadius: 8,
     padding: 12,
     marginBottom: 15,
     borderWidth: 1,
-    borderColor: "#4CAF50",
+    borderColor: "#ffffff1a",
     justifyContent: 'center',
     minHeight: 48,
   },
   optionContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, width: '100%', gap: 10 },
   optionContainerVertical: { flexDirection: 'column', alignItems: 'stretch', marginBottom: 15, width: '100%' },
-  optionButton: { paddingVertical: 12, paddingHorizontal: 10, backgroundColor: '#173F5F', borderRadius: 8, borderWidth: 1, borderColor: '#4CAF50', marginVertical: 5, flex: 1 },
-  streakGoalButton: { paddingVertical: 12, paddingHorizontal: 10, backgroundColor: '#173F5F', borderRadius: 8, borderWidth: 1, borderColor: '#4CAF50', flex: 1, alignItems: 'center' },
+  optionButton: { paddingVertical: 12, paddingHorizontal: 10, backgroundColor: '#141414', borderRadius: 8, borderWidth: 1, borderColor: '#ffffff1a', marginVertical: 5, flex: 1 },
+  streakGoalButton: { paddingVertical: 12, paddingHorizontal: 10, backgroundColor: '#141414', borderRadius: 8, borderWidth: 1, borderColor: '#ffffff1a', flex: 1, alignItems: 'center' },
   optionSelected: { backgroundColor: '#1cb0f6', borderColor: '#fff' },
   optionText: { color: '#fff', textAlign: 'center', fontWeight: 'bold' },
 
@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
 
   freePlanContainer: {
     width: '100%',
-    backgroundColor: '#173F5F',
+    backgroundColor: '#141414',
     borderRadius: 8,
     padding: 15,
     marginBottom: 20,
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
   },
   proPlanContainer: {
     width: '100%',
-    backgroundColor: '#173F5F',
+    backgroundColor: '#141414',
     borderRadius: 8,
     padding: 15,
     marginBottom: 20,
@@ -536,12 +536,12 @@ const styles = StyleSheet.create({
   // Modal Styles
   modalSafeArea: {
     flex: 1,
-    backgroundColor: "#0d181c",
+    backgroundColor: "#030405",
   },
   modalContainer: {
     flexGrow: 1,
     padding: 20,
-    backgroundColor: "#0d181c",
+    backgroundColor: "#030405",
   },
   modalHeader: {
     flexDirection: 'row',

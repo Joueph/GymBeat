@@ -1,6 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { HapticTab } from '../../components/haptic-tab';
 
 function TabBarIcon(props: { name: React.ComponentProps<typeof FontAwesome>['name']; color: string }) {
   return <FontAwesome size={24} style={{ marginBottom: -3 }} {...props} />;
@@ -12,20 +13,22 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: true,
         headerStyle: {
-          backgroundColor: '#192427', // This solid color simulates 5% white opacity over a dark background
+          backgroundColor: '#141414', // This solid color simulates 5% white opacity over a dark background
           borderBottomWidth: 1,
           borderBottomColor: 'rgba(255, 255, 255, 0.1)',
           elevation: 0,
         },
         headerTintColor: '#fff',
-        tabBarStyle: { backgroundColor: '#0d181c', borderTopColor: 'rgba(255, 255, 255, 0.1)' },
-        tabBarActiveTintColor: '#4c72af',
+        tabBarStyle: { backgroundColor: '#141414', borderTopColor: 'rgba(255, 255, 255, 0.1)' },
+        tabBarActiveTintColor: '#fff',
+        tabBarButton: HapticTab,
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           title: "Home",
+          headerShown: false,
           tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
         }}
       />

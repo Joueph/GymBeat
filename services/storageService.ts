@@ -1,5 +1,5 @@
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
-import { app } from "../firebaseConfig"; // Importa a instância do app Firebase
+import { app } from "../firebaseconfig"; // Importa a instância do app Firebase
 // Inicializa o Firebase Storage
 const storage = getStorage(app);
 

@@ -160,7 +160,7 @@ export default function CriarFichaScreen() {
 }
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#0d181c' },
+    safeArea: { flex: 1, backgroundColor: '#030405' },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -182,14 +182,14 @@ const styles = StyleSheet.create({
       width: 40,
       alignItems: 'center',
     },
-    container: { padding: 15 },
+    container: { padding: 15, backgroundColor: '#030405' },
     title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
     input: { backgroundColor: '#222', color: '#fff', padding: 15, borderRadius: 8, fontSize: 16, marginBottom: 20 },
     sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginTop: 10, marginBottom: 10 },
-    treinoCard: { backgroundColor: '#173F5F', padding: 15, borderRadius: 8, marginBottom: 10 },
+    treinoCard: { backgroundColor: '#141414', padding: 15, borderRadius: 8, marginBottom: 10, borderColor: '#ffffff1a', borderWidth: 1 },
     treinoName: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
     treinoInfo: { color: '#ccc', fontSize: 14, marginTop: 5 },
-    addButton: { backgroundColor: '#4CAF50', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10 },
+    addButton: { backgroundColor: '#282828ff', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 10, borderColor: '#ffffff1a', borderWidth: 1 },
     addButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
     saveButton: { backgroundColor: '#1cb0f6', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 30, marginBottom: 50 },
     saveButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },

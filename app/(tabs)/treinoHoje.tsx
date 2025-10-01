@@ -388,14 +388,14 @@ export default function MeusTreinosScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#0d181c', padding: 15 },
+    container: { flex: 1, backgroundColor: '#030405', padding: 15 },
     card: {
-      backgroundColor: '#1a2a33',
+      backgroundColor: '#141414',
       borderRadius: 12,
       marginBottom: 10,
       overflow: 'hidden',
       borderWidth: 1,
-      borderColor: '#2a3b42',
+      borderColor: '#fffff1a',
     },
     cardContent: {
       padding: 15,
@@ -411,10 +411,10 @@ const styles = StyleSheet.create({
       marginTop: 5,
     },
     cardFichaAtiva: { 
-      backgroundColor: '#1a2a33', 
+      backgroundColor: '#141414', 
       borderRadius: 12, 
       borderWidth: 1, 
-      borderColor: '#2a3b42', 
+      borderColor: '#ffffff1a', 
       overflow: 'hidden', 
       justifyContent: 'center', 
       flexShrink: 1
@@ -447,9 +447,9 @@ const styles = StyleSheet.create({
     fichaAtivaTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
     fichaAtivaSubtitle: { fontSize: 14, color: '#ccc' },
     cardTreinoHoje: {
-      backgroundColor: '#323a7212',
+      backgroundColor: '#141414',
       borderWidth: 1,
-      borderColor: '#ffffff4a',
+      borderColor: '#ffffff1a',
       borderRadius: 12,
       padding: 20,
       flexDirection: 'row',
@@ -484,8 +484,10 @@ const styles = StyleSheet.create({
       paddingVertical: 40,
     },
     otherWorkoutCard: {
-      backgroundColor: '#1a2a33',
+      backgroundColor: '#141414',
       borderRadius: 8,
+      borderColor: '#ffffff1a',
+      borderWidth: 1,
       padding: 15,
       marginBottom: 10,
       flexDirection: 'row',
@@ -522,7 +524,7 @@ const styles = StyleSheet.create({
     },
     // Log Styles
     logCard: {
-      backgroundColor: '#1a2a33',
+      backgroundColor: '#141414',
       borderRadius: 8,
       marginBottom: 10,
       padding: 15,

@@ -2,13 +2,14 @@ import { Exercicio, Serie } from '@/models/exercicio';
 import { FontAwesome } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { VideoView as Video, useVideoPlayer } from 'expo-video';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
-import { addLog } from '../../services/logService';
+import { addLog, getLogsByUsuarioId } from '../../services/logService';
 import { getTreinoById } from '../../services/treinoService';
+import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 
 // A new component to manage each video player instance
@@ -32,6 +33,87 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
   return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
 }
 
+// Helper Components
+const ProgressBar = memo(({ progress }: { progress: number }) => (
+  <View style={styles.progressBarBackground}>
+    <View style={[styles.progressBarFill, { width: `${progress * 100}%` }]} />
+  </View>
+));
+
+const WorkoutCompleteModal = memo(({
+  isVisible, onClose, duration, exercisesCompleted, weeklyProgress, weekStreak,
+}: {
+  isVisible: boolean; onClose: () => void; duration: number; exercisesCompleted: number; weeklyProgress: { completed: number; total: number }; weekStreak: number;
+}) => {
+  const formatDuration = (totalSeconds: number) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <Modal visible={isVisible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.completeModalContainer}>
+          <Text style={styles.completeModalTitle}>Mandou Bem!</Text>
+          <Text style={styles.completeModalSubtitle}>Você completou o treino de hoje!</Text>
+
+          <View style={styles.statsSection}>
+            <Text style={styles.statsSectionTitle}>Seu Progresso</Text>
+            <View style={styles.progressItem}>
+              <Text style={styles.progressLabel}>Treinos da Semana</Text>
+              <ProgressBar progress={weeklyProgress.total > 0 ? weeklyProgress.completed / weeklyProgress.total : 0} />
+              <Text style={styles.progressText}>{weeklyProgress.completed} de {weeklyProgress.total} treinos</Text>
+            </View>
+            <View style={styles.progressItem}>
+              <Text style={styles.progressLabel}>Sequência de Semanas</Text>
+              <View style={styles.streakContainer}>
+                <FontAwesome name="fire" size={16} color="#FFA500" />
+                <Text style={styles.streakText}>{weekStreak} {weekStreak === 1 ? 'semana' : 'semanas'}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.statsSection}>
+            <Text style={styles.statsSectionTitle}>Seu Desempenho</Text>
+            <View style={styles.performanceContainer}>
+              <View style={styles.performanceCard}>
+                <FontAwesome name="clock-o" size={24} color="#1cb0f6" />
+                <Text style={styles.performanceValue}>{formatDuration(duration)}</Text>
+                <Text style={styles.performanceLabel}>Tempo de Treino</Text>
+              </View>
+              <View style={styles.performanceCard}>
+                <FontAwesome name="trophy" size={24} color="#1cb0f6" />
+                <Text style={styles.performanceValue}>{exercisesCompleted}</Text>
+                <Text style={styles.performanceLabel}>Exercícios Feitos</Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.continueButton} onPress={onClose}>
+            <Text style={styles.continueButtonText}>Continuar</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+});
+
+// Helper para converter Timestamps do Firestore e outros formatos para um objeto Date.
+const toDate = (date: any): Date | null => {
+  if (!date) return null;
+  if (typeof date.toDate === 'function') return date.toDate();
+  const d = new Date(date);
+  return isNaN(d.getTime()) ? null : d;
+};
+
+const getStartOfWeek = (date: Date): Date => {
+    const d = new Date(date);
+    d.setDate(d.getDate() - d.getDay() + (d.getDay() === 0 ? -6 : 1)); // Semana começa na Segunda
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
 export default function OngoingWorkoutScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -50,9 +132,15 @@ export default function OngoingWorkoutScreen() {
   // State for the exercise edit modal
   const [isEditExerciseModalVisible, setEditExerciseModalVisible] = useState(false);
   const [editingSeries, setEditingSeries] = useState<Serie[]>([]);
+  const [isWorkoutCompleteModalVisible, setWorkoutCompleteModalVisible] = useState(false);
 
   const [isExerciseListVisible, setExerciseListVisible] = useState(false);
   const [isExerciseDetailModalVisible, setExerciseDetailModalVisible] = useState(false);
+
+  // State for completion modal stats
+  const [workoutDuration, setWorkoutDuration] = useState(0);
+  const [weeklyProgress, setWeeklyProgress] = useState({ completed: 0, total: 0 });
+  const [weekStreak, setWeekStreak] = useState(0);
 
   // Memoize the max rest time to avoid recalculation
   const maxRestTime = useMemo(() => {
@@ -131,6 +219,7 @@ export default function OngoingWorkoutScreen() {
     const newCompletedSets = completedSets + 1;
 
     // Check if the current exercise is finished
+    // @ts-ignore
     if (newCompletedSets >= currentExercise.series.length) {
       // Check if it's the last exercise of the workout
       if (currentExerciseIndex < treino.exercicios.length - 1) {
@@ -139,6 +228,9 @@ export default function OngoingWorkoutScreen() {
       } else {
         // Workout finished!
         const horarioFim = new Date();
+        const durationInSeconds = (horarioFim.getTime() - horarioInicio!.getTime()) / 1000;
+        setWorkoutDuration(durationInSeconds);
+
         const logData: Omit<Log, 'id'> = {
           usuarioId: user.uid,
           treino: { ...treino, id: treinoId as string }, // Ensure treino has an ID
@@ -150,7 +242,8 @@ export default function OngoingWorkoutScreen() {
 
         try {
           await addLog(logData);
-          Alert.alert("Parabéns!", "Você concluiu o treino e seu progresso foi salvo!", [{ text: "OK", onPress: () => router.back() }]);
+          await calculateCompletionData(); // Calculate stats before showing modal
+          setWorkoutCompleteModalVisible(true); // Show the new detailed modal
         } catch (error) {
           console.error("Failed to save workout log:", error);
           Alert.alert("Erro", "Não foi possível salvar seu progresso, mas parabéns por concluir!", [{ text: "OK", onPress: () => router.back() }]);
@@ -164,6 +257,54 @@ export default function OngoingWorkoutScreen() {
     // Start resting after a set is completed
     setIsResting(true);
   };
+
+  const calculateCompletionData = async () => {
+    if (!user) return;
+    try {
+      const [userProfile, userLogs] = await Promise.all([
+        getUserProfile(user.uid),
+        getLogsByUsuarioId(user.uid)
+      ]);
+
+      const streakGoal = userProfile?.streakGoal || 2;
+      const today = new Date();
+      const startOfThisWeek = getStartOfWeek(today);
+
+      // Incluindo o treino atual que acabou de ser logado
+      const workoutsThisWeekCount = userLogs.filter(log => {
+        const logDate = toDate(log.horarioFim);
+        return logDate && logDate >= startOfThisWeek;
+      }).length;
+
+      setWeeklyProgress({ completed: workoutsThisWeekCount, total: streakGoal });
+
+      const workoutsByWeek: { [weekStart: string]: number } = {};
+      userLogs.forEach(log => {
+        const logDate = toDate(log.horarioFim);
+        if (logDate) {
+          const weekStartDate = getStartOfWeek(logDate);
+          const weekStartString = weekStartDate.toISOString().split('T')[0];
+          workoutsByWeek[weekStartString] = (workoutsByWeek[weekStartString] || 0) + 1;
+        }
+      });
+
+      let currentStreak = 0;
+      let weekToCheck = startOfThisWeek;
+      while (true) {
+        const weekString = weekToCheck.toISOString().split('T')[0];
+        if ((workoutsByWeek[weekString] || 0) >= streakGoal) {
+          currentStreak++;
+          weekToCheck.setDate(weekToCheck.getDate() - 7);
+        } else { break; }
+      }
+      setWeekStreak(currentStreak);
+    } catch (error) { console.error("Error calculating completion data:", error); }
+  };
+
+  const handleCloseCompleteModal = () => {
+    setWorkoutCompleteModalVisible(false);
+    router.back();
+  }
 
   const handleSaveExerciseChanges = () => {
     if (!treino) return;
@@ -447,6 +588,16 @@ export default function OngoingWorkoutScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Modal de Conclusão de Treino */}
+      <WorkoutCompleteModal
+        isVisible={isWorkoutCompleteModalVisible}
+        onClose={handleCloseCompleteModal}
+        duration={workoutDuration}
+        exercisesCompleted={treino.exercicios.length}
+        weeklyProgress={weeklyProgress}
+        weekStreak={weekStreak}
+      />
     </SafeAreaView>
   );
 }
@@ -640,13 +791,13 @@ const styles = StyleSheet.create({
     marginRight: 'auto',
   },
   setInput: {
-    backgroundColor: '#333',
+    backgroundColor: '#3a3a3a',
     color: '#fff',
     padding: 8,
     borderRadius: 5,
     width: 70,
     textAlign: 'center',
-    marginHorizontal: 5,
+    marginHorizontal: 8,
   },
   // Styles for Exercise Detail Modal
   detailModalContentWrapper: {
@@ -693,5 +844,125 @@ const styles = StyleSheet.create({
     color: '#ccc',
     fontSize: 16,
     marginLeft: 20,
+  },
+  // Estilos para o WorkoutCompleteModal
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    padding: 20,
+  },
+  completeModalContainer: {
+    width: '100%',
+    backgroundColor: '#141414',
+    borderRadius: 16,
+    padding: 25,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+  },
+  completeModalTitle: {
+    color: '#fff',
+    fontSize: 26,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  completeModalSubtitle: {
+    color: '#aaa',
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 25,
+  },
+  statsSection: {
+    width: '100%',
+    marginBottom: 20,
+  },
+  statsSectionTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textAlign: 'left',
+  },
+  progressItem: {
+    marginBottom: 15,
+  },
+  progressLabel: {
+    color: '#ccc',
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  progressBarBackground: {
+    width: '100%',
+    height: 8,
+    backgroundColor: '#333',
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#1cb0f6',
+  },
+  progressText: {
+    color: '#aaa',
+    fontSize: 12,
+    marginTop: 5,
+    textAlign: 'right',
+  },
+  streakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#222',
+    padding: 10,
+    borderRadius: 8,
+  },
+  streakText: {
+    color: '#FFA500',
+    fontSize: 14,
+    marginLeft: 8,
+    fontWeight: 'bold',
+  },
+  performanceContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 15,
+  },
+  performanceCard: {
+    flex: 1,
+    backgroundColor: '#222',
+    borderRadius: 12,
+    padding: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  performanceValue: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginTop: 8,
+  },
+  performanceLabel: {
+    color: '#aaa',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  continueButton: {
+    backgroundColor: '#1cb0f6',
+    paddingVertical: 15,
+    borderRadius: 10,
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 15,
+  },
+  continueButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });

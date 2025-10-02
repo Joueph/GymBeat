@@ -343,7 +343,7 @@ export default function HomeScreen() {
           </ThemedView>
         )}
         <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={{ marginBottom: 10 }}>Amigos</ThemedText>
+          <ThemedText type="subtitle" style={{ marginBottom: 10, color:'#fff' }}>Amigos</ThemedText>
         </ThemedView>
       </>
     );

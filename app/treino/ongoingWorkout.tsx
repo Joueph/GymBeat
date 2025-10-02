@@ -52,48 +52,55 @@ const WorkoutCompleteModal = memo(({
   };
 
   return (
-    <Modal visible={isVisible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal visible={isVisible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
-        <View style={styles.completeModalContainer}>
-          <Text style={styles.completeModalTitle}>Mandou Bem!</Text>
-          <Text style={styles.completeModalSubtitle}>Você completou o treino de hoje!</Text>
-
-          <View style={styles.statsSection}>
-            <Text style={styles.statsSectionTitle}>Seu Progresso</Text>
-            <View style={styles.progressItem}>
-              <Text style={styles.progressLabel}>Treinos da Semana</Text>
-              <ProgressBar progress={weeklyProgress.total > 0 ? weeklyProgress.completed / weeklyProgress.total : 0} />
-              <Text style={styles.progressText}>{weeklyProgress.completed} de {weeklyProgress.total} treinos</Text>
+        <SafeAreaView style={{ flex: 1 }}>
+          <View style={styles.completeModalContainer}>
+            <View style={styles.completeModalHeader}>
+              <Text style={styles.completeModalTitle}>Mandou Bem!</Text>
+              <Text style={styles.completeModalSubtitle}>Você completou o treino de hoje!</Text>
             </View>
-            <View style={styles.progressItem}>
-              <Text style={styles.progressLabel}>Sequência de Semanas</Text>
-              <View style={styles.streakContainer}>
-                <FontAwesome name="fire" size={16} color="#FFA500" />
-                <Text style={styles.streakText}>{weekStreak} {weekStreak === 1 ? 'semana' : 'semanas'}</Text>
+            
+            <View style={styles.bottomContentContainer}>
+              <View style={styles.allStatsContainer}>
+                <View style={styles.statsSection}>
+                  <Text style={styles.statsSectionTitle}>Seu Progresso</Text>
+                  <View style={styles.progressItem}>
+                    <Text style={styles.progressLabel}>Treinos da Semana</Text>
+                    <ProgressBar progress={weeklyProgress.total > 0 ? weeklyProgress.completed / weeklyProgress.total : 0} />
+                    <Text style={styles.progressText}>{weeklyProgress.completed} de {weeklyProgress.total} treinos</Text>
+                  </View>
+                  <View style={styles.progressItem}>
+                    <Text style={styles.progressLabel}>Sequência de Semanas</Text>
+                    <View style={styles.streakContainer}>
+                      <FontAwesome name="fire" size={16} color="#FFA500" />
+                      <Text style={styles.streakText}>{weekStreak} {weekStreak === 1 ? 'semana' : 'semanas'}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.statsSection}>
+                  <Text style={styles.statsSectionTitle}>Seu Desempenho</Text>
+                  <View style={styles.performanceContainer}>
+                    <View style={styles.performanceCard}>
+                      <FontAwesome name="clock-o" size={24} color="#1cb0f6" />
+                      <Text style={styles.performanceValue}>{formatDuration(duration)}</Text>
+                      <Text style={styles.performanceLabel}>Tempo de Treino</Text>
+                    </View>
+                    <View style={styles.performanceCard}>
+                      <FontAwesome name="trophy" size={24} color="#1cb0f6" />
+                      <Text style={styles.performanceValue}>{exercisesCompleted}</Text>
+                      <Text style={styles.performanceLabel}>Exercícios Feitos</Text>
+                    </View>
+                  </View>
+                </View>
               </View>
+              <TouchableOpacity style={styles.continueButton} onPress={onClose}>
+                <Text style={styles.continueButtonText}>Fechar</Text>
+              </TouchableOpacity>
             </View>
           </View>
-
-          <View style={styles.statsSection}>
-            <Text style={styles.statsSectionTitle}>Seu Desempenho</Text>
-            <View style={styles.performanceContainer}>
-              <View style={styles.performanceCard}>
-                <FontAwesome name="clock-o" size={24} color="#1cb0f6" />
-                <Text style={styles.performanceValue}>{formatDuration(duration)}</Text>
-                <Text style={styles.performanceLabel}>Tempo de Treino</Text>
-              </View>
-              <View style={styles.performanceCard}>
-                <FontAwesome name="trophy" size={24} color="#1cb0f6" />
-                <Text style={styles.performanceValue}>{exercisesCompleted}</Text>
-                <Text style={styles.performanceLabel}>Exercícios Feitos</Text>
-              </View>
-            </View>
-          </View>
-
-          <TouchableOpacity style={styles.continueButton} onPress={onClose}>
-            <Text style={styles.continueButtonText}>Continuar</Text>
-          </TouchableOpacity>
-        </View>
+        </SafeAreaView>
       </View>
     </Modal>
   );
@@ -848,44 +855,46 @@ const styles = StyleSheet.create({
   // Estilos para o WorkoutCompleteModal
   modalOverlay: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    padding: 20,
+    backgroundColor: '#141414ff', // Fundo sólido para tela cheia
   },
   completeModalContainer: {
-    width: '100%',
-    backgroundColor: '#141414',
-    borderRadius: 16,
-    padding: 25,
+    flex: 1,
+    backgroundColor: '#141414ff',
+    padding: 30,
+    flexDirection: 'column',
+    flexWrap: 'nowrap',
+    justifyContent: 'space-between',
+  },
+  completeModalHeader: {
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#ffffff1a',
+    width: '100%',
   },
   completeModalTitle: {
     color: '#fff',
-    fontSize: 26,
+    fontSize: 32, // Aumentado
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 15, // Alterado para 15
   },
   completeModalSubtitle: {
     color: '#aaa',
-    fontSize: 16,
+    fontSize: 18, // Aumentado
     textAlign: 'center',
-    marginBottom: 25,
   },
   statsSection: {
     width: '100%',
-    marginBottom: 20,
+    // marginBottom: 15, // Removido para ser controlado pelo 'gap' do container pai
+  },
+  allStatsContainer: {
+    width: '100%',
+    gap: 25,
+  },
+  bottomContentContainer: {
+    width: '100%',
+    gap: 40,
   },
   statsSectionTitle: {
     color: '#fff',
-    fontSize: 18,
+    fontSize: 20, // Aumentado
     fontWeight: 'bold',
     marginBottom: 15,
     textAlign: 'left',
@@ -895,7 +904,7 @@ const styles = StyleSheet.create({
   },
   progressLabel: {
     color: '#ccc',
-    fontSize: 14,
+    fontSize: 18, // Aumentado
     marginBottom: 8,
   },
   progressBarBackground: {
@@ -924,7 +933,7 @@ const styles = StyleSheet.create({
   },
   streakText: {
     color: '#FFA500',
-    fontSize: 14,
+    fontSize: 16, // Aumentado
     marginLeft: 8,
     fontWeight: 'bold',
   },
@@ -943,13 +952,13 @@ const styles = StyleSheet.create({
   },
   performanceValue: {
     color: '#fff',
-    fontSize: 22,
+    fontSize: 28, // Aumentado
     fontWeight: 'bold',
     marginTop: 8,
   },
   performanceLabel: {
     color: '#aaa',
-    fontSize: 12,
+    fontSize: 14, // Aumentado
     marginTop: 4,
   },
   continueButton: {
@@ -958,11 +967,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: '100%',
     alignItems: 'center',
-    marginTop: 15,
+    // marginTop: 20, // Removido para ser controlado pelo gap do container pai
   },
   continueButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 18, // Aumentado
     fontWeight: 'bold',
   },
 });

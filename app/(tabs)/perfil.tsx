@@ -321,7 +321,7 @@ const handleUpdate = async () => {
               )}
 
               <View style={{ width: '100%', marginTop: 20 }}>
-                <Button title="Salvar Alterações" onPress={handleUpdate} color="#141414" />
+                <Button title="Salvar Alterações" onPress={handleUpdate} color="#fff" />
               </View>
               
               <View style={{ marginTop: 40, width: '100%' }}>

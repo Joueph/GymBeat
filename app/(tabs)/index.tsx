@@ -5,8 +5,8 @@ import { ThemedView } from '@/components/themed-view';
 import { FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Animated, FlatList, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
@@ -53,13 +53,13 @@ interface FriendData extends Usuario {
 
 export default function HomeScreen() {
   const { user } = useAuth();
-  const [logs, setLogs] = useState<Log[]>([]);
   const router = useRouter();
+  const [profile, setProfile] = useState<Usuario | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [logs, setLogs] = useState<Log[]>([]);
   const [treinos, setTreinos] = useState<Treino[]>([]);
   const [friends, setFriends] = useState<FriendData[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
-  const [profile, setProfile] = useState<Usuario | null>(null);
   const [isModalVisible, setModalVisible] = useState(false);
   const [weeklyStats, setWeeklyStats] = useState({ workoutsThisWeek: 0, streak: 0, goal: 2 });
 
@@ -75,7 +75,7 @@ export default function HomeScreen() {
               getUserProfile(user.uid),
               getFichaAtiva(user.uid),
             ]);
-  
+
             setLogs(userLogs);
             setProfile(userProfile);
             setActiveFicha(fichaAtiva);
@@ -123,7 +123,7 @@ export default function HomeScreen() {
             } else {
               setTreinos([]);
             }
-  
+
             if (userProfile && Array.isArray(userProfile.amizades)) {
               const friendsData = await Promise.all(
                 userProfile.amizades.map(async (friendId: string) => {
@@ -169,25 +169,6 @@ export default function HomeScreen() {
     }, [user])
   );
 
-  const [waveAnimation] = useState(new Animated.Value(0));
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(waveAnimation, { toValue: 1, duration: 250, useNativeDriver: true }),
-        Animated.timing(waveAnimation, { toValue: 0, duration: 250, useNativeDriver: true }),
-        Animated.timing(waveAnimation, { toValue: 1, duration: 250, useNativeDriver: true }),
-        Animated.timing(waveAnimation, { toValue: 0, duration: 250, useNativeDriver: true }),
-        Animated.delay(3000)
-      ])
-    ).start();
-  }, []);
-
-  const waveRotation = waveAnimation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '30deg']
-  });
-
   const handleCreateNewFicha = async () => {
     if (!user) return;
     try {
@@ -204,7 +185,7 @@ export default function HomeScreen() {
 
       if (newFichaId) {
         setModalVisible(false);
-        router.push({ pathname: '/treino/criatFicha', params: { fichaId: newFichaId } });
+        router.push({ pathname: '/(treino)/criatFicha', params: { fichaId: newFichaId } });
       }
     } catch (error) {
       console.error("Erro ao criar nova ficha:", error);
@@ -230,7 +211,7 @@ export default function HomeScreen() {
     const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
     const today = new Date();
     const currentDay = today.getDay();
- 
+
     const loggedDays = new Set(
       logs.map(log => {
         const logDate = toDate(log.horarioFim);
@@ -250,7 +231,7 @@ export default function HomeScreen() {
           const isLogged = loggedDays.has(date.toDateString());
           const dayString: DiaSemana = DIAS_SEMANA_MAP[index] as DiaSemana;
           const isScheduled = scheduledDays.has(dayString);
- 
+
           const dayStyles = [
             styles.dayContainer,
             isPastOrToday && styles.progressionOverlay,
@@ -311,7 +292,7 @@ export default function HomeScreen() {
     return (
       <View style={styles.nextWorkoutCard}>
         <ThemedText type="subtitle" style={styles.cardTitle}>{titulo}</ThemedText>
-        <TouchableOpacity style={styles.workoutContent} onPress={() => router.push(`/treino/editarTreino?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
+        <TouchableOpacity style={styles.workoutContent} onPress={() => router.push(`/(treino)/editarTreino?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
           <View style={styles.workoutInfoContainer}>
             <View style={styles.workoutTitleContainer}>
               <MaterialCommunityIcons name="dumbbell" size={20} color="#ccc" />
@@ -324,13 +305,34 @@ export default function HomeScreen() {
               <ThemedText style={styles.workoutDetailText}>{duration}</ThemedText>
             </View>
           </View>
-          <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
+          <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
             <ThemedText style={styles.startButtonText}>Começar</ThemedText>
           </TouchableOpacity>
         </TouchableOpacity>
       </View>
     );
   };
+  
+  // Componente do Header Customizado
+  const CustomHeader = () => (
+    <View style={styles.customHeaderContainer}>
+      <View style={styles.headerLeft}>
+        <TouchableOpacity onPress={() => router.push('./perfil')} style={styles.profileImageContainer}>
+          <Image
+            source={{ uri: profile?.photoURL || 'https://via.placeholder.com/150' }}
+            style={styles.profileImage} 
+          />
+        </TouchableOpacity>
+        <View style={styles.headerTextContainer}>
+          <ThemedText style={styles.greetingText}>Hey' {profile?.nome?.split(' ')[0]}!</ThemedText>
+          <ThemedText style={styles.subGreetingText}>Ready for today' challenges?</ThemedText>
+        </View>
+      </View>
+      <TouchableOpacity onPress={() => router.push('./perfil')} style={styles.headerRight}>
+        <FontAwesome name="user-circle-o" size={28} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
 
   if (loading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
@@ -340,15 +342,7 @@ export default function HomeScreen() {
     const workoutsThisWeekMet = weeklyStats.workoutsThisWeek >= weeklyStats.goal;
     return (
       <>
-        <View style={styles.headerContainer}>
-          <View style={{ gap: 5, flexDirection: 'column', alignItems: 'flex-start', paddingBottom: 5 , paddingTop: 10}}>
-            <ThemedText style={styles.smallGreeting}>Olá,          <Animated.Text style={[styles.waveEmoji, { transform: [{ rotate: waveRotation }] }]}>
-            👋
-          </Animated.Text></ThemedText>
-            <ThemedText style={styles.largeUsername}>{profile?.nome}</ThemedText>
-          </View>
-
-        </View>
+        {/* O header antigo foi removido daqui */}
         <ThemedView style={styles.section}>
           {renderWeeklyCalendar()}
         </ThemedView>
@@ -384,6 +378,9 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        {/* Renderize o Header Customizado aqui */}
+        <CustomHeader />
+        
         <FlatList
           data={friends}
           keyExtractor={(item) => item.id}
@@ -441,54 +438,62 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 10,
   },
-headerContainer: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  marginBottom: 5,
-  paddingHorizontal: 5,
-  paddingTop: 10,
-  gap: 5,
-  flexWrap: 'wrap',
-  flexGrow: 1,
-},
-  smallGreeting: {
-    fontSize: 25,
-    fontWeight: 'bold',
-    color: '#ccc',
-    paddingTop: 10,
-    justifyContent: 'flex-start',
+  // ESTILOS PARA O NOVO HEADER
+  customHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    backgroundColor: '#030405',
+    marginBottom: 20,
+    marginTop: 30,
+  },
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    flexShrink: 1,
-    gap: 5,
   },
-largeUsername: {
-  fontSize: 45,
-  fontWeight: 'bold',
-  color: '#fff',
-  paddingTop: 20,
-  paddingBottom: 15,
-  flexWrap: 'wrap',
-  flexGrow: 1,     // <-- ocupa espaço disponível
-  zIndex: 2,
-},
-
-
-  waveEmoji: {
-    fontSize: 30,
-    marginLeft: 8,
+  profileImageContainer: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: '#FFA500', // Laranja
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  profileImage: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+  },
+  headerTextContainer: {
+    marginLeft: 10,
+  },
+  greetingText: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  subGreetingText: {
+    fontSize: 14,
+    color: '#aaa',
+  },
+  headerRight: {
+    // Espaçamento se necessário
+  },
+  // ESTILOS ANTIGOS
   section: {
     marginBottom: 15,
     backgroundColor: '#030405',
+    paddingHorizontal: 10,
   },
   transparentSection: {
     marginTop: 20,
     marginBottom: 15,
     backgroundColor: 'transparent',
+    paddingHorizontal: 10,
   },
   centered: {
     flex: 1,
@@ -507,7 +512,6 @@ largeUsername: {
     width: '100%',
     gap: 5,
   },
-
   dayContainer: {
     alignItems: 'center',
     paddingVertical: 8,
@@ -516,19 +520,17 @@ largeUsername: {
     flexDirection: 'column',
     justifyContent: 'space-between',
     flexBasis: '13%',  
-
   },
   progressionOverlay: {
     backgroundColor: '#ffffff1a',
   },
   loggedDay: {
-    backgroundColor: '#DAA520', // Dourado Pastel
+    backgroundColor: '#DAA520',
   },
   scheduledDay: {
     borderWidth: 1.5,
     borderColor: '#ffffff1a',
   },
-  
   dayText: {
     fontWeight: 'bold',
     color: '#E0E0E0',
@@ -552,7 +554,8 @@ largeUsername: {
   cardTitle: {
     color: '#fff',
     marginBottom: 15,
-  },  workoutInfoContainer: {
+  },
+  workoutInfoContainer: {
     flex: 1,
     marginRight: 15,
   },
@@ -584,54 +587,52 @@ largeUsername: {
     paddingBottom: 10,
     backgroundColor: '#030405',
   },
-statBox: {
-  flex: 1,
-  minWidth: 0,          // <-- evita truncar o texto
-  backgroundColor: '#ffffff1a',
-  borderRadius: 15,
-  padding: 20,
-  borderWidth: 1,
-  borderColor: 'rgba(255, 255, 255, 0.2)',
-  alignItems: 'center',
-  justifyContent: 'center',
-  flexDirection: 'column',
-},
-
+  statBox: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: '#ffffff1a',
+    borderRadius: 15,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'column',
+  },
   statBoxMet: {
     backgroundColor: 'rgba(218, 165, 32, 0.2)',
     borderColor: '#DAA520',
   },
-statValue: {
-  fontSize: 28,
-  fontWeight: 'bold',
-  color: '#fff',
-  paddingTop: 4, // Adicionado para evitar corte no topo
-  textAlign: 'center', // <-- centraliza
-  flexWrap: 'wrap',
-  flexGrow: 1,     // <-- ocupa espaço disponível
-},
-
-statLabel: {
-  fontSize: 14,
-  color: '#ccc',
-  marginTop: 5,
-  textAlign: 'center', // <-- garante centralização
-  flexWrap: 'wrap',
-},
-
+  statValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    paddingTop: 4,
+    textAlign: 'center',
+    flexWrap: 'wrap',
+    flexGrow: 1,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#ccc',
+    marginTop: 5,
+    textAlign: 'center',
+    flexWrap: 'wrap',
+  },
   startButton: {
-    backgroundColor: '#(rgb(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#(rgb(255, 255, 255, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   friendItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 15,
+    marginHorizontal: 10,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },

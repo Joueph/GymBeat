@@ -12,8 +12,8 @@ import { getTreinosModelosByIds } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 
 export default function WorkoutsScreen() {
-  const { user, loading: authLoading } = useAuth(); // Get auth loading state
-  const router = useRouter();
+  const { user, initialized } = useAuth();
+  const router = useRouter(); // router não é usado, mas pode ser útil no futuro.
   const [fichasModelos, setFichasModelos] = useState<FichaModelo[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalVisible, setModalVisible] = useState(false);
@@ -25,34 +25,25 @@ export default function WorkoutsScreen() {
   useFocusEffect(
     useCallback(() => {
       const fetchFichas = async () => {
-        console.log("[WorkoutsScreen] Verificando status de autenticação. Auth loading:", authLoading);
-        // Wait for auth to finish loading and ensure user is logged in
-        if (authLoading) {
-          console.log("[WorkoutsScreen] Autenticação ainda em andamento, aguardando...");
-          return; // Sai e espera a próxima execução do efeito quando authLoading mudar.
-        }
-
-        if (!user) {
-          console.log("[WorkoutsScreen] Nenhum usuário logado. Abortando busca de fichas modelo.");
-          setLoading(false);
+        // Se a autenticação ainda não foi inicializada, simplesmente aguardamos.
+        // O estado 'loading' já é 'true' por padrão, então a UI mostrará o spinner.
+        if (!initialized) {
           return;
         }
+        setLoading(true); // Garante que o loading seja exibido ao re-focar na tela
 
-        console.log(`[WorkoutsScreen] Usuário ${user.uid} autenticado. Buscando fichas modelo...`);
-        setLoading(true);
+
         try {
           const modelos = await getFichasModelos();
-          console.log(`[WorkoutsScreen] Sucesso! ${modelos.length} fichas modelo encontradas.`);
           setFichasModelos(modelos);
         } catch (error) {
-          console.error("[WorkoutsScreen] Erro ao buscar fichas modelo. O usuário pode não ter permissão para ler a coleção 'fichasModelos'. Detalhes do erro:", error);
           Alert.alert("Erro", "Não foi possível carregar os dados.");
         } finally {
           setLoading(false);
         }
       };
       fetchFichas();
-    }, [user, authLoading])
+    }, [user, initialized])
   );
 
 const handleSelectFicha = async (ficha: FichaModelo) => {
@@ -83,7 +74,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
         "Sucesso!",
         "A ficha foi copiada para seus treinos. Você pode editá-la agora ou mais tarde.",
         [
-          { text: "OK", style: "cancel" }, { text: "Editar Agora", onPress: () => router.push({ pathname: '/treino/criatFicha', params: { fichaId: newFichaId } }) }
+          { text: "OK", style: "cancel" }, { text: "Editar Agora", onPress: () => router.push({ pathname: '/(treino)/criatFicha', params: { fichaId: newFichaId } }) }
         ]
       );
     } catch (error) {

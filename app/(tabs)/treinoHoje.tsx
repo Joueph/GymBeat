@@ -78,7 +78,7 @@ const LogItem = ({ log }: { log: Log }) => {
 
 // Componente principal da tela
 export default function MeusTreinosScreen() {
-  const { user } = useAuth();
+  const { user, initialized: authInitialized } = useAuth();
   const router = useRouter();
   const navigation = useNavigation();
   const [fichaAtiva, setFichaAtiva] = useState<Ficha | null>(null);
@@ -104,7 +104,7 @@ export default function MeusTreinosScreen() {
         opcoes: 'Programa de treinamento',
         ativa: false
       });
-      if (newFichaId) router.push({ pathname: '/treino/criatFicha', params: { fichaId: newFichaId } });
+      if (newFichaId) router.push({ pathname: '/(treino)/criatFicha', params: { fichaId: newFichaId } });
     } catch (error) {
       console.error("Erro ao criar nova ficha:", error);
     }
@@ -123,8 +123,14 @@ export default function MeusTreinosScreen() {
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
-        console.log("Fetching data...");
-        if (!user) { setLoading(false); return; }
+        // Aguarda a inicialização da autenticação.
+        // Se ainda não foi inicializado, o spinner de loading (que é true por padrão) continuará visível.
+        if (!authInitialized) {
+          return;
+        }
+
+        if (!user) { setLoading(false); return; } // Se não houver usuário após a inicialização, para.
+
         setLoading(true);
         try {
           const [ativa, todas, userLogs] = await Promise.all([
@@ -172,7 +178,7 @@ export default function MeusTreinosScreen() {
         }
       };
       fetchData();
-    }, [user, dataVersion]) // Adicionado dataVersion como dependência
+    }, [user, authInitialized, dataVersion]) // Adicionado authInitialized como dependência
   );
   
   const handleSetFichaAtiva = async (fichaId: string) => {
@@ -194,7 +200,7 @@ export default function MeusTreinosScreen() {
   const renderProximoTreino = ({ item }: { item: Treino }) => (
     <TouchableOpacity
       style={styles.nextWorkoutCard}
-      onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${fichaAtiva?.id}&treinoId=${item.id}`)}
+      onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva?.id}&treinoId=${item.id}`)}
     >
       <Text style={styles.nextWorkoutDay}>{item.diasSemana[0]?.toUpperCase()}</Text>
       <Text style={styles.nextWorkoutTitle} numberOfLines={2}>{item.nome}</Text>
@@ -226,7 +232,7 @@ export default function MeusTreinosScreen() {
             style={styles.editFichaButton}
             onPress={() => {
               setManageModalVisible(false);
-              router.push({ pathname: '/treino/criatFicha', params: { fichaId: item.id } });
+              router.push({ pathname: '/(treino)/criatFicha', params: { fichaId: item.id } });
             }}
           >
             <Text style={styles.editFichaButtonText}>Editar</Text>
@@ -267,7 +273,7 @@ export default function MeusTreinosScreen() {
             <View style={styles.heroCardGlow}>
               <TouchableOpacity
                 style={styles.heroCard}
-                onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${fichaAtiva.id}&treinoId=${treinoDeHoje.id}`)}
+                onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva.id}&treinoId=${treinoDeHoje.id}`)}
               >
                 <View style={styles.heroTextContainer}>
                     <Text style={styles.heroTitle}>{treinoDeHoje.nome}</Text>
@@ -276,7 +282,7 @@ export default function MeusTreinosScreen() {
                 
                 <TouchableOpacity 
                     style={styles.startButton}
-                    onPress={() => router.push(`/treino/ongoingWorkout?fichaId=${fichaAtiva.id}&treinoId=${treinoDeHoje.id}`)}
+                    onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva.id}&treinoId=${treinoDeHoje.id}`)}
                 >
                   <FontAwesome name="play" size={16} color="#030405" />
                   <Text style={styles.startButtonText}>Iniciar Treino</Text>

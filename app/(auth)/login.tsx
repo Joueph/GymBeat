@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import React, { useState } from "react";
 import { Button, Image, StyleSheet, Text, TextInput, View } from "react-native";
-import { auth } from "../firebaseconfig";
+import { auth } from "../../firebaseconfig";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -24,7 +24,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.container}>
       <Image
-        source={require("../assets/images/icon.png")}
+        source={require("../../assets/images/icon.png")}
         style={styles.logo}
         resizeMode="stretch"
       />

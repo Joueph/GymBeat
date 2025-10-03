@@ -1,47 +1,51 @@
-import { onAuthStateChanged, User } from "firebase/auth";
-import React, {
-  createContext,
-  ReactNode,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
-import { auth } from "../firebaseconfig";
+// Em seu arquivo authprovider.tsx
 
-export type AuthContextType = {
+import React, { createContext, useContext, useEffect, useState } from 'react';
+// Certifique-se de que os imports do Firebase estão corretos para o seu projeto
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from '../firebaseconfig'; // Verifique o caminho para sua config do Firebase
+
+// Definimos o tipo do nosso contexto de autenticação
+interface AuthContextType {
   user: User | null;
-  initialized: boolean;
-  loading: boolean;
-};
+  initialized: boolean; // O estado que está causando o problema
+}
 
+// Criamos o contexto com valores iniciais
 const AuthContext = createContext<AuthContextType>({
   user: null,
   initialized: false,
-  loading: true,
 });
 
+// Hook customizado para facilitar o uso do contexto
 export function useAuth() {
   return useContext(AuthContext);
 }
 
-export default function AuthProvider({ children }: { children: ReactNode }) {
+// O componente Provider que vai envolver seu app
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [initialized, setInitialized] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // A função onAuthStateChanged é um "ouvinte". Ela é chamada uma vez
+    // no início e depois toda vez que o usuário faz login ou logout.
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      // This listener is called whenever the user's sign-in state changes.
       setUser(currentUser);
-      setInitialized(true); // Set initialized to true once we get the first auth status.
-      setLoading(false); // The initial auth check is complete.
+      // Após a primeira resposta do onAuthStateChanged (seja com um usuário ou nulo),
+      // consideramos o processo de autenticação inicializado.
+      // Isso garante que o estado 'initialized' seja definido como 'true' de forma confiável.
+      setInitialized(true);
     });
-    return unsubscribe; // Unsubscribe from the listener when the component unmounts.
-  }, []);
 
-  return (
-    <AuthContext.Provider value={{ user, initialized, loading }}>
-      {children}
-    </AuthContext.Provider>
-  );
+    // Esta função de limpeza é importante para evitar memory leaks
+    return () => unsubscribe();
+  }, []); // O array de dependências vazio [] garante que este useEffect rode apenas uma vez quando o app inicia.
+
+  const value = {
+    user,
+    initialized,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

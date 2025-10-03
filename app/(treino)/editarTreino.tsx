@@ -347,14 +347,6 @@ export default function EditarTreinoScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#030405' }}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backButtonText}>‹</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>{treinoId ? 'Editar Treino' : 'Novo Treino'}</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
         <DraggableFlatList
           containerStyle={{ flex: 1 }}
           contentContainerStyle={{ padding: 15, paddingBottom: 100 }}
@@ -572,23 +564,6 @@ export default function EditarTreinoScreen() {
 }
 const styles = StyleSheet.create({
   container: { padding: 15, backgroundColor: '#030405',},
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 15,
-    paddingTop: 10,
-    paddingBottom: 10,
-    backgroundColor: '#030405',
-  },
-  backButton: {
-    padding: 5,
-  },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 30,
-    fontWeight: 'bold',
-  },
   title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
   label: { fontSize: 16, color: '#ccc', marginBottom: 10, marginTop: 10 },
   input: { backgroundColor: '#222', color: '#fff', padding: 15, borderRadius: 8, fontSize: 16, marginBottom: 20 },

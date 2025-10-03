@@ -16,9 +16,9 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { auth } from "../firebaseconfig";
-import { uploadImageAndGetURL } from '../services/storageService'; // Assumimos que esta função existe
-import { createUserProfileDocument } from "../userService"; // Assumimos que esta função aceita os novos campos
+import { auth } from "../../firebaseconfig";
+import { uploadImageAndGetURL } from '../../services/storageService'; // Assumimos que esta função existe
+import { createUserProfileDocument } from "../../userService"; // Assumimos que esta função aceita os novos campos
 
 const ProgressBar = ({ progress }: { progress: number }) => (
   <View style={styles.progressBarContainer}>
@@ -128,11 +128,11 @@ export default function CadastroScreen() {
         return (
           <View style={styles.welcomeContainer}>
             <SafeAreaView style={styles.welcomeHeader}>
-              <Image source={require('../assets/images/Frame 40.png')} style={styles.headerImage} />
+              <Image source={require('../../assets/images/Frame 40.png')} style={styles.headerImage} />
             </SafeAreaView>
 
             <Image
-              source={require('../assets/images/onboarding/Before-start.png')}
+              source={require('../../assets/images/onboarding/Before-start.png')}
               style={styles.welcomeImage}
             />
             <View style={styles.welcomeBottomContent}>
@@ -246,7 +246,7 @@ export default function CadastroScreen() {
             <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
               <FontAwesome name="chevron-left" size={24} color="#fff" />
             </TouchableOpacity>
-            <Image source={require('../assets/images/Frame 40.png')} style={styles.headerImage} />
+            <Image source={require('../../assets/images/Frame 40.png')} style={styles.headerImage} />
             <View style={styles.headerButton} />
           </View>
         </View>

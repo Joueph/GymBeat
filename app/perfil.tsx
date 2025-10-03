@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState } from "react";
-import { useAuth } from "../authprovider";
+import { useAuth } from "./authprovider";
 
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker'; // This line is already correct.
@@ -11,14 +11,14 @@ import { signOut } from "firebase/auth";
 import { ActivityIndicator, Alert, Button, Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { auth } from "../../firebaseconfig";
-import { Usuario } from "../../models/usuario";
-import { getLogsByUsuarioId } from "../../services/logService";
-import { cancelNotification, scheduleNotification } from "../../services/notificationService"; // Novo serviço
-import { uploadImageAndGetURL } from "../../services/storageService";
-import { getUserProfile, updateUserProfile } from "../../userService";
-import type { NotificationSettings, PrivacySettings } from '../settings';
-import SettingsPage from "../settings";
+import { auth } from "../firebaseconfig";
+import { Usuario } from "../models/usuario";
+import { getLogsByUsuarioId } from "../services/logService";
+import { cancelNotification, scheduleNotification } from "../services/notificationService"; // Novo serviço
+import { uploadImageAndGetURL } from "../services/storageService";
+import { getUserProfile, updateUserProfile } from "../userService";
+import type { NotificationSettings, PrivacySettings } from './settings';
+import SettingsPage from "./settings";
 
 // Configuração inicial para o comportamento das notificações
 Notifications.setNotificationHandler({
@@ -317,7 +317,6 @@ const handleUpdate = async () => {
   return (
     <View style={{flex: 1, backgroundColor: "#030405"}}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Seu Perfil</Text>
         <TouchableOpacity onPress={handlePickImage} disabled={uploading}>
           {profile.photoURL ? (
             <Image source={{ uri: profile.photoURL }} style={styles.pfp} />

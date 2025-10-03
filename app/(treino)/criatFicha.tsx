@@ -1,7 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import React, { useCallback, useLayoutEffect, useState } from 'react';
+import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity } from 'react-native';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { getTreinosByIds } from '../../services/treinoService';
 
 export default function CriarFichaScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { fichaId } = useLocalSearchParams();
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [treinos, setTreinos] = useState<Treino[]>([]);
@@ -92,6 +93,18 @@ export default function CriarFichaScreen() {
     setFicha(prev => prev ? { ...prev, treinos: newTreinoIds } : null); // Atualiza a ordem dos IDs para salvar
   };
 
+  useLayoutEffect(() => {
+    if (ficha) {
+      navigation.setOptions({
+        headerRight: () => (
+          <TouchableOpacity onPress={handleDeleteFicha} style={{ padding: 5 }}>
+            <FontAwesome name="trash" size={24} color="#ff3b30" />
+          </TouchableOpacity>
+        ),
+      });
+    }
+  }, [navigation, ficha, handleDeleteFicha]);
+
   if (loading) {
     return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
   }
@@ -105,7 +118,7 @@ export default function CriarFichaScreen() {
         onLongPress={drag}
         disabled={isActive}
         style={[styles.treinoCard, { opacity: isActive ? 0.5 : 1 }]}
-        onPress={() => router.push(`/treino/editarTreino?fichaId=${ficha.id}&treinoId=${item.id}`)}
+        onPress={() => router.push(`/(treino)/editarTreino?fichaId=${ficha.id}&treinoId=${item.id}`)}
     >
         <Text style={styles.treinoName}>{item.nome}</Text>
         <Text style={styles.treinoInfo}>{item.exercicios.length} exercícios</Text>
@@ -115,15 +128,6 @@ export default function CriarFichaScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backButtonText}>‹</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>Editar Ficha</Text>
-          <TouchableOpacity onPress={handleDeleteFicha} style={styles.deleteButton}>
-            <FontAwesome name="trash" size={24} color="#ff3b30" />
-          </TouchableOpacity>
-        </View>
         <DraggableFlatList
           containerStyle={{ flex: 1 }}
           contentContainerStyle={{ padding: 15, paddingBottom: 100 }}
@@ -145,7 +149,7 @@ export default function CriarFichaScreen() {
           }
           ListFooterComponent={
             <>
-              <TouchableOpacity style={styles.addButton} onPress={() => router.push(`/treino/editarTreino?fichaId=${ficha.id}`)}>
+              <TouchableOpacity style={styles.addButton} onPress={() => router.push(`/(treino)/editarTreino?fichaId=${ficha.id}`)}>
                 <Text style={styles.addButtonText}>+ Adicionar Novo Treino</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveButton} onPress={handleSaveChanges}>
@@ -161,27 +165,6 @@ export default function CriarFichaScreen() {
 
 const styles = StyleSheet.create({
     safeArea: { flex: 1, backgroundColor: '#030405' },
-    header: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 15,
-      paddingTop: 10,
-      paddingBottom: 10,
-    },
-    backButton: {
-      padding: 5,
-    },
-    backButtonText: {
-      color: '#fff',
-      fontSize: 30,
-      fontWeight: 'bold',
-    },
-    deleteButton: {
-      padding: 5,
-      width: 40,
-      alignItems: 'center',
-    },
     container: { padding: 15, backgroundColor: '#030405' },
     title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
     input: { backgroundColor: '#222', color: '#fff', padding: 15, borderRadius: 8, fontSize: 16, marginBottom: 20 },

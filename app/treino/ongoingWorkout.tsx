@@ -1,5 +1,6 @@
 import { Exercicio, Serie } from '@/models/exercicio';
 import { FontAwesome } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
@@ -265,6 +266,15 @@ export default function OngoingWorkoutScreen() {
     setIsResting(true);
   };
 
+  const handleSkipRest = () => {
+    if (isResting) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setIsResting(false);
+      // Reseta o timer para o próximo período de descanso
+      setRestTime(maxRestTime);
+    }
+  };
+
   const calculateCompletionData = async () => {
     if (!user) return;
     try {
@@ -420,12 +430,14 @@ export default function OngoingWorkoutScreen() {
 
       <View style={styles.content}>
         {/* MODIFIED: Removed the entire progress circle structure, leaving only the timer label and text */}
-        <View style={styles.timerContainer}>
-          <Text style={styles.timerLabel}>Tempo de Intervalo</Text>
-          <Text style={styles.timerText}>
-            {isResting ? formatTime(restTime) : formatTime(maxRestTime)}
-          </Text>
-        </View>
+        <TouchableOpacity style={styles.timerContainer} onPress={handleSkipRest} disabled={!isResting}>
+          <View>
+            <Text style={styles.timerLabel}>Tempo de Intervalo</Text>
+            <Text style={styles.timerText}>
+              {isResting ? formatTime(restTime) : formatTime(maxRestTime)}
+            </Text>
+          </View>
+        </TouchableOpacity>
 
         <View style={styles.bottomSectionContainer}>
           <View style={styles.exerciseSectionContainer}>

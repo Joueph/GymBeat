@@ -2,48 +2,66 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can read any profile, but only write to their own.
-    // This is useful for features like viewing friends' profiles.
+    // A função isFriend foi removida para evitar o loop de permissões.
+
     match /users/{userId} {
-      allow read: if request.auth != null;
+      // ✅ REGRA FINAL E CORRIGIDA:
+      // Permite a leitura se:
+      // 1. For o seu próprio perfil.
+      // 2. O ID do perfil que você quer ler (userId) estiver no seu próprio mapa de 'amizades'.
+      allow read: if request.auth.uid == userId ||
+                     userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.amizades;
+
+      // A escrita continua restrita apenas ao próprio dono do perfil.
       allow write: if request.auth.uid == userId;
+
+      match /publicProfile/data {
+        // A regra aqui também é simplificada para usar a mesma lógica.
+        allow read: if
+          get(/databases/$(database)/documents/users/$(userId)).data.settings.privacy.workoutDetails == 'todos' ||
+          (get(/databases/$(database)/documents/users/$(userId)).data.settings.privacy.workoutDetails == 'amigos' &&
+           userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.amizades);
+        allow write: if false;
+      }
     }
 
-    // Users can only read and write their own Fichas.
+    // O restante das regras permanece o mesmo.
+    // CORREÇÃO: Permite a leitura se for o dono OU se o dono do recurso for seu amigo.
     match /fichas/{fichaId} {
-      allow read, update, delete: if request.auth.uid == resource.data.usuarioId;
+      allow read: if request.auth.uid == resource.data.usuarioId ||
+                     resource.data.usuarioId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.amizades;
+      allow update, delete: if request.auth.uid == resource.data.usuarioId;
       allow create: if request.auth.uid == request.resource.data.usuarioId;
     }
 
-    // Users can only read and write their own Treinos.
+    // CORREÇÃO: Permite a leitura se for o dono OU se o dono do recurso for seu amigo.
     match /treinos/{treinoId} {
-      allow read, update, delete: if request.auth.uid == resource.data.usuarioId;
+      allow read: if request.auth.uid == resource.data.usuarioId ||
+                     resource.data.usuarioId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.amizades;
+      allow update, delete: if request.auth.uid == resource.data.usuarioId;
       allow create: if request.auth.uid == request.resource.data.usuarioId;
     }
 
-    // Users can create and read their own workout logs.
+    // CORREÇÃO: Permite a leitura se for o dono OU se o dono do recurso for seu amigo.
     match /logs/{logId} {
-      allow read: if request.auth.uid == resource.data.usuarioId;
+      allow read: if request.auth.uid == resource.data.usuarioId ||
+                     resource.data.usuarioId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.amizades;
       allow create: if request.auth.uid == request.resource.data.usuarioId;
     }
-
-    // --- Public Model Collections ---
-    // Any authenticated user can read the public models.
-    // Writes are disabled from the client to prevent tampering.
 
     match /fichasModelos/{fichaModeloId} {
       allow read: if request.auth != null;
-      allow write: if false; // Disable client-side writes
+      allow write: if false;
     }
 
     match /treinosModelos/{treinoModeloId} {
       allow read: if request.auth != null;
-      allow write: if false; // Disable client-side writes
+      allow write: if false;
     }
 
     match /exerciciosModelos/{exercicioModeloId} {
       allow read: if request.auth != null;
-      allow write: if false; // Disable client-side writes
+      allow write: if false;
     }
   }
 }

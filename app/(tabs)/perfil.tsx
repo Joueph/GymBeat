@@ -1,9 +1,11 @@
 import React, { useEffect, useLayoutEffect, useState } from "react";
 import { useAuth } from "../authprovider";
 
-import { FontAwesome } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker'; // This line is already correct.
+import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
+import * as Notifications from 'expo-notifications';
 import { useNavigation } from 'expo-router';
 import { signOut } from "firebase/auth";
 import { ActivityIndicator, Alert, Button, Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -12,8 +14,22 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { auth } from "../../firebaseconfig";
 import { Usuario } from "../../models/usuario";
 import { getLogsByUsuarioId } from "../../services/logService";
+import { cancelNotification, scheduleNotification } from "../../services/notificationService"; // Novo serviço
 import { uploadImageAndGetURL } from "../../services/storageService";
 import { getUserProfile, updateUserProfile } from "../../userService";
+import type { NotificationSettings, PrivacySettings } from '../settings';
+import SettingsPage from "../settings";
+
+// Configuração inicial para o comportamento das notificações
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true, // Plays a sound when the notification is received
+    shouldSetBadge: true, // Sets the badge number on the app icon
+    shouldShowBanner: true, // (iOS) Show the notification as a banner
+    shouldShowList: true, // (iOS) Show the notification in the notification list
+  }),
+});
 
 // Helper para converter Timestamps do Firestore e outros formatos para um objeto Date.
 const toDate = (date: any): Date | null => {
@@ -25,26 +41,79 @@ const toDate = (date: any): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+interface UserSettings {
+  notifications: NotificationSettings;
+  privacy: PrivacySettings & { profileVisibility: 'todos' | 'amigos' | 'ninguém' };
+}
+
+type ProfileWithSettings = Partial<Usuario> & { settings?: UserSettings; expoPushToken?: string; };
+
 export default function PerfilScreen() {
   const { user } = useAuth();
-  const [profile, setProfile] = useState<Partial<Usuario>>({});
+  const [profile, setProfile] = useState<ProfileWithSettings>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [isEditProfileModalVisible, setEditProfileModalVisible] = useState(false);
+  const [isSettingsModalVisible, setSettingsModalVisible] = useState(false); // New state for the settings modal
   const [loggedDays, setLoggedDays] = useState<Set<string>>(new Set());
   const [calendarDate, setCalendarDate] = useState(new Date());
   const navigation = useNavigation();
 
   useLayoutEffect(() => {
     navigation.setOptions({
-        headerRight: () => (
-            <TouchableOpacity onPress={() => setSettingsModalVisible(true)} style={{ marginRight: 15 }}>
-                <FontAwesome name="cog" size={24} color="#fff" />
-            </TouchableOpacity>
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 25 }}>
+          <TouchableOpacity onPress={() => setEditProfileModalVisible(true)} style={{ marginRight: 0 }}>
+            <FontAwesome5 name="user-edit" size={22} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setSettingsModalVisible(true)}
+            style={{ marginRight: 15 }}
+          >
+            <FontAwesome name="cog" size={22} color="#fff" />
+          </TouchableOpacity>
+        </View>
         ),
     });
   }, [navigation]);
+
+  // Efeito para registrar para notificações push
+  useEffect(() => {
+    const registerForPushNotificationsAsync = async () => {
+      if (!user) return;
+
+      // Push notifications only work on physical devices
+      if (!Device.isDevice) {
+        console.log("Push notifications are not supported on simulators/emulators.");
+        return;
+      }
+
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        // Opcional: Informar ao usuário que ele não receberá notificações.
+        // Alert.alert('Notificações desativadas', 'Você não permitiu notificações push.');
+        return;
+      }
+
+      try {
+        const token = (await Notifications.getExpoPushTokenAsync()).data;
+        
+        // Salva o token no perfil do usuário se for diferente do já salvo
+        if (token && profile.expoPushToken !== token) {
+          await updateUserProfile(user.uid, { expoPushToken: token } as Partial<Usuario>);
+          setProfile(prev => ({ ...prev, expoPushToken: token }));
+        }
+      } catch (e) { console.error("Falha ao obter o token de notificação", e); }
+    };
+  }, [user, profile.expoPushToken]); // Executa quando o usuário loga
 
   useEffect(() => {
     const fetchProfileAndLogs = async () => {
@@ -140,6 +209,33 @@ const handleUpdate = async () => {
       Alert.alert("Sucesso", "Perfil atualizado com sucesso!");
     } catch (error: any) {
       Alert.alert("Erro ao Atualizar", error.message);
+    }
+  };
+
+  const handleSettingsChange = async (newSettings: UserSettings) => {
+    if (!user) return;
+    try {
+      // Salva as configurações no Firestore
+      await updateUserProfile(user.uid, { settings: newSettings } as Partial<Usuario>);
+      setProfile(prev => ({ ...prev, settings: newSettings }));
+
+      // Gerencia as notificações locais com base nas novas configurações
+      if (newSettings.notifications.creatine) {
+        scheduleNotification('creatine-reminder', 'Lembrete de Creatina', 'Hora de tomar sua creatina para manter a força!', { hour: 9, minute: 0 });
+      } else {
+        cancelNotification('creatine-reminder');
+      }
+
+      if (newSettings.notifications.morningWorkout) {
+        scheduleNotification('morning-workout-reminder', 'Hora de Treinar!', 'Que tal começar o dia com um bom treino?', { hour: 8, minute: 0 });
+      } else {
+        cancelNotification('morning-workout-reminder');
+      }
+      // Adicione lógica para outras notificações aqui...
+
+    } catch (error) {
+      console.error("Erro ao salvar configurações:", error);
+      Alert.alert("Erro", "Não foi possível salvar suas configurações.");
     }
   };
 
@@ -250,15 +346,15 @@ const handleUpdate = async () => {
 
       <Modal
         animationType="slide"
-        visible={isSettingsModalVisible}
-        onRequestClose={() => setSettingsModalVisible(false)}
+        visible={isEditProfileModalVisible}
+        onRequestClose={() => setEditProfileModalVisible(false)}
         presentationStyle="pageSheet"
       >
         <SafeAreaView style={styles.modalSafeArea}>
           <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalContainer}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Configurações</Text>
-                <TouchableOpacity onPress={() => setSettingsModalVisible(false)}>
+                <Text style={styles.modalTitle}>Editar Perfil</Text>
+                <TouchableOpacity onPress={() => setEditProfileModalVisible(false)}>
                     <FontAwesome name="close" size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
@@ -328,6 +424,32 @@ const handleUpdate = async () => {
                 <Button title="Sair" onPress={handleSignOut} color="#f44336" />
               </View>
           </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* New Settings Modal */}
+      <Modal
+        animationType="slide"
+        visible={isSettingsModalVisible}
+        onRequestClose={() => setSettingsModalVisible(false)}
+        presentationStyle="pageSheet"
+      >
+        <SafeAreaView style={styles.modalSafeArea}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Opções</Text>
+            <TouchableOpacity onPress={() => setSettingsModalVisible(false)}>
+              <FontAwesome name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <SettingsPage
+            initialSettings={profile.settings ?? {
+              notifications: {
+                restTimeEnding: true, morningWorkout: false, afternoonWorkout: true, nightWorkout: false, creatine: true, protein: true, hypercaloric: false, friendWorkoutDone: true,
+              },
+              privacy: { profileVisibility: 'amigos', weekStreak: 'todos', workoutDays: 'todos', workoutDetails: 'amigos', autoAcceptFriendRequests: false }
+            }}
+            onSettingsChange={handleSettingsChange}
+          />
         </SafeAreaView>
       </Modal>
     </View>

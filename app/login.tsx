@@ -49,7 +49,7 @@ export default function LoginScreen() {
       />
 
       {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-
+    
       <Button title="Entrar" onPress={handleLogin} color="#1cb0f6" />
 
       <View style={{ marginTop: 20 }}>
@@ -66,7 +66,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0d181c",
+    backgroundColor: "#030405",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
@@ -84,13 +84,14 @@ const styles = StyleSheet.create({
   },
   input: {
     width: "100%",
-    backgroundColor: "#173F5F",
+    backgroundColor: "#141414",
     color: "#fff",
     borderRadius: 8,
     padding: 12,
     marginBottom: 15,
     borderWidth: 1,
     borderColor: "#1cb0f6",
+    height: 65,
   },
   error: {
     color: "#ff5555",

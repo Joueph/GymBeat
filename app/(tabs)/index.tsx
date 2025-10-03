@@ -46,12 +46,17 @@ const DIAS_SEMANA_ABREV: { [key: string]: string } = {
   'dom': 'dom', 'seg': 'seg', 'ter': 'ter', 'qua': 'qua', 'qui': 'qui', 'sex': 'sex', 'sab': 'sáb'
 };
 
+interface FriendData extends Usuario {
+  hasTrainedToday: boolean;
+  weeklyLogs: Log[];
+}
+
 export default function HomeScreen() {
   const { user } = useAuth();
   const [logs, setLogs] = useState<Log[]>([]);
   const router = useRouter();
   const [treinos, setTreinos] = useState<Treino[]>([]);
-  const [friends, setFriends] = useState<Usuario[]>([]);
+  const [friends, setFriends] = useState<FriendData[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
   const [profile, setProfile] = useState<Usuario | null>(null);
@@ -119,27 +124,39 @@ export default function HomeScreen() {
               setTreinos([]);
             }
   
-            if (userProfile && userProfile.amizades) {
+            if (userProfile && Array.isArray(userProfile.amizades)) {
               const friendsData = await Promise.all(
-                userProfile.amizades.map(async (friendId) => {
+                userProfile.amizades.map(async (friendId: string) => {
                   const friendProfile = await getUserProfile(friendId);
-                  // Check for mutual friendship
+                  // VERIFICAÇÃO DE AMIZADE MÚTUA
                   if (friendProfile && friendProfile.amizades?.includes(user.uid)) {
-                     // Check if friend has trained today based on the 'lastTrained' field
+                    // NOVA VERIFICAÇÃO DE PRIVACIDADE
+                    const friendPrivacy = friendProfile.settings?.privacy;
+                    // Se o perfil do amigo estiver configurado como privado, não o exiba.
+                    if (friendPrivacy?.profileVisibility === 'ninguém') {
+                      return null;
+                    }
+
+                    // Fetch logs for the current week
+                    const weekStart = getStartOfWeek(new Date());
+                    const friendLogs = await getLogsByUsuarioId(friendId);
+                    const weeklyLogs = friendLogs.filter(log => {
+                        const logDate = toDate(log.horarioFim);
+                        return logDate && logDate >= weekStart;
+                    });
+                    // VERIFICAÇÃO DE TREINO HOJE
                     const today = new Date().toDateString();
                     let hasTrainedToday = false;
                     if (friendProfile.lastTrained) {
                       const lastTrainedDate = toDate(friendProfile.lastTrained);
-                      if (lastTrainedDate) {
-                        hasTrainedToday = lastTrainedDate.toDateString() === today;
-                      }
+                      hasTrainedToday = lastTrainedDate?.toDateString() === today;
                     }
-                    return { ...friendProfile, hasTrainedToday: hasTrainedToday };
+                    return { ...friendProfile, hasTrainedToday, weeklyLogs };
                   }
                   return null;
                 })
               );
-              setFriends(friendsData.filter(Boolean) as (Usuario & { hasTrainedToday: boolean })[]);
+              setFriends(friendsData.filter(Boolean) as FriendData[]);
             }
           } catch (error) {
             console.error("Erro ao buscar dados:", error);
@@ -194,6 +211,21 @@ export default function HomeScreen() {
     }
   };
 
+  const renderWeeklyDots = (item: FriendData) => {
+    const trainedDays = new Set(
+      item.weeklyLogs.map(log => toDate(log.horarioFim)?.getDay())
+    );
+
+    return (
+      <View style={styles.weeklyDotsContainer}>
+        {Array.from({ length: 7 }).map((_, i) => (
+          // Domingo é 0, então o mapeamento está correto
+          <View key={i} style={[styles.dot, trainedDays.has(i) && styles.dotFilled]} />
+        ))}
+      </View>
+    );
+  };
+
   const renderWeeklyCalendar = () => {
     const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
     const today = new Date();
@@ -207,7 +239,7 @@ export default function HomeScreen() {
       .filter((d): d is string => d !== null)
     );
 
-    const scheduledDays = new Set(treinos.flatMap(t => t.diasSemana));
+    const scheduledDays = activeFicha ? new Set(treinos.flatMap(t => t.diasSemana)) : new Set();
 
     return (
       <View style={styles.calendarContainer}>
@@ -358,19 +390,7 @@ export default function HomeScreen() {
           renderItem={({ item }) => (
             <View style={styles.friendItem}>
               <ThemedText style={styles.friendName}>{item.nome}</ThemedText>
-              <View style={styles.friendStatus}>
-                {item.hasTrainedToday ? (
-                  <>
-                    <FontAwesome name="check-circle" size={16} color="#58CC02" />
-                    <ThemedText style={styles.friendStatusText}> Treinou Hoje</ThemedText>
-                  </>
-                ) : (
-                  <>
-                    <FontAwesome name="times-circle" size={16} color="#ff3b30" />
-                    <ThemedText style={styles.friendStatusText}> Não treinou</ThemedText>
-                  </>
-                )}
-              </View>
+              {renderWeeklyDots(item)}
             </View>
           )}
           ListEmptyComponent={
@@ -624,13 +644,18 @@ statLabel: {
     fontSize: 16,
     color: '#fff',
   },
-  friendStatus: {
+  weeklyDotsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
+    gap: 5,
   },
-  friendStatusText: {
-    color: '#ccc',
-    marginLeft: 6,
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#333',
+  },
+  dotFilled: {
+    backgroundColor: '#DAA520',
   },
   emptyFriendsContainer: {
     paddingHorizontal: 15,

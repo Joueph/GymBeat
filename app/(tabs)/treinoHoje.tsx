@@ -318,10 +318,21 @@ export default function MeusTreinosScreen() {
                   </TouchableOpacity>
               </View>
           </View>
+        ) : todasAsFichas.length > 0 ? (
+          <View style={styles.section}>
+            <View style={styles.noActiveFichaCard}>
+              <Text style={styles.noActiveFichaText}>
+                Você possui {todasAsFichas.length} {todasAsFichas.length === 1 ? 'ficha' : 'fichas'} em sua conta, mas nenhuma está definida como ativa.
+              </Text>
+              <TouchableOpacity style={styles.manageButton} onPress={() => setManageModalVisible(true)}>
+                <Text style={styles.manageButtonText}>Gerenciar fichas</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         ) : (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyText}>Nenhum plano ativo.</Text>
-            <Text style={styles.emptySubText}>Crie um novo plano ou ative um existente na tela de gerenciamento.</Text>
+            <Text style={styles.emptySubText}>Crie um novo plano de treino para começar.</Text>
           </View>
         )}
         
@@ -521,6 +532,20 @@ const styles = StyleSheet.create({
         color: '#fff',
         marginLeft: 8,
         fontWeight: 'bold',
+    },
+    // No Active Ficha Card
+    noActiveFichaCard: {
+      backgroundColor: '#1C1C1E',
+      borderRadius: 12,
+      padding: 20,
+      alignItems: 'center',
+    },
+    noActiveFichaText: {
+      color: '#ccc',
+      fontSize: 15,
+      textAlign: 'center',
+      lineHeight: 22,
+      marginBottom: 20,
     },
     // Empty State
     emptyContainer: {

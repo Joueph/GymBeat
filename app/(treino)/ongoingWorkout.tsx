@@ -153,7 +153,8 @@ export default function OngoingWorkoutScreen() {
   // Memoize the max rest time to avoid recalculation
   const maxRestTime = useMemo(() => {
     if (!treino) return 0;
-    return treino.intervalo.min * 60 + treino.intervalo.seg;
+    const intervalo = treino.intervalo ?? { min: 1, seg: 0 };
+    return intervalo.min * 60 + intervalo.seg;
   }, [treino]);
 
   // Open modal to edit current exercise's sets, reps, and weight
@@ -187,7 +188,8 @@ export default function OngoingWorkoutScreen() {
             return;
           }
           setTreino(treinoData);
-          setRestTime(treinoData.intervalo.min * 60 + treinoData.intervalo.seg);
+          const intervalo = treinoData.intervalo ?? { min: 1, seg: 0 };
+          setRestTime(intervalo.min * 60 + intervalo.seg);
         } else {
           Alert.alert("Erro", "Treino não encontrado.");
           router.back();

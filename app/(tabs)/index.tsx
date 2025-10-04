@@ -324,8 +324,8 @@ export default function HomeScreen() {
           />
         </TouchableOpacity>
         <View style={styles.headerTextContainer}>
-          <ThemedText style={styles.greetingText}>Hey' {profile?.nome?.split(' ')[0]}!</ThemedText>
-          <ThemedText style={styles.subGreetingText}>Ready for today' challenges?</ThemedText>
+          <ThemedText style={styles.greetingText}>Olá, {profile?.nome?.split(' ')[0]}!</ThemedText>
+          <ThemedText style={styles.subGreetingText}>Vamos treinar hoje?</ThemedText>
         </View>
       </View>
       <TouchableOpacity onPress={() => router.push('./perfil')} style={styles.headerRight}>

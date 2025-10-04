@@ -12,24 +12,28 @@ export type DiaSemana = 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab' | 'dom';
  * This is used by both TreinoModelo and user-specific Treino fetching.
  */
 const resolveExercicios = async (exerciciosData: any[]): Promise<Exercicio[]> => {
-  return await Promise.all(
-    (exerciciosData || []).map(async (ex: any) => {
+  return Promise.all(
+    (exerciciosData || []).map(async (exData: any) => {
       // Check if ex.modelo is a DocumentReference (has a .get() method)
-      if (ex.modelo && typeof ex.modelo.get === 'function') {
-        const modeloDoc = await getDoc(ex.modelo);
+      if (exData.modelo && typeof exData.modelo.get === 'function') {
+        const modeloDoc = await getDoc(exData.modelo);
         if (modeloDoc.exists()) {
+          // Combine a base do exercício do modelo (com series, reps, etc.)
+          // com o modelo de exercício resolvido.
           return {
-            ...ex,
+            ...exData, // Preserva campos como 'series', 'repeticoes', 'peso' do TreinoModelo
             modelo: { ...(modeloDoc.data() as ExercicioModelo), id: modeloDoc.id },
-            series: ex.series || [], // Ensure series is an array, even if empty
+            // Garante que o modeloId esteja presente no nível raiz do exercício copiado.
+            // Isso é crucial para referências futuras.
+            modeloId: modeloDoc.id,
           } as Exercicio;
         }
       }
       // Fallback if modelo reference is invalid or not found, or if it's already an object
       return {
-        ...ex,
-        modelo: ex.modelo || { id: ex.modeloId || 'unknown', nome: 'Exercício Desconhecido', grupoMuscular: '', dificuldade: '', equipamento: '', imagemUrl: '', instrucoes: [] },
-        series: ex.series || [],
+        ...exData,
+        modelo: exData.modelo || { id: exData.modeloId || 'unknown', nome: 'Exercício Desconhecido', grupoMuscular: '', dificuldade: '', equipamento: '', imagemUrl: '', instrucoes: [] },
+        modeloId: exData.modeloId || (exData.modelo?.id ?? 'unknown'),
       } as Exercicio;
     })
   );
@@ -48,17 +52,20 @@ export const getTreinosModelosByIds = async (ids: string[] = []): Promise<Treino
 
   const treinosRef = collection(db, 'treinosModelos');
   const q = query(treinosRef, where(documentId(), 'in', validIds));
+
   const snapshot = await getDocs(q);
 
-  return await Promise.all(snapshot.docs.map(async (docSnap) => {
-    const data = docSnap.data();
+  const treinos = await Promise.all(snapshot.docs.map(async (doc) => {
+    const data = doc.data();
+    // Mesmo para modelos, os exercícios podem ter referências que precisam ser resolvidas.
     const exerciciosComModelo = await resolveExercicios(data.exercicios);
     return {
-      id: docSnap.id,
+      id: doc.id,
       ...data,
       exercicios: exerciciosComModelo,
     } as TreinoModelo;
   }));
+  return treinos;
 };
 
 /**

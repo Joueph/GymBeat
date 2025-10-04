@@ -1,3 +1,5 @@
+// app/(tabs)/workouts.tsx
+
 import { FontAwesome } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -7,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AnimatedGradientBorderButton from '../../components/AnimatedGradientBorderButton';
 import { FichaModelo } from '../../models/fichaModelo';
 import { TreinoModelo } from '../../models/treinoModelo';
-import { copyFichaModeloToUser, getFichasModelos } from '../../services/fichaService';
+import { copyFichaModeloToUser, getFichasModelos, setFichaAtiva } from '../../services/fichaService';
 import { getTreinosModelosByIds } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 
@@ -68,15 +70,10 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     setIsCopying(true);
     try {
       const newFichaId = await copyFichaModeloToUser(selectedFicha, user.uid);
+      await setFichaAtiva(user.uid, newFichaId); // Define a nova ficha como ativa
       setIsCopying(false);
       setModalVisible(false);
-      Alert.alert(
-        "Sucesso!",
-        "A ficha foi copiada para seus treinos. Você pode editá-la agora ou mais tarde.",
-        [
-          { text: "OK", style: "cancel" }, { text: "Editar Agora", onPress: () => router.push({ pathname: '/(treino)/criatFicha', params: { fichaId: newFichaId } }) }
-        ]
-      );
+      router.push('/treinoHoje'); // Leva o usuário direto para a tela de treinos
     } catch (error) {
       setIsCopying(false);
       console.error("Erro ao copiar ficha:", error);

@@ -7,12 +7,14 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ficha } from '../../models/ficha';
 import { Treino } from '../../models/treino';
-import { deleteFicha, getFichaById, updateFicha } from '../../services/fichaService';
+import { deleteFicha, getFichaById, setFichaAtiva, updateFicha } from '../../services/fichaService';
 import { getTreinosByIds } from '../../services/treinoService';
+import { useAuth } from '../authprovider';
 
 export default function CriarFichaScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const { user } = useAuth();
   const { fichaId } = useLocalSearchParams();
   const [ficha, setFicha] = useState<Ficha | null>(null);
   const [treinos, setTreinos] = useState<Treino[]>([]);
@@ -55,14 +57,38 @@ export default function CriarFichaScreen() {
   );
 
   const handleSaveChanges = async () => {
-    if (!ficha) return;
-    // Os IDs dos treinos já estão na ordem correta no estado 'ficha' devido ao onDragEnd
-    try {
-      await updateFicha(ficha.id, { nome: ficha.nome, treinos: ficha.treinos });
-      Alert.alert("Sucesso", "Ficha salva com sucesso!");
-      router.back();
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível salvar as alterações.");
+    if (!ficha || !user) return;
+
+    const saveAndGoBack = async () => {
+      try {
+        await updateFicha(ficha.id, { nome: ficha.nome, treinos: ficha.treinos });
+        Alert.alert("Sucesso", "Ficha salva com sucesso!");
+        router.back();
+      } catch (error) {
+        Alert.alert("Erro", "Não foi possível salvar as alterações.");
+      }
+    };
+
+    // Se a ficha já está ativa, apenas salva as alterações.
+    if (ficha.ativa) {
+      await saveAndGoBack();
+    } else {
+      // Se não está ativa, mostra as opções.
+      Alert.alert(
+        "Salvar Ficha",
+        "Deseja definir esta ficha como seu plano de treino ativo?",
+        [
+          { text: "Salvar e manter inativa", onPress: saveAndGoBack, style: "cancel" },
+          { text: "Salvar e ativar", onPress: async () => {
+            try {
+              await updateFicha(ficha.id, { nome: ficha.nome, treinos: ficha.treinos });
+              await setFichaAtiva(user.uid, ficha.id);
+              Alert.alert("Sucesso", "Ficha salva e definida como ativa!");
+              router.back();
+            } catch (error) { Alert.alert("Erro", "Não foi possível ativar a ficha após salvar."); }
+          }}
+        ]
+      );
     }
   };
 

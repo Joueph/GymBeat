@@ -1,4 +1,4 @@
-// app/cadastro.tsx
+// app/(auth)/cadastro.tsx
 import { FontAwesome } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from "expo-router";
@@ -109,7 +109,7 @@ export default function CadastroScreen() {
         peso: !isNaN(pesoNum) && pesoNum > 0 ? pesoNum : undefined,
         genero: genero || undefined,
         nivel: nivel || undefined,
-        photoURL: photoURL,
+        photoURL: photoURL || '',
       });
 
       setIsLoading(false);
@@ -186,12 +186,12 @@ export default function CadastroScreen() {
       case 4: // Foto
         return (
           <>
-            <TouchableOpacity onPress={handlePickImage} style={styles.pfpContainer}>
-              {photoURI ? <Image source={{ uri: photoURI }} style={styles.pfp} resizeMode="cover" /> : (
-                <View style={styles.pfpPlaceholder}><Text style={styles.pfpPlaceholderText}>+</Text></View>
-              )}
+            <TouchableOpacity disabled style={styles.pfpContainer}>
+              <View style={styles.pfpPlaceholder}>
+                <FontAwesome name="camera" size={40} color="#555" />
+              </View>
             </TouchableOpacity>
-            <Text style={styles.pfpSubtext}>Toque para escolher uma imagem</Text>
+            <Text style={styles.pfpSubtext}>Função para adicionar foto de perfil em breve</Text>
           </>
         );
       case 5: // Credenciais

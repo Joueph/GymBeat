@@ -1,7 +1,9 @@
-import { User } from "firebase/auth/react-native";
+//userService.ts
+
+import { User } from "firebase/auth";
 import { arrayRemove, arrayUnion, collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
-import { db } from "./firebaseconfig";
-import { Usuario } from "./models/usuario";
+import { db } from "./firebaseconfig"; // Verifique se o caminho para sua config do Firebase está correto
+import { Usuario } from "./models/usuario"; // Verifique se o caminho para seu modelo Usuario está correto
 
 export const getUserProfile = async (uid: string) => {
   if (!uid) return null;
@@ -53,49 +55,71 @@ export const searchUsers = async (searchText: string, currentUserId: string): Pr
   }
 };
 
-export const createUserProfileDocument = async (user: User, additionalData: Partial<Usuario>) => {
+/**
+ * Cria ou atualiza o documento de um usuário no Firestore, juntamente com seu subdocumento de perfil público.
+ * @param user O objeto de usuário do Firebase Authentication.
+ * @param additionalData Dados adicionais coletados durante o cadastro.
+ */
+export const createUserProfileDocument = async (
+  user: User,
+  additionalData: Partial<Usuario>
+) => {
   if (!user) return;
 
+  // Referência para o documento principal do usuário
   const userRef = doc(db, `users/${user.uid}`);
-  const nome = additionalData.nome || user.email;
 
+  const nome = additionalData.nome || user.email || 'Usuário Sem Nome';
+
+  // Construindo o objeto de dados do usuário de forma segura
   const userData = {
     uid: user.uid,
     email: user.email,
     dataCriacao: serverTimestamp(),
     nome: nome,
-    nome_lowercase: nome?.toLowerCase(),
+    nome_lowercase: nome.toLowerCase(),
+    
+    // Dados adicionais tratados explicitamente para evitar 'undefined'
+    photoURL: additionalData.photoURL || '',
     dataNascimento: additionalData.dataNascimento || null,
     altura: additionalData.altura || null,
     peso: additionalData.peso || null,
+    genero: additionalData.genero || null,
+    nivel: additionalData.nivel || null,
+    isPro: additionalData.isPro || false,
+
+    // Valores padrão para novos usuários
     fichas: [],
-    // ALTERAÇÃO AQUI: Inicializa 'amizades' como um mapa vazio.
     amizades: {},
-    // ALTERAÇÃO DE CONSISTÊNCIA: Renomeado para 'solicitacoesRecebidas' para bater com o resto do código.
     solicitacoesRecebidas: [],
-    solicitacoesEnviadas: [],
-    settings: { privacy: { profileVisibility: 'amigos' } }, // Configuração padrão de privacidade
+    settings: {
+      privacy: {
+        profileVisibility: 'amigos',
+      },
+    },
     role: 'usuario',
-    photoURL: additionalData.photoURL || '',
-    ...additionalData,
   };
 
   try {
+    // Usando { merge: true } é uma boa prática para não sobrescrever dados acidentalmente
+    // caso esta função seja chamada em outros contextos além do cadastro inicial.
     await setDoc(userRef, userData, { merge: true });
 
-    // Cria o documento de perfil público inicial
+    // Cria o documento de perfil público inicial na subcoleção
     const publicProfileRef = doc(db, `users/${user.uid}/publicProfile/data`);
     await setDoc(publicProfileRef, {
-      amizades: {},
-      profileVisibility: 'amigos'
+      amizades: {}, // Pode conter contagem de amigos, etc.
+      profileVisibility: 'amigos', // Corresponde ao `settings` do documento principal
     });
 
-    console.log(`User profile document created/updated for: ${user.email}`);
+    console.log(`Documento de perfil criado com sucesso para: ${user.email}`);
   } catch (error) {
-    console.error("Error creating user profile document:", error);
-    throw error;
+    console.error("Erro ao criar o documento de perfil do usuário:", error);
+    // Propaga o erro para que a UI possa notificar o usuário
+    throw new Error('Ocorreu um erro ao criar o perfil do usuário.');
   }
 };
+
 
 // Esta função parece ser legada, pois AmigosScreen.tsx usa a Cloud Function "onCall".
 // Não necessita de alteração, mas considere removê-la se não estiver em uso.

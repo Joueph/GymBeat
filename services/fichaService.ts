@@ -1,9 +1,10 @@
+// services/fichaService.ts
+
 import {
   addDoc,
   collection,
   doc,
   documentId,
-  DocumentReference,
   getDoc,
   getDocs,
   query,
@@ -58,17 +59,28 @@ export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: st
       
       // The 'exercicios' array in TreinoModelo contains DocumentReferences to 'exerciciosModelos'.
       // We can copy these references directly.
-      const newTreinoData = {
-        nome: treinoModelo.nome,
-        diasSemana: treinoModelo.diasSemana,
-        exercicios: (treinoModelo.exercicios as unknown as { modelo: DocumentReference }[]).map(ex => ({
-          modelo: ex.modelo, // ex.modelo is already a DocumentReference
-          series: [],
-          anotacoes: '',
-        })),
-        usuarioId: userId,
-        modeloId: treinoModelo.id,
-      };
+const newTreinoData = {
+  nome: treinoModelo.nome,
+  diasSemana: treinoModelo.diasSemana,
+  exercicios: (treinoModelo.exercicios as any[]).map((ex, exIndex) => {
+    // Gera array de séries com base no número de séries do modelo
+    const seriesArray = Array.from({ length: Number(ex.series) || 0 }, (_, i) => ({
+      id: `set-${Date.now()}-${i}`,
+      peso: 0,
+      repeticoes: ex.repeticoes || '',
+    }));
+
+    return {
+      ...ex,
+      modelo: ex.modelo, // mantém referência ao modelo
+      series: seriesArray, // substitui o número por o array de mapas
+      anotacoes: '', // adiciona campo vazio
+    };
+  }),
+  usuarioId: userId,
+  modeloId: treinoModelo.id,
+};
+
       batch.set(newTreinoRef, newTreinoData);
       newTreinoRefs.push(newTreinoRef); // Store the full reference
     }

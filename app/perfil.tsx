@@ -53,6 +53,7 @@ export default function PerfilScreen() {
   const [profile, setProfile] = useState<ProfileWithSettings>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [newPhotoURI, setNewPhotoURI] = useState<string | null>(null); // Para a nova foto antes do upload
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isEditProfileModalVisible, setEditProfileModalVisible] = useState(false);
   const [isSettingsModalVisible, setSettingsModalVisible] = useState(false); // New state for the settings modal
@@ -157,29 +158,30 @@ export default function PerfilScreen() {
     });
 
     if (!result.canceled) {
-      setUploading(true);
-      try {
-        const uploadUrl = await uploadImageAndGetURL(result.assets[0].uri, user.uid);
-        await updateUserProfile(user.uid, { photoURL: uploadUrl });
-        setProfile(prev => ({ ...prev, photoURL: uploadUrl }));
-        Alert.alert("Sucesso", "Foto de perfil atualizada!");
-      } catch (error) {
-        Alert.alert("Erro de Upload", "Não foi possível enviar sua foto.");
-      } finally {
-        setUploading(false);
-      }
+      const uri = result.assets[0].uri;
+      setNewPhotoURI(uri); // Armazena a URI local da nova imagem
+      setProfile(prev => ({ ...prev, photoURL: uri })); // Atualiza a preview na UI
     }
   };
   
 const handleUpdate = async () => {
     if (!user) return;
     try {
+      setUploading(true); // Mostra o indicador de loading
+
+      let finalPhotoURL = profile.photoURL;
+      // Se uma nova imagem foi escolhida, faz o upload dela agora
+      if (newPhotoURI) {
+        finalPhotoURL = await uploadImageAndGetURL(newPhotoURI, user.uid);
+      }
+
       // Começamos com um objeto limpo para garantir que não enviamos dados indesejados.
       const dataToUpdate: Partial<Usuario> = {
         nome: profile.nome,
         genero: profile.genero,
         nivel: profile.nivel,
         streakGoal: profile.streakGoal || 2,
+        photoURL: finalPhotoURL,
       };
 
       // Adiciona os campos numéricos apenas se eles forem válidos, senão usa null.
@@ -206,9 +208,13 @@ const handleUpdate = async () => {
       }
 
       await updateUserProfile(user.uid, dataToUpdate);
+      setNewPhotoURI(null); // Limpa a URI temporária após o sucesso
       Alert.alert("Sucesso", "Perfil atualizado com sucesso!");
+      setEditProfileModalVisible(false); // Fecha o modal
     } catch (error: any) {
       Alert.alert("Erro ao Atualizar", error.message);
+    } finally {
+      setUploading(false); // Esconde o indicador de loading
     }
   };
 
@@ -317,14 +323,14 @@ const handleUpdate = async () => {
   return (
     <View style={{flex: 1, backgroundColor: "#030405"}}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
-        <TouchableOpacity onPress={handlePickImage} disabled={uploading}>
+        <View>
           {profile.photoURL ? (
             <Image source={{ uri: profile.photoURL }} style={styles.pfp} />
           ) : (
-            <View style={styles.pfpPlaceholder}><Text style={styles.placeholderText}>+</Text></View>
+            <View style={styles.pfpPlaceholder}><FontAwesome name="user" size={50} color="#555" /></View>
           )}
           {uploading && <ActivityIndicator style={styles.uploadIndicator} size="large" color="#ffffff1a" />}
-        </TouchableOpacity>
+        </View>
         <Text style={styles.profileName}>{profile.nome}</Text>
         <Text style={styles.emailText}>{user?.email}</Text>
 
@@ -356,6 +362,17 @@ const handleUpdate = async () => {
                 <TouchableOpacity onPress={() => setEditProfileModalVisible(false)}>
                     <FontAwesome name="close" size={24} color="#fff" />
                 </TouchableOpacity>
+              </View>
+
+              <View style={styles.modalPfpContainer}>
+                <TouchableOpacity disabled>
+                  {profile.photoURL ? (
+                    <Image source={{ uri: profile.photoURL }} style={styles.pfp} />
+                  ) : (
+                    <View style={styles.pfpPlaceholder}><FontAwesome name="camera" size={40} color="#555" /></View>
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.changePfpText}>Função para adicionar foto de perfil em breve</Text>
               </View>
 
               <Text style={styles.label}>Nome</Text>
@@ -416,7 +433,7 @@ const handleUpdate = async () => {
               )}
 
               <View style={{ width: '100%', marginTop: 20 }}>
-                <Button title="Salvar Alterações" onPress={handleUpdate} color="#fff" />
+                <Button title="Salvar Alterações" onPress={handleUpdate} color="#1cb0f6" disabled={uploading} />
               </View>
               
               <View style={{ marginTop: 40, width: '100%' }}>
@@ -667,6 +684,10 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalPfpContainer: {
     alignItems: 'center',
     marginBottom: 20,
   },

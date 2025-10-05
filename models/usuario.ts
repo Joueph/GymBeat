@@ -21,4 +21,5 @@ export interface Usuario {
   isPro?: boolean; // Indica se o usuário é PRO
   hasTrainedToday?: boolean;
   streakGoal?: number; // Meta de treinos por semana para a sequência (streak)
+  weeksStreakGoal?: number; // Meta de semanas seguidas de treino
 }

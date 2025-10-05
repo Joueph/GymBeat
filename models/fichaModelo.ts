@@ -1,4 +1,5 @@
 export interface FichaModelo {
+  totalDias: number;
   id: string;
   nome: string;
   dificuldade: string;

@@ -4,6 +4,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -169,6 +170,21 @@ export default function HomeScreen() {
     }, [user])
   );
 
+  const getStreakImage = () => {
+    const streakGoal = profile?.streakGoal || 2; // Usa a meta do perfil
+    switch (streakGoal) {
+      case 2: return require('../../assets/images/Streak-types/Vector_2_dias.png');
+      case 3: return require('../../assets/images/Streak-types/Vector_3_dias.png');
+      case 4: return require('../../assets/images/Streak-types/Vector_4_dias.png');
+      case 5: return require('../../assets/images/Streak-types/Vector_5_dias.png');
+      case 6: return require('../../assets/images/Streak-types/Vector_6_dias.png');
+      case 7: return require('../../assets/images/Streak-types/Vector_7_dias.png');
+      default:
+        // Retorna uma imagem padrão
+        return require('../../assets/images/Streak-types/Vector_2_dias.png');
+    }
+  };
+
   const handleCreateNewFicha = async () => {
     if (!user) return;
     try {
@@ -323,14 +339,20 @@ export default function HomeScreen() {
             style={styles.profileImage} 
           />
         </TouchableOpacity>
-        <View style={styles.headerTextContainer}>
-          <ThemedText style={styles.greetingText}>Olá, {profile?.nome?.split(' ')[0]}!</ThemedText>
-          <ThemedText style={styles.subGreetingText}>Vamos treinar hoje?</ThemedText>
+        <TouchableOpacity onPress={() => router.push('./perfil')}>
+          <View style={styles.headerTextContainer}>
+            <ThemedText style={styles.greetingText}>Olá, {profile?.nome?.split(' ')[0]}!</ThemedText>
+            <ThemedText style={styles.subGreetingText}>Vamos treinar hoje?</ThemedText>
+          </View>
+        </TouchableOpacity>
+      </View>
+      <View style={styles.headerStreakContainer}>
+        <Image source={getStreakImage()} style={styles.headerStreakImage} />
+        <View style={styles.headerStreakTextContainer}>
+          <ThemedText style={styles.headerStreakNumber}>{weeklyStats.streak}</ThemedText>
+          <ThemedText style={styles.headerStreakLabel}>semanas</ThemedText>
         </View>
       </View>
-      <TouchableOpacity onPress={() => router.push('./perfil')} style={styles.headerRight}>
-        <FontAwesome name="user-circle-o" size={28} color="#fff" />
-      </TouchableOpacity>
     </View>
   );
 
@@ -349,18 +371,48 @@ export default function HomeScreen() {
         <ThemedView style={styles.transparentSection}>
           {renderNextWorkout()}
         </ThemedView>
-        <ThemedView style={styles.section}>
-          <View style={styles.statsContainer}>
-            <View style={[styles.statBox, workoutsThisWeekMet && styles.statBoxMet]}>
-              <ThemedText style={styles.statValue}>{weeklyStats.workoutsThisWeek}/{weeklyStats.goal}</ThemedText>
-              <ThemedText style={styles.statLabel}>Treinos na semana</ThemedText>
-            </View>
-            <View style={styles.statBox}>
-              <ThemedText style={styles.statValue}>{weeklyStats.streak}</ThemedText>
-              <ThemedText style={styles.statLabel}>Semanas em sequência</ThemedText>
-            </View>
-          </View>
-        </ThemedView>
+
+<ThemedView style={styles.section}>
+    <ThemedText type="subtitle" style={styles.cardTitle}>Minhas Metas</ThemedText>
+    <View style={styles.goalsContainer}>
+      
+      {/* Meta de Treinos na Semana */}
+      <View style={styles.statBox}>
+        {/* Este é o "progressBarFill" da sua barra vertical */}
+        <LinearGradient
+          colors={['#1cb0f620', '#1cb0f6']} // Cor sólida para o preenchimento
+          style={[
+            styles.statBoxProgress,
+            {
+              // Ajustamos a ALTURA com base na porcentagem
+              height: `${Math.min(100, (weeklyStats.workoutsThisWeek / (weeklyStats.goal || 1)) * 100)}%`,
+            },
+          ]}
+        />
+        {/* Conteúdo fica por cima do preenchimento */}
+        <ThemedText style={styles.statValue}>{weeklyStats.workoutsThisWeek}/{weeklyStats.goal}</ThemedText>
+        <ThemedText style={styles.statLabel}>Treinos na semana</ThemedText>
+      </View>
+      
+      {/* Meta de Semanas em Sequência */}
+      <View style={styles.statBox}>
+        {/* "progressBarFill" para a segunda barra */}
+        <LinearGradient
+          colors={['#DAA52020', '#DAA520']} // Cor sólida para o preenchimento
+          style={[
+            styles.statBoxProgress,
+            {
+              // Novamente, ajustamos a ALTURA
+              height: `${Math.min(100, (weeklyStats.streak / (profile?.weeksStreakGoal || 1)) * 100)}%`,
+            }
+          ]}
+        />
+        <ThemedText style={styles.statValue}>{weeklyStats.streak}/{profile?.weeksStreakGoal || 4}</ThemedText>
+        <ThemedText style={styles.statLabel}>Semanas em sequência</ThemedText>
+      </View>
+
+    </View>
+</ThemedView>
         {!activeFicha && (
           <ThemedView style={styles.section}>
             <TouchableOpacity style={styles.newSheetButton} onPress={() => setModalVisible(true)}>
@@ -483,6 +535,29 @@ const styles = StyleSheet.create({
   headerRight: {
     // Espaçamento se necessário
   },
+  headerStreakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerStreakImage: {
+    width: 40,
+    height: 40,
+    resizeMode: 'contain',
+  },
+  headerStreakTextContainer: {
+    alignItems: 'flex-start',
+    gap: 0,
+  },
+  headerStreakNumber: {
+    fontSize: 25,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  headerStreakLabel: {
+    fontSize: 12,
+    color: '#aaa',
+  },
   // ESTILOS ANTIGOS
   section: {
     marginBottom: 15,
@@ -578,39 +653,47 @@ const styles = StyleSheet.create({
     color: '#ccc',
     fontSize: 14,
     marginLeft: 5,
-  },
-  statsContainer: {
+  },  
+  goalsContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     gap: 10,
-    paddingTop: 10,
-    paddingBottom: 10,
-    backgroundColor: '#030405',
+    width: '100%',
   },
-  statBox: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: '#ffffff1a',
-    borderRadius: 15,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'column',
-  },
-  statBoxMet: {
-    backgroundColor: 'rgba(218, 165, 32, 0.2)',
-    borderColor: '#DAA520',
-  },
+
+// ...dentro do StyleSheet.create
+
+statBox: {
+  flex: 1,
+  position: 'relative', // Essencial para o posicionamento absoluto do filho
+  backgroundColor: '#ffffff1a',
+  paddingVertical: 20,
+  paddingHorizontal: 10,
+  borderWidth: 1,
+  borderColor: 'rgba(255, 255, 255, 0.2)',
+  alignItems: 'center',
+  justifyContent: 'center',
+  overflow: 'hidden', // Garante que o gradiente não vaze para fora
+  borderRadius: 15,
+  height: 140,
+},
+
+// Este é o nosso "progressBarFill"
+statBoxProgress: {
+  position: 'absolute',
+  left: 0,
+  bottom: 0,       // Começa de baixo
+  width: '100%',   // Ocupa a largura total
+  // A altura ('height') é definida dinamicamente no componente
+},
+
+// ...resto dos estilos
   statValue: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#fff',
-    paddingTop: 4,
     textAlign: 'center',
-    flexWrap: 'wrap',
-    flexGrow: 1,
+    paddingTop: 5,
   },
   statLabel: {
     fontSize: 14,

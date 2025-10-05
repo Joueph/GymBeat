@@ -181,6 +181,7 @@ const handleUpdate = async () => {
         genero: profile.genero,
         nivel: profile.nivel,
         streakGoal: profile.streakGoal || 2,
+        weeksStreakGoal: profile.weeksStreakGoal || 4,
         photoURL: finalPhotoURL,
       };
 

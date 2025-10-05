@@ -87,6 +87,8 @@ export const createUserProfileDocument = async (
     genero: additionalData.genero || null,
     nivel: additionalData.nivel || null,
     isPro: additionalData.isPro || false,
+    streakGoal: additionalData.streakGoal || 3, // Valor padrão de 3 treinos/semana
+    weeksStreakGoal: additionalData.weeksStreakGoal || 4, // Valor padrão de 4 semanas
 
     // Valores padrão para novos usuários
     fichas: [],

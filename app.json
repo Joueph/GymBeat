@@ -38,7 +38,8 @@
           }
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,8 +1,9 @@
 // app/(auth)/cadastro.tsx
 import { FontAwesome } from '@expo/vector-icons';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from "expo-router";
-import { createUserWithEmailAndPassword } from "firebase/auth";
+import { useRouter } from 'expo-router';
+import { createUserWithEmailAndPassword, getAdditionalUserInfo, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,7 +27,6 @@ import { uploadImageAndGetURL } from '../../services/storageService'; // Assumim
 import { createUserProfileDocument } from "../../userService"; // Assumimos que esta função aceita os novos campos
 
 
-
 const ProgressBar = ({ progress }: { progress: number }) => (
   <View style={styles.progressBarContainer}>
     <View style={[styles.progressBar, { width: `${progress}%` }]} />
@@ -35,7 +35,7 @@ const ProgressBar = ({ progress }: { progress: number }) => (
 
 export default function CadastroScreen() {
   const router = useRouter();
-  const TOTAL_FORM_STEPS = 7; // genero, altura, peso, nivel, streakGoal, weeksStreakGoal, credenciais+resumo
+  const TOTAL_FORM_STEPS = 8; // genero, altura, peso, nivel, streakGoal, weeksStreakGoal, nome, credenciais
 
   const [step, setStep] = useState(0); // 0: Welcome, 1-5: Form steps
 
@@ -56,6 +56,17 @@ export default function CadastroScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
 
+  // --- Configuração do Google Sign-In ---
+  React.useEffect(() => {
+    GoogleSignin.configure({
+      // O webClientId é obtido do seu arquivo google-services.json (Android) ou GoogleService-Info.plist (iOS)
+      // e geralmente é o mesmo que o seu Android Client ID.
+      webClientId: '418244836174-ml3uqj3cibd8qruohmg2se2h4f7citfl.apps.googleusercontent.com',
+      offlineAccess: true, // Necessário para obter o idToken
+    });
+  }, []);
+
+  // This validation is now only for the email/password form
   const isCredentialsValid = nome.trim().length > 0 && email.trim().length > 5 && email.includes('@') && senha.length >= 6 && senha === confirmarSenha;
 
   const isStepComplete = () => {
@@ -66,7 +77,7 @@ export default function CadastroScreen() {
       case 4: return nivel !== null;
       case 5: return streakGoal >= 2 && streakGoal <= 7;
       case 6: return weeksStreakGoal > 0;
-      // A etapa 7 é a final, a validação é feita no botão
+      case 7: return nome.trim().length > 0;
       default: return false;
     }
   };
@@ -131,6 +142,52 @@ export default function CadastroScreen() {
     } catch (error: any) {
       setIsLoading(false);
       Alert.alert("Erro no Cadastro", error.message);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setIsLoading(true);
+      // Inicia o fluxo de login do Google
+      await GoogleSignin.hasPlayServices();
+      const { idToken } = await GoogleSignin.signIn();
+
+      // Cria a credencial do Firebase com o token do Google
+      const googleCredential = GoogleAuthProvider.credential(idToken);
+
+      // Faz login no Firebase
+      const userCredential = await signInWithCredential(auth, googleCredential);
+      const user = userCredential.user;
+      const additionalInfo = getAdditionalUserInfo(userCredential);
+
+      // Verifica se é um novo usuário
+      if (additionalInfo?.isNewUser) {
+        const alturaNum = Number(altura);
+        const pesoNum = Number(peso);
+
+        await createUserProfileDocument(user, {
+          nome: user.displayName || nome || user.email?.split('@')[0] || '',
+          isPro: false,
+          altura: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : undefined,
+          peso: !isNaN(pesoNum) && pesoNum > 0 ? pesoNum : undefined,
+          genero: genero || undefined,
+          nivel: nivel || undefined,
+          streakGoal: streakGoal,
+          weeksStreakGoal: weeksStreakGoal,
+          photoURL: user.photoURL || '',
+        });
+        Alert.alert("Sucesso!", "Conta criada com sucesso com Google!");
+      }
+      // Se for um usuário existente, ele simplesmente é logado.
+      // O AuthProvider cuidará da navegação.
+    } catch (error: any) {
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        // O usuário cancelou o fluxo de login
+      } else {
+        Alert.alert("Erro de Login", error.message);
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -291,8 +348,8 @@ export default function CadastroScreen() {
             </View>
           </>
         );
-      case 7: // Credenciais e Resumo
-        return (
+      case 7: // Nome e Resumo
+        return(
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             {/* --- Seção de Resumo --- */}
             <View style={styles.finalSummaryContainer}>
@@ -322,23 +379,38 @@ export default function CadastroScreen() {
             </View>
 
             {/* --- Campos do Formulário --- */}
-            <TextInput placeholder="Seu nome" value={nome} onChangeText={setNome} style={styles.input} placeholderTextColor="#ccc" />
+            <TextInput placeholder="Como podemos te chamar?" value={nome} onChangeText={setNome} style={styles.input} placeholderTextColor="#ccc" />
+          </ScrollView>
+        );
+      case 8: // Credenciais
+        return (
+          <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
+            <TouchableOpacity
+              style={styles.googleButton}
+              onPress={handleGoogleSignIn}
+              disabled={isLoading}>
+              <Image source={require('../../assets/images/google_logo.png')} style={styles.googleLogo} />
+              <Text style={styles.googleButtonText}>Continuar com Google</Text>
+            </TouchableOpacity>
+
+            <View style={styles.separatorContainer}>
+              <View style={styles.separatorLine} />
+              <Text style={styles.separatorText}>ou</Text>
+              <View style={styles.separatorLine} />
+            </View>
+
             <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#ccc" />
             <TextInput placeholder="Senha (mínimo 6 caracteres)" secureTextEntry value={senha} onChangeText={setSenha} style={styles.input} placeholderTextColor="#ccc" />
             <TextInput placeholder="Confirme a senha" secureTextEntry value={confirmarSenha} onChangeText={setConfirmarSenha} style={styles.input} placeholderTextColor="#ccc" />
             <TouchableOpacity
               style={[styles.finalButton, { backgroundColor: isCredentialsValid ? '#1cb0f6' : '#555' }, { width: '100%' }]}
               onPress={handleCadastro}
-              disabled={!isCredentialsValid}
+              disabled={!isCredentialsValid || isLoading}
             >
-              <Text style={styles.finalButtonText}>Finalizar Cadastro</Text>
+              {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.finalButtonText}>Finalizar Cadastro</Text>}
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.finalBackButton}
-              onPress={handleBack}
-            >
-              <Text style={styles.finalBackButtonText}>Voltar</Text>
-            </TouchableOpacity>
+
+            <Text style={styles.loginRedirectText}>Já tem uma conta? <Text style={styles.loginRedirectLink} onPress={() => router.push('/login')}>Faça Login</Text></Text>
           </ScrollView>
         );
       default: return null;
@@ -353,7 +425,8 @@ export default function CadastroScreen() {
       case 4: return "Qual seu nível na academia?";
       case 5: return "Qual sua meta treinos por semana";
       case 6: return "Qual sua meta de semanas em sequência?";
-      case 7: return "Crie sua conta";
+      case 7: return "Para finalizar, seu nome";
+      case 8: return "Crie sua conta";
       default: return "";
     }
   };
@@ -434,7 +507,7 @@ export default function CadastroScreen() {
             </TouchableOpacity>
             {step < TOTAL_FORM_STEPS && (
               <TouchableOpacity style={[styles.nextButton, !isStepComplete() && styles.nextButtonDisabled]} onPress={handleNext} disabled={!isStepComplete()}>
-                <Text style={styles.nextButtonText}>
+                <Text style={styles.nextButtonText}> 
                   {step === 6 ? "Eu vou conseguir" : "Próximo"}
                 </Text>
               </TouchableOpacity>
@@ -448,6 +521,29 @@ export default function CadastroScreen() {
 }
 
 const styles = StyleSheet.create({
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 15,
+    width: '100%',
+    marginBottom: 20,
+  },
+  googleLogo: {
+    width: 24,
+    height: 24,
+    marginRight: 15,
+  },
+  googleButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  googleButtonDisabled: {
+    opacity: 0.5,
+  },
   container: { flex: 1, justifyContent: "center", backgroundColor: "#030405" },
   welcomeScreenContainer: { flex: 1, backgroundColor: "#030405" },
   welcomeContainer: { flex: 1, justifyContent: 'flex-end', alignItems: 'center',},
@@ -809,6 +905,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  loginRedirectText: {
+    marginTop: 25,
+    color: '#aaa',
+    fontSize: 14,
+  },
+  loginRedirectLink: {
+    color: '#1cb0f6',
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
+  },
   summaryContainer: {
     paddingVertical: 15,
     paddingHorizontal: 10,
@@ -839,6 +945,21 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  separatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 20,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#ffffff3a',
+  },
+  separatorText: {
+    color: '#aaa',
+    marginHorizontal: 15,
   },
   
 

@@ -1,7 +1,7 @@
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView, RectButton, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,14 +15,17 @@ import { useAuth } from '../authprovider';
 // NOTE: The Exercicio model needs to be updated to support per-set data.
 // The 'series: number', 'repeticoes: string', and 'peso: number' should be replaced with 'series: Serie[]'
 import { DocumentSnapshot } from 'firebase/firestore'; // Import DocumentSnapshot
-import { Exercicio, ExercicioModelo, Serie } from '../../models/exercicio'; // Keep this line as is
+import Animated, { SlideInUp, SlideOutDown } from 'react-native-reanimated';
+import { Exercicio, ExercicioModelo, Serie } from '../../models/exercicio';
 
-// This interface should be in your `models/exercicio.ts` file
-// export interface Serie {
-//   id: string; // Unique ID for keys in draggable list
-//   repeticoes: string;
-//   peso?: number;
-// }
+
+
+// A interface Serie agora inclui um tipo para diferenciar séries normais de dropsets.
+interface SerieEdit extends Serie {
+  id: string;
+  type: 'normal' | 'dropset';
+  showMenu?: boolean;
+}
 
 const DIAS_SEMANA: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
 // const EXERCICIOS_CACHE_KEY = 'exerciciosModelosCache'; // Removed for pagination
@@ -51,6 +54,23 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
 
   return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
 }
+
+const LeftActions = ({ onPress }: { onPress: () => void }) => {
+  return (
+    <RectButton style={styles.editBox} onPress={onPress}>
+      <FontAwesome name="pencil" size={24} color="white" />
+    </RectButton>
+  );
+};
+
+const RightActions = ({ onPress }: { onPress: () => void }) => {
+  return (
+    <RectButton style={styles.deleteBox} onPress={onPress}>
+      <FontAwesome name="trash-o" size={24} color="white" />
+    </RectButton>
+  );
+};
+
 export default function EditarTreinoScreen() {
   const router = useRouter();
   const { user } = useAuth();
@@ -72,7 +92,7 @@ export default function EditarTreinoScreen() {
   const [selectedExercicioModelo, setSelectedExercicioModelo] = useState<ExercicioModelo | null>(null);
   const [editingExercicioIndex, setEditingExercicioIndex] = useState<number | null>(null);
   // New state to manage the list of sets for an exercise
-  const [sets, setSets] = useState<Partial<Serie>[]>([]);
+  const [sets, setSets] = useState<SerieEdit[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
   const [currentSearchInput, setCurrentSearchInput] = useState(''); // What the user types
@@ -176,13 +196,13 @@ export default function EditarTreinoScreen() {
   };
 
   const handleIntervalChange = (unit: 'min' | 'seg', value: string) => {
-    const numValue = parseInt(value.replace(/[^0-9]/g, ''), 10);
-    if (isNaN(numValue)) return;
+    const numValue = value === '' ? 0 : parseInt(value.replace(/[^0-9]/g, ''), 10);
+    if (isNaN(numValue) || numValue < 0) return; // Ensure non-negative numbers
 
     setTreino(prev => ({
         ...prev,
         intervalo: {
-            min: prev?.intervalo?.min ?? 1,
+            min: prev?.intervalo?.min ?? 1, // Default to 1 if undefined
             seg: prev?.intervalo?.seg ?? 0,
             [unit]: numValue
         }
@@ -206,7 +226,7 @@ export default function EditarTreinoScreen() {
     setExerciciosModelos([]);
     setLastVisibleDoc(null);
     // Initialize with one default set when adding a new exercise
-    setSets([{ id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10 }]);
+    setSets([{ id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }]);
     setExercicioModalVisible(true);
   };
 
@@ -223,6 +243,7 @@ export default function EditarTreinoScreen() {
         id: s.id || `set-${Date.now()}-${index}`,
         repeticoes: s.repeticoes || '',
         peso: s.peso || 0,
+        type: s.type || 'normal',
       })),
     };
 
@@ -260,14 +281,15 @@ export default function EditarTreinoScreen() {
     // @ts-ignore - Assuming old and new structures might coexist during transition
     if (exercicio.series && typeof exercicio.series !== 'number') {
       // New structure
-      setSets(exercicio.series);
+      setSets(exercicio.series.map(s => ({ ...s, id: s.id || `set-${Date.now()}`, type: s.type || 'normal' })));
     } else {
       // Old structure: convert to new structure for editing
       const numberOfSets = (exercicio as any).series || 1;
       const newSets = Array.from({ length: numberOfSets }, (_, i) => ({
         id: `set-${Date.now()}-${i}`,
         repeticoes: (exercicio as any).repeticoes || '8-12',
-        peso: (exercicio as any).peso || 0,
+        peso: (exercicio as any).peso || 10,
+        type: 'normal' as 'normal' | 'dropset',
       }));
       setSets(newSets);
     }
@@ -275,9 +297,46 @@ export default function EditarTreinoScreen() {
     setExercicioModalVisible(true);
   };
 
+  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete', index: number) => {
+    const newSets = [...sets];
+    // Fecha todos os outros menus
+    newSets.forEach((set, i) => { if (i !== index) set.showMenu = false; });
+
+    if (option === 'delete') {
+      newSets.splice(index, 1);
+    } else if (option === 'copy') {
+      const originalSet = newSets[index];
+      const newSet: SerieEdit = {
+        ...originalSet,
+        id: `set-${Date.now()}`,
+        showMenu: false,
+      };
+      newSets.splice(index + 1, 0, newSet);
+    } else if (option === 'addDropset') {
+      const parentSet = newSets[index];
+      const newDropset: SerieEdit = {
+        id: `set-${Date.now()}`,
+        repeticoes: parentSet.repeticoes,
+        peso: (parentSet.peso || 10) * 0.7, // Sugestão de peso para o dropset
+        type: 'dropset',
+        showMenu: false,
+      };
+      newSets.splice(index + 1, 0, newDropset);
+    }
+
+    // Fecha o menu que foi clicado
+    if (newSets[index]) {
+      newSets[index].showMenu = false;
+    }
+
+    setSets(newSets);
+  };
+
   const totalSets = useMemo(() => {
-    // @ts-ignore
-    return (item: Exercicio) => (item.series && typeof item.series !== 'number') ? item.series.length : item.series;
+    return (item: Exercicio) => {
+      // Estrutura antiga
+      return (item as any).series || 0;
+    };
   }, []);
 
   const filteredExercicios = useMemo(() => { // Filtered exercises now only filters by group, as search is handled by the backend
@@ -294,38 +353,10 @@ export default function EditarTreinoScreen() {
     const index = getIndex();
     if (index === undefined) return null;
 
-    const renderRightActions = (progress: Animated.AnimatedInterpolation<number>) => {
-      const trans = progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [80, 0],
-      });
-      return (
-        <RectButton style={styles.deleteBox} onPress={() => removeExercicio(index)}>
-          <Animated.View style={{ transform: [{ translateX: trans }] }}>
-            <FontAwesome name="trash-o" size={24} color="white" />
-          </Animated.View>
-        </RectButton>
-      );
-    };
-
-    const renderLeftActions = (progress: Animated.AnimatedInterpolation<number>) => {
-      const trans = progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [-80, 0],
-      });
-      return (
-        <RectButton style={styles.editBox} onPress={() => openEditExercicioModal(item, index)}>
-          <Animated.View style={{ transform: [{ translateX: trans }] }}>
-            <FontAwesome name="pencil" size={24} color="white" />
-          </Animated.View>
-        </RectButton>
-      );
-    };
-
     return (
       <Swipeable
-        renderLeftActions={renderLeftActions}
-        renderRightActions={renderRightActions}
+        renderLeftActions={() => <LeftActions onPress={() => openEditExercicioModal(item, index)} />}
+        renderRightActions={() => <RightActions onPress={() => removeExercicio(index)} />}
         overshootRight={false}
         overshootLeft={false}
       >
@@ -336,7 +367,12 @@ export default function EditarTreinoScreen() {
         >
           <View style={{flex: 1}}>
               <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
-              <Text style={styles.exercicioDetails}>{totalSets(item)} séries</Text>
+              <Text style={styles.exercicioDetails}>
+                {totalSets(item)} séries
+                {item.series?.filter(s => s.type === 'dropset').length > 0 &&
+                  ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`
+                }
+              </Text>
           </View>
           <FontAwesome name="bars" size={20} color="#666" style={{ marginLeft: 15 }} />
         </TouchableOpacity>
@@ -474,89 +510,135 @@ export default function EditarTreinoScreen() {
           </View>
         </Modal>
         <Modal
-          animationType="fade"
-          transparent={true}
-          visible={isExercicioModalVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          visible={isExercicioModalVisible} // Use the correct state variable
           onRequestClose={() => setExercicioModalVisible(false)}
         >
-            <View style={styles.centeredView}>
-                <View style={styles.addExercicioModalView}>
-                    {selectedExercicioModelo?.imagemUrl && (
-                        <VideoListItem
-                            uri={selectedExercicioModelo.imagemUrl}
-                            style={styles.addExercicioModalVideo}
-                        />
-                    )}
-                    <Text style={styles.modalText}>
-                        {editingExercicioIndex !== null ? 'Editar' : 'Adicionar'} {selectedExercicioModelo?.nome}
-                    </Text>
-
+          <SafeAreaView style={styles.modalSafeArea}>
+                    <View style={styles.modalHeader}>
+                      <Text style={styles.modalHeaderText}>Editando exercício</Text>
+                      <TouchableOpacity onPress={() => {
+                          setExercicioModalVisible(false);
+                          setSelectedExercicioModelo(null);
+                          setEditingExercicioIndex(null);
+                          setSets([]);
+                      }}><FontAwesome name="chevron-down" size={22} color="#fff" /></TouchableOpacity>
+                    </View>
                     <DraggableFlatList
                       data={sets}
-                      containerStyle={{ maxHeight: 250, width: '100%' }}
+                      style={{ width: '100%' }}
+                      contentContainerStyle={styles.modalScrollViewContent}
                       keyExtractor={(item) => item.id!}
                       onDragEnd={({ data }) => setSets(data)}
                       renderItem={({ item, drag, isActive, getIndex }) => {
-                        const index = getIndex();
-                        if (index === undefined) return null;
+                        const itemIndex = getIndex();
+                        if (itemIndex === undefined) return null;
+
+                        // Contagem de séries normais para exibição
+                        const normalSeriesCount = sets.slice(0, itemIndex + 1).filter(s => s.type === 'normal').length;
+
                         return (
-                          <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#222' }]}>
-                            <TouchableOpacity onLongPress={drag}>
-                               <FontAwesome name="bars" size={20} color="#666" style={{ marginRight: 10 }} />
-                            </TouchableOpacity>
-                            <Text style={styles.setText}>Série {index + 1}</Text>
-                            <TextInput
-                              style={styles.setInput}
-                              placeholder="Reps"
-                              placeholderTextColor="#888"
-                              value={item.repeticoes}
-                              onChangeText={(text) => {
+                          <View style={{ marginLeft: item.type === 'dropset' ? 30 : 0, marginBottom: 10 }}>
+                            <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#1f1f1f'}]}>
+                              <TouchableOpacity onLongPress={drag} style={{ paddingHorizontal: 10 }} disabled={isActive}>
+                                 <FontAwesome5 name={item.type === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" /> 
+                              </TouchableOpacity>
+                              <Text style={styles.setText}>{item.type === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
+                              <TextInput
+                                style={styles.setInput}
+                                placeholder="Reps"
+                                placeholderTextColor="#888"
+                                value={item.repeticoes}
+                                onChangeText={(text) => {
+                                  const newSets = [...sets];
+                                  newSets[itemIndex].repeticoes = text;
+                                  setSets(newSets);
+                                }}
+                              />
+                              <TextInput
+                                style={styles.setInput}
+                                placeholder="kg"
+                                placeholderTextColor="#888"
+                                keyboardType="numeric"
+                                value={String(item.peso || '')}
+                                onChangeText={(text) => {
+                                  const newSets = [...sets];
+                                  newSets[itemIndex].peso = parseFloat(text) || 0;
+                                  setSets(newSets);
+                                }}
+                              />
+                              <TouchableOpacity style={{ padding: 10 }} onPress={() => {
                                 const newSets = [...sets];
-                                newSets[index].repeticoes = text;
+                                newSets.forEach((s, i) => s.showMenu = i === itemIndex ? !s.showMenu : false);
                                 setSets(newSets);
-                              }}
-                            />
-                            <TextInput
-                              style={styles.setInput}
-                              placeholder="kg"
-                              placeholderTextColor="#888"
-                              keyboardType="numeric"
-                              value={String(item.peso || '')}
-                              onChangeText={(text) => {
-                                const newSets = [...sets];
-                                newSets[index].peso = parseFloat(text) || 0;
-                                setSets(newSets);
-                              }}
-                            />
-                            <TouchableOpacity onPress={() => setSets(sets.filter((_, i) => i !== index))}>
-                                <FontAwesome name="trash" size={20} color="#ff3b30" />
-                            </TouchableOpacity>
+                              }}>
+                                  <FontAwesome name="ellipsis-v" size={20} color="#ccc" />
+                              </TouchableOpacity>
+                            </View>
+                            {item.showMenu && (
+                              <Animated.View entering={SlideInUp.duration(200)} exiting={SlideOutDown.duration(200)}>
+                                <View style={styles.setMenu}>
+                                  {item.type === 'normal' && (
+                                    <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('addDropset', itemIndex)}>
+                                      <Text style={styles.setMenuText}>Adicionar Dropset</Text>
+                                    </TouchableOpacity>
+                                  )}
+                                  <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('copy', itemIndex)}>
+                                    <Text style={styles.setMenuText}>Copiar Série</Text>
+                                  </TouchableOpacity>
+                                  <TouchableOpacity style={[styles.setMenuButton, { borderBottomWidth: 0 }]} onPress={() => handleSetOption('delete', itemIndex)}>
+                                    <Text style={[styles.setMenuText, { color: '#ff3b30' }]}>Deletar</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </Animated.View>
+                            )}
                           </View>
                         )
                       }}
+                      ListHeaderComponent={
+                        <>
+                          <View style={styles.exerciseInfoCard}>
+                            {selectedExercicioModelo?.imagemUrl && (
+                                <VideoListItem
+                                    uri={selectedExercicioModelo.imagemUrl}
+                                    style={styles.addExercicioModalVideo}
+                                />
+                            )}
+                            <View style={{ flex: 1, marginLeft: 15 }}>
+                              <Text style={styles.modalExerciseName}>{selectedExercicioModelo?.nome}</Text>
+                              <Text style={styles.modalMuscleGroup}>{selectedExercicioModelo?.grupoMuscular}</Text>
+                            </View>
+                          </View>
+                        </>
+                      }
+                      ListFooterComponent={
+                        <>
+                          <TouchableOpacity style={styles.addSetButton} onPress={() => setSets([...sets, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}>
+                            <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+                          </TouchableOpacity>
+
+                          <View style={styles.modalButtons}>
+                              <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => {
+                                  setExercicioModalVisible(false);
+                                  setSelectedExercicioModelo(null);
+                                  setEditingExercicioIndex(null);
+                                  setSets([]);
+                                  // Se estiver adicionando um novo exercício (não editando), reabra o modal de seleção.
+                                  if (editingExercicioIndex === null) {
+                                      setModalVisible(true);
+                                  }
+                              }}>
+                                  <Text style={[styles.textStyle, {color: '#ff3b30'}]}>Cancelar</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExercicio}>
+                                  <Text style={styles.textStyle}>{editingExercicioIndex !== null ? 'Salvar' : 'Adicionar'}</Text>
+                              </TouchableOpacity>
+                          </View>
+                        </>
+                      }
                     />
-
-                    <TouchableOpacity style={styles.addSetButton} onPress={() => setSets([...sets, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 0 }])}>
-                      <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
-                    </TouchableOpacity>
-
-                    <View style={styles.modalButtons}>
-                        <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => {
-                            setExercicioModalVisible(false);
-                            setSets([]);
-                            // Se estiver adicionando um novo exercício (não editando), reabra o modal de seleção.
-                            if (editingExercicioIndex === null) {
-                                setModalVisible(true);
-                            }
-                        }}>
-                            <Text style={styles.textStyle}>Cancelar</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExercicio}>
-                            <Text style={styles.textStyle}>{editingExercicioIndex !== null ? 'Salvar' : 'Adicionar'}</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
+          </SafeAreaView>
         </Modal>
       </SafeAreaView>
     </GestureHandlerRootView>
@@ -679,18 +761,40 @@ const styles = StyleSheet.create({
   closeButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 
   // Add Exercicio Modal
-  centeredView: {
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#ffffff1a',
+  },
+  modalHeaderText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  exerciseInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalSafeArea: {
     flex: 1,
-    justifyContent: "center",
+    backgroundColor: '#141414',
+  },
+  bottomSheetContainer: {
+    flex: 1,
+    justifyContent: "flex-end", // Alinha o modal na parte de baixo
     alignItems: "center",
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
+  modalScrollViewContent: {
+    padding: 20,
+    paddingBottom: 40, // Espaço extra no final do scroll
+  },
   addExercicioModalView: {
-    margin: 20,
-    backgroundColor: "#1a2a33",
-    borderRadius: 20,
-    padding: 35,
-    alignItems: "center",
+    margin: 0,
+    backgroundColor: "#141414",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -698,7 +802,9 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.25,
     shadowRadius: 4,
-    elevation: 5
+    elevation: 5,
+    width: '100%',
+    height: '100%', // Ocupa a altura total
   },
   addExercicioModalVideo: {
     width: 100,
@@ -708,10 +814,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#333',
   },
   modalText: {
-    marginBottom: 15,
     textAlign: "center",
     color: '#fff',
     fontSize: 18,
+    fontWeight: 'bold'
+  },
+  modalExerciseName: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  modalMuscleGroup: {
+    color: '#ccc',
+    fontSize: 16,
     fontWeight: 'bold'
   },
   modalInput: {
@@ -725,10 +840,10 @@ const styles = StyleSheet.create({
     textAlign: 'center'
   },
   modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'column-reverse', // Empilha os botões, com o principal (Salvar) embaixo
+    justifyContent: 'flex-start',
     width: '100%',
-    marginTop: 10,
+    marginTop: 20,
   },
   button: {
     borderRadius: 10,
@@ -736,9 +851,10 @@ const styles = StyleSheet.create({
     elevation: 2,
     flex: 1,
     marginHorizontal: 5,
+    marginVertical: 5, // Adiciona espaçamento vertical entre os botões
   },
   buttonClose: {
-    backgroundColor: "#ff3b30",
+    backgroundColor: "transparent",
   },
   buttonAdd: {
     backgroundColor: "#1cb0f6",
@@ -752,26 +868,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 5,
     borderRadius: 8,
-    marginBottom: 10,
-    width: '100%',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2f2f2f',
+    height: 65,
   },
   setText: {
     color: '#fff',
     fontWeight: 'bold',
-    marginRight: 'auto',
+    flex: 1,
   },
   setInput: {
-    backgroundColor: '#333',
+    backgroundColor: '#2c2c2e',
+    flex: 1,
     color: '#fff',
     padding: 8,
     borderRadius: 5,
-    width: 60,
     textAlign: 'center',
     marginHorizontal: 5,
   },
-  addSetButton: { padding: 10, marginTop: 10 },
+  addSetButton: { padding: 10, marginTop: 10, backgroundColor: '#2c2c2e', borderRadius: 8, width: '100%', alignItems: 'center', flexGrow: 1 },
   addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },
-
+  setMenu: {
+    backgroundColor: '#2c2c2e',
+    borderRadius: 8,
+    marginTop: -5,
+    marginBottom: 5,
+    zIndex: -1,
+    paddingTop: 5,
+  },
+  setMenuButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#444',
+  },
+  setMenuText: {
+    color: '#fff',
+    fontSize: 14,
+  },
 });

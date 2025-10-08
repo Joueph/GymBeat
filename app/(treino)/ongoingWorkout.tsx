@@ -1,10 +1,13 @@
 import { Exercicio, Serie } from '@/models/exercicio';
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import DraggableFlatList, { RenderItemParams as DraggableRenderItemParams } from 'react-native-draggable-flatlist';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, { SlideInUp, SlideOutDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
@@ -12,6 +15,15 @@ import { addLog, getLogsByUsuarioId } from '../../services/logService';
 import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
+
+// A interface Serie agora inclui um tipo para diferenciar séries normais de dropsets.
+interface SerieEdit extends Serie {
+  peso: number;
+  repeticoes: any;
+  id: string;
+  type: 'normal' | 'dropset';
+  showMenu?: boolean;
+}
 
 // A new component to manage each video player instance
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
@@ -107,6 +119,14 @@ const WorkoutCompleteModal = memo(({
   );
 });
 
+// Componente para exibir os detalhes de uma série normal.
+const NormalSetDetails = ({ currentSet }: { currentSet: Serie }) => (
+  <>
+    <View style={styles.detailItem}><FontAwesome name="repeat" size={20} color="#ccc" /><Text style={styles.detailValue}>{currentSet.repeticoes}</Text><Text style={styles.detailLabel}>Repetições</Text></View>
+    <View style={styles.detailItem}><FontAwesome name="dashboard" size={20} color="#ccc" /><Text style={styles.detailValue}>{currentSet.peso || 0} kg</Text><Text style={styles.detailLabel}>Peso</Text></View>
+  </>
+);
+
 // Helper para converter Timestamps do Firestore e outros formatos para um objeto Date.
 const toDate = (date: any): Date | null => {
   if (!date) return null;
@@ -139,7 +159,7 @@ export default function OngoingWorkoutScreen() {
 
   // State for the exercise edit modal
   const [isEditExerciseModalVisible, setEditExerciseModalVisible] = useState(false);
-  const [editingSeries, setEditingSeries] = useState<Serie[]>([]);
+  const [editingSeries, setEditingSeries] = useState<SerieEdit[]>([]);
   const [isWorkoutCompleteModalVisible, setWorkoutCompleteModalVisible] = useState(false);
 
   const [isExerciseListVisible, setExerciseListVisible] = useState(false);
@@ -162,7 +182,10 @@ export default function OngoingWorkoutScreen() {
     if (!treino) return;
     const currentExercise = treino.exercicios[currentExerciseIndex];
     // Deep copy to avoid direct state mutation
-    const seriesCopy = JSON.parse(JSON.stringify(currentExercise.series));
+    const seriesCopy = JSON.parse(JSON.stringify(currentExercise.series)).map((s: Serie, index: number) => ({
+      ...s,
+      id: s.id || `set-${Date.now()}-${index}`,
+    }));
     setEditingSeries(seriesCopy);
     setEditExerciseModalVisible(true);
   }, [treino, currentExerciseIndex]);
@@ -346,6 +369,41 @@ export default function OngoingWorkoutScreen() {
     setEditingSeries([]); // Clear editing state
   };
 
+  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete', index: number) => {
+    const newSets = [...editingSeries];
+    // Fecha todos os outros menus
+    newSets.forEach((set, i) => { if (i !== index) set.showMenu = false; });
+
+    if (option === 'delete') {
+      newSets.splice(index, 1);
+    } else if (option === 'copy') {
+      const originalSet = newSets[index];
+      const newSet: SerieEdit = {
+        ...originalSet,
+        id: `set-${Date.now()}`,
+        showMenu: false,
+      };
+      newSets.splice(index + 1, 0, newSet);
+    } else if (option === 'addDropset') {
+      const parentSet = newSets[index];
+      const newDropset: SerieEdit = {
+        id: `set-${Date.now()}`,
+        repeticoes: parentSet.repeticoes,
+        peso: (parentSet.peso ?? 10) * 0.7, // Sugestão de peso para o dropset
+        type: 'dropset',
+        showMenu: false,
+      };
+      newSets.splice(index + 1, 0, newDropset);
+    }
+
+    // Fecha o menu que foi clicado
+    if (newSets[index]) {
+      newSets[index].showMenu = false;
+    }
+
+    setEditingSeries(newSets);
+  };
+
   // Formats seconds into a MM:SS string
   const formatTime = (seconds: number) => {
     const min = Math.floor(seconds / 60);
@@ -365,12 +423,54 @@ export default function OngoingWorkoutScreen() {
     );
   };
 
+  // Hook para determinar se o set atual faz parte de uma sequência de dropset
+  const { isDropsetSequence, dropsetGroup } = useMemo(() => {
+    if (!treino || !treino.exercicios[currentExerciseIndex]) return { isDropsetSequence: false, dropsetGroup: [] };
+
+    const series = treino.exercicios[currentExerciseIndex].series;
+    const currentSetIndex = completedSets;
+
+    // Verifica se o próximo set é um dropset
+    const isFollowedByDropset = (series[currentSetIndex + 1]?.type || 'normal') === 'dropset';
+    // Verifica se o set atual é um dropset
+    const isCurrentSetADropset = (series[currentSetIndex]?.type || 'normal') === 'dropset';
+
+    if (!isFollowedByDropset && !isCurrentSetADropset) {
+      return { isDropsetSequence: false, dropsetGroup: [] };
+    }
+
+    // Encontra o início da sequência (a série 'normal' pai)
+    let startIndex = currentSetIndex;
+    while (startIndex > 0 && (series[startIndex]?.type || 'normal') === 'dropset') {
+      startIndex--;
+    }
+
+    // Encontra o fim da sequência
+    let endIndex = startIndex;
+    while (endIndex + 1 < series.length && (series[endIndex + 1]?.type || 'normal') === 'dropset') {
+      endIndex++;
+    }
+
+    const group = series.slice(startIndex, endIndex + 1);
+    return { isDropsetSequence: true, dropsetGroup: group };
+  }, [treino, currentExerciseIndex, completedSets]);
+
+  const { totalNormalSeries, completedNormalSeriesCount } = useMemo(() => {
+    if (!treino) return { totalNormalSeries: 0, completedNormalSeriesCount: 0 };
+    const currentSeries = treino.exercicios[currentExerciseIndex].series;
+    const total = currentSeries.filter(s => (s.type || 'normal') === 'normal').length;
+    // Conta quantas séries normais existem até o índice da série atual (inclusive)
+    const completedCount = currentSeries.slice(0, completedSets + 1).filter(s => (s.type || 'normal') === 'normal').length;
+    return { totalNormalSeries: total, completedNormalSeriesCount: completedCount };
+  }, [treino, currentExerciseIndex, completedSets]);
+
+
   if (loading || !treino) {
     return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
   }
 
   const currentExercise = treino.exercicios[currentExerciseIndex];
-
+  const currentSet = currentExercise.series[completedSets];
   // REMOVED: All constants for the circular progress bar animation
   
   const renderExerciseProgressItem = ({ item, index }: { item: Exercicio, index: number }) => {
@@ -404,8 +504,8 @@ export default function OngoingWorkoutScreen() {
     return (
         <View style={styles.progressListItem}>
             <View style={styles.timelineContainer}>
-                <TopTrack />
-                <BottomTrack />
+                <TopTrack /> 
+                <BottomTrack /> 
                 <View style={[
                     styles.timelineDot,
                     isCompleted && styles.completedDot,
@@ -414,212 +514,269 @@ export default function OngoingWorkoutScreen() {
             </View>
             <View style={styles.exerciseContent}>
                 <Text style={[styles.modalExerciseName, isCompleted && { textDecorationLine: 'line-through', opacity: 0.7 }]}>{item.modelo.nome}</Text>
-                <Text style={styles.modalExerciseDetails}>{item.series.length} séries</Text>
+                <Text style={styles.modalExerciseDetails}>
+                  {item.series.filter(s => (s.type || 'normal') === 'normal').length} séries
+                  {item.series.filter(s => s.type === 'dropset').length > 0 && 
+                    ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`}
+                </Text>
             </View>
         </View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-          <FontAwesome name="close" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Treino Rolando</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      <View style={styles.content}>
-        {/* MODIFIED: Removed the entire progress circle structure, leaving only the timer label and text */}
-        <TouchableOpacity style={styles.timerContainer} onPress={handleSkipRest} disabled={!isResting}>
-          <View>
-            <Text style={styles.timerLabel}>Tempo de Intervalo</Text>
-            <Text style={styles.timerText}>
-              {isResting ? formatTime(restTime) : formatTime(maxRestTime)}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        <View style={styles.bottomSectionContainer}>
-          <View style={styles.exerciseSectionContainer}>
-            <TouchableOpacity style={styles.exerciseCard} onPress={() => setExerciseDetailModalVisible(true)}>
-                {currentExercise.modelo.imagemUrl && (
-                    <VideoListItem uri={currentExercise.modelo.imagemUrl} style={styles.exerciseVideo} />
-                )}
-                <View style={styles.exerciseInfoContainer}>
-                    <Text style={styles.exerciseName}>{currentExercise.modelo.nome}</Text>
-                    <Text style={styles.exerciseMuscleGroup}>{currentExercise.modelo.grupoMuscular}</Text>
-                </View>
-            </TouchableOpacity>
-
-            <View style={styles.detailsContainer}>
-                <View style={styles.detailItem}>
-                    <FontAwesome name="clone" size={20} color="#ccc" />
-                    <Text style={styles.detailValue}>{completedSets + 1}/{currentExercise.series.length}</Text>
-                    <Text style={styles.detailLabel}>Séries</Text>
-                </View>
-                <View style={styles.detailItem}>
-                    <FontAwesome name="repeat" size={20} color="#ccc" />
-                    <Text style={styles.detailValue}>{currentExercise.series[completedSets].repeticoes}</Text>
-                    <Text style={styles.detailLabel}>Repetições</Text>
-                </View>
-                <View style={styles.detailItem}>
-                    <FontAwesome name="dashboard" size={20} color="#ccc" />
-                    <Text style={styles.detailValue}>{currentExercise.series[completedSets].peso || 0} kg</Text>
-                    <Text style={styles.detailLabel}>Peso</Text>
-                </View>
-            </View>
-          </View>
-
-          <View style={styles.actionsContainer}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleEdit}>
-              <FontAwesome name="pencil" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>Editar</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.mainActionButton} onPress={handleCompleteSet}>
-              <FontAwesome name="check" size={40} color="#0d181c" />
-              <Text style={styles.mainActionButtonText}>Concluir Série</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.actionButton} onPress={handleShowList}>
-              <FontAwesome name="list-ul" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>Lista</Text>
-            </TouchableOpacity>
-          </View>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+            <FontAwesome name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Treino Rolando</Text>
+          <View style={{ width: 24 }} />
         </View>
-      </View>
 
-      <Modal
-        visible={isExerciseListVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setExerciseListVisible(false)}
-      >
-        <SafeAreaView style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Lista de Exercícios</Text>
-            <TouchableOpacity onPress={() => setExerciseListVisible(false)}>
-              <FontAwesome name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={treino.exercicios}
-            keyExtractor={(item, index) => `exercicio-lista-${index}`}
-            renderItem={renderExerciseProgressItem}
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20 }}
-          />
-        </SafeAreaView>
-      </Modal>
-
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={isEditExerciseModalVisible}
-        onRequestClose={() => setEditExerciseModalVisible(false)}
-      >
-        <View style={styles.centeredView}>
-            <View style={styles.editExerciseModalView}>
-                <Text style={styles.modalText}>Editar {currentExercise.modelo.nome}</Text>
-                <FlatList
-                    data={editingSeries}
-                    style={{width: '100%', maxHeight: 250}}
-                    keyExtractor={(item, index) => item.id || `serie-${index}`}
-                    renderItem={({ item, index }) => (
-                        <View style={styles.setRow}>
-                            <Text style={styles.setText}>Série {index + 1}</Text>
-                            <TextInput
-                                style={styles.setInput}
-                                placeholder="Reps"
-                                placeholderTextColor="#888"
-                                value={item.repeticoes}
-                                onChangeText={(text) => {
-                                    const newSeries = [...editingSeries];
-                                    newSeries[index].repeticoes = text;
-                                    setEditingSeries(newSeries);
-                                }}
-                            />
-                            <TextInput
-                                style={styles.setInput}
-                                placeholder="kg"
-                                placeholderTextColor="#888"
-                                keyboardType="numeric"
-                                value={String(item.peso || '')}
-                                onChangeText={(text) => {
-                                    const newSeries = [...editingSeries];
-                                    newSeries[index].peso = parseFloat(text) || 0;
-                                    setEditingSeries(newSeries);
-                                }}
-                            />
-                        </View>
-                    )}
-                />
-                <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => {
-                        setEditExerciseModalVisible(false);
-                        setEditingSeries([]);
-                    }}>
-                        <Text style={styles.textStyle}>Cancelar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExerciseChanges}>
-                        <Text style={styles.textStyle}>Salvar</Text>
-                    </TouchableOpacity>
-                </View>
+        <View style={styles.content}>
+          {/* MODIFIED: Removed the entire progress circle structure, leaving only the timer label and text */}
+          <TouchableOpacity style={styles.timerContainer} onPress={handleSkipRest} disabled={!isResting}>
+            <View>
+              <Text style={styles.timerLabel}>Tempo de Intervalo</Text>
+              <Text style={styles.timerText}>
+                {isResting ? formatTime(restTime) : formatTime(maxRestTime)}
+              </Text>
             </View>
-        </View>
-      </Modal>
+          </TouchableOpacity>
 
-      {/* Exercise Detail Modal */}
-      <Modal
-        visible={isExerciseDetailModalVisible}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setExerciseDetailModalVisible(false)}
-      >
-        <SafeAreaView style={styles.modalSafeArea}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Detalhes do Exercício</Text>
-            <TouchableOpacity onPress={() => setExerciseDetailModalVisible(false)}>
-              <FontAwesome name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.detailModalContentWrapper}>
-            <ScrollView>
-              <View>
-                {currentExercise.modelo.imagemUrl && (
-                  <VideoListItem uri={currentExercise.modelo.imagemUrl} style={styles.detailModalVideo} />
-                )}
-                <Text style={styles.detailModalExerciseName}>{currentExercise.modelo.nome}</Text>
-              </View>
-
-              <View style={styles.detailModalSeriesContainer}>
-                {currentExercise.series.map((item, index) => (
-                  <View key={item.id || `serie-detail-${index}`} style={styles.detailModalSetRow}>
-                    <Text style={styles.detailModalSetText}>Série {index + 1}</Text>
-                    <View style={styles.detailModalSetInfoContainer}>
-                      <Text style={styles.detailModalSetInfo}>{item.repeticoes}</Text>
-                      <Text style={styles.detailModalSetInfo}>{item.peso || 0} kg</Text>
-                    </View>
+          <View style={styles.bottomSectionContainer}>
+            <View style={styles.exerciseSectionContainer}>
+              <TouchableOpacity style={styles.exerciseCard} onPress={() => setExerciseDetailModalVisible(true)}>
+                  {currentExercise.modelo.imagemUrl && (
+                      <VideoListItem uri={currentExercise.modelo.imagemUrl} style={styles.exerciseVideo} />
+                  )}
+                  <View style={styles.exerciseInfoContainer}>
+                      <Text style={styles.exerciseName}>{currentExercise.modelo.nome}</Text>
+                      <Text style={styles.exerciseMuscleGroup}>{currentExercise.modelo.grupoMuscular}</Text>
                   </View>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        </SafeAreaView>
-      </Modal>
+              </TouchableOpacity>
 
-      {/* Modal de Conclusão de Treino */}
-      <WorkoutCompleteModal
-        isVisible={isWorkoutCompleteModalVisible}
-        onClose={handleCloseCompleteModal}
-        duration={workoutDuration}
-        exercisesCompleted={treino.exercicios.length}
-        weeklyProgress={weeklyProgress}
-        weekStreak={weekStreak}
-      />
-    </SafeAreaView>
+              <View style={styles.detailsContainer}>
+                  <View style={styles.detailItem}>
+                      <FontAwesome name="clone" size={20} color="#ccc" /><Text style={styles.detailValue}>{completedNormalSeriesCount}/{totalNormalSeries}</Text>
+                      <Text style={styles.detailLabel}>Séries</Text>
+                  </View>
+                  <NormalSetDetails currentSet={currentSet} />
+              </View>
+              {isDropsetSequence && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dropsetScrollContainer}>
+                  {dropsetGroup.map((set, index) => {
+                    const isCurrent = set.id === currentSet.id;
+                    return (
+                      <View key={set.id} style={[styles.dropsetItem, isCurrent && styles.currentDropsetItem]}>
+                        <Text style={styles.dropsetItemLabel}>{index === 0 ? 'Série' : 'Drop'}</Text>
+                        <Text style={styles.dropsetItemValue}>{set.repeticoes}</Text>
+                        <Text style={styles.dropsetItemValue}>{set.peso || 0}kg</Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+
+            <View style={styles.actionsContainer}>
+              <TouchableOpacity style={styles.actionButton} onPress={handleEdit}>
+                <FontAwesome name="pencil" size={24} color="#fff" />
+                <Text style={styles.actionButtonText}>Editar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.mainActionButton} onPress={handleCompleteSet}>
+                <FontAwesome name="check" size={40} color="#0d181c" />
+                <Text style={styles.mainActionButtonText}>Concluir Série</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionButton} onPress={handleShowList}>
+                <FontAwesome name="list-ul" size={24} color="#fff" />
+                <Text style={styles.actionButtonText}>Lista</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        <Modal
+          visible={isExerciseListVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setExerciseListVisible(false)}
+        >
+          <SafeAreaView style={styles.modalSafeArea}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Lista de Exercícios</Text>
+              <TouchableOpacity onPress={() => setExerciseListVisible(false)}>
+                <FontAwesome name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={treino.exercicios}
+              keyExtractor={(item, index) => `exercicio-lista-${index}`}
+              renderItem={renderExerciseProgressItem}
+              contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20 }}
+            />
+          </SafeAreaView>
+        </Modal>
+
+        <Modal
+          animationType="slide"
+          presentationStyle="pageSheet"
+          visible={isEditExerciseModalVisible}
+          onRequestClose={() => setEditExerciseModalVisible(false)}
+        >
+          <SafeAreaView style={styles.modalSafeArea}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar Exercício</Text>
+              <TouchableOpacity onPress={() => setEditExerciseModalVisible(false)}>
+                <FontAwesome name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <DraggableFlatList
+              data={editingSeries}
+              style={{ width: '100%' }}
+              contentContainerStyle={styles.modalScrollViewContent}
+              keyExtractor={(item) => item.id!}
+              onDragEnd={({ data }) => setEditingSeries(data)}
+              renderItem={({ item, drag, isActive, getIndex }: DraggableRenderItemParams<SerieEdit>) => {
+                const itemIndex = getIndex();
+                if (itemIndex === undefined) return null;
+
+                const normalSeriesCount = editingSeries.slice(0, itemIndex + 1).filter(s => (s.type || 'normal') === 'normal').length;
+
+                return (
+                  <View style={{ marginLeft: item.type === 'dropset' ? 30 : 0, marginBottom: 10 }}>
+                    <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#1f1f1f'}]}>
+                      <TouchableOpacity onLongPress={drag} style={{ paddingHorizontal: 10 }} disabled={isActive}>
+                         <FontAwesome5 name={(item.type || 'normal') === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" /> 
+                      </TouchableOpacity>
+                      <Text style={styles.setText}>{(item.type || 'normal') === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
+                      <TextInput
+                        style={styles.setInput}
+                        placeholder="Reps"
+                        placeholderTextColor="#888"
+                        value={item.repeticoes}
+                        onChangeText={(text) => {
+                          const newSets = [...editingSeries];
+                          newSets[itemIndex].repeticoes = text;
+                          setEditingSeries(newSets);
+                        }}
+                      />
+                      <TextInput
+                        style={styles.setInput}
+                        placeholder="kg"
+                        placeholderTextColor="#888"
+                        keyboardType="numeric"
+                        value={String(item.peso || '')}
+                        onChangeText={(text) => {
+                          const newSets = [...editingSeries];
+                          newSets[itemIndex].peso = parseFloat(text) || 0;
+                          setEditingSeries(newSets);
+                        }}
+                      />
+                      <TouchableOpacity style={{ padding: 10 }} onPress={() => {
+                        const newSets = [...editingSeries];
+                        newSets.forEach((s, i) => s.showMenu = i === itemIndex ? !s.showMenu : false);
+                        setEditingSeries(newSets);
+                      }}>
+                          <FontAwesome name="ellipsis-v" size={20} color="#ccc" />
+                      </TouchableOpacity>
+                    </View>
+                    {item.showMenu && (
+                      <Animated.View entering={SlideInUp.duration(200)} exiting={SlideOutDown.duration(200)}>
+                        <View style={styles.setMenu}>
+                          {(item.type || 'normal') === 'normal' && (
+                            <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('addDropset', itemIndex)}>
+                              <Text style={styles.setMenuText}>Adicionar Dropset</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('copy', itemIndex)}>
+                            <Text style={styles.setMenuText}>Copiar Série</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.setMenuButton, { borderBottomWidth: 0 }]} onPress={() => handleSetOption('delete', itemIndex)}>
+                            <Text style={[styles.setMenuText, { color: '#ff3b30' }]}>Deletar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </Animated.View>
+                    )}
+                  </View>
+                )
+              }}
+              ListFooterComponent={
+                <>
+                  <TouchableOpacity style={styles.addSetButton} onPress={() => setEditingSeries([...editingSeries, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}>
+                    <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.modalButtons}>
+                      <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setEditExerciseModalVisible(false)}>
+                          <Text style={[styles.textStyle, {color: '#ff3b30'}]}>Cancelar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExerciseChanges}>
+                          <Text style={styles.textStyle}>Salvar</Text>
+                      </TouchableOpacity>
+                  </View>
+                </>
+              }
+            />
+          </SafeAreaView>
+        </Modal>
+
+        {/* Exercise Detail Modal */}
+        <Modal
+          visible={isExerciseDetailModalVisible}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setExerciseDetailModalVisible(false)}
+        >
+          <SafeAreaView style={styles.modalSafeArea}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Detalhes do Exercício</Text>
+              <TouchableOpacity onPress={() => setExerciseDetailModalVisible(false)}>
+                <FontAwesome name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.detailModalContentWrapper}>
+              <ScrollView>
+                <View>
+                  {currentExercise.modelo.imagemUrl && (
+                    <VideoListItem uri={currentExercise.modelo.imagemUrl} style={styles.detailModalVideo} />
+                  )}
+                  <Text style={styles.detailModalExerciseName}>{currentExercise.modelo.nome}</Text>
+                </View>
+
+                <View style={styles.detailModalSeriesContainer}>
+                  {currentExercise.series.map((item, index) => (
+                    <View key={item.id || `serie-detail-${index}`} style={styles.detailModalSetRow}>
+                      <Text style={styles.detailModalSetText}>Série {index + 1}</Text>
+                      {item.type === 'dropset' && <Text style={styles.dropsetTag}>DROPSER</Text>}
+                      <View style={styles.detailModalSetInfoContainer}>
+                        <Text style={styles.detailModalSetInfo}>{item.repeticoes}</Text>
+                        <Text style={styles.detailModalSetInfo}>{item.peso || 0} kg</Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+          </SafeAreaView>
+        </Modal>
+
+        {/* Modal de Conclusão de Treino */}
+        <WorkoutCompleteModal
+          isVisible={isWorkoutCompleteModalVisible}
+          onClose={handleCloseCompleteModal}
+          duration={workoutDuration}
+          exercisesCompleted={treino.exercicios.length}
+          weeklyProgress={weeklyProgress}
+          weekStreak={weekStreak}
+        />
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
@@ -695,6 +852,36 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 4,
   },
+  dropsetScrollContainer: {
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  dropsetItem: {
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    marginHorizontal: 4,
+    borderRadius: 10,
+    backgroundColor: '#1f1f1f',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  currentDropsetItem: {
+    borderColor: '#1cb0f6',
+    backgroundColor: '#142634',
+  },
+  dropsetItemLabel: {
+    color: '#aaa',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  dropsetItemValue: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   actionsContainer: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', width: '100%' },
   actionButton: { alignItems: 'center', padding: 10, minWidth: 60 },
   actionButtonText: { color: '#fff', marginTop: 8, fontSize: 12 },
@@ -742,49 +929,22 @@ const styles = StyleSheet.create({
   modalExerciseName: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   modalExerciseDetails: { color: '#aaa', fontSize: 14, marginTop: 4 },
   // Edit Exercise Modal Styles
-  centeredView: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  editExerciseModalView: {
-    margin: 20,
-    backgroundColor: "#1a2a33",
-    borderRadius: 20,
-    padding: 35,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5
+  modalScrollViewContent: {
+    padding: 20,
+    paddingBottom: 40,
   },
   modalText: {
     marginBottom: 15,
     textAlign: "center",
     color: '#fff',
     fontSize: 18,
-    fontWeight: 'bold'
-  },
-  modalInput: {
-    backgroundColor: '#222',
-    color: '#fff',
-    padding: 10,
-    borderRadius: 8,
-    fontSize: 16,
-    marginBottom: 15,
-    width: 200,
-    textAlign: 'center'
+    fontWeight: 'bold',
   },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginTop: 10,
+    marginTop: 20,
   },
   button: {
     borderRadius: 10,
@@ -793,7 +953,7 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 5,
   },
-  buttonClose: { backgroundColor: "#ff3b30" },
+  buttonClose: { backgroundColor: "transparent" },
   buttonAdd: { backgroundColor: "#1cb0f6" },
   textStyle: { color: "white", fontWeight: "bold", textAlign: "center" },
   // Styles for set editing in modal
@@ -801,24 +961,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 5,
     borderRadius: 8,
-    marginBottom: 10,
-    width: '100%',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2f2f2f',
+    height: 65,
   },
   setText: {
     color: '#fff',
     fontWeight: 'bold',
-    marginRight: 'auto',
+    flex: 1,
   },
   setInput: {
-    backgroundColor: '#3a3a3a',
+    backgroundColor: '#2c2c2e',
+    flex: 1,
     color: '#fff',
     padding: 8,
     borderRadius: 5,
-    width: 70,
     textAlign: 'center',
-    marginHorizontal: 8,
+    marginHorizontal: 5,
+  },
+  addSetButton: {
+    padding: 10,
+    marginTop: 10,
+    backgroundColor: '#2c2c2e',
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center'
+  },
+  addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },
+  setMenu: {
+    backgroundColor: '#2c2c2e',
+    borderRadius: 8,
+    marginTop: -5,
+    marginBottom: 5,
+    zIndex: -1,
+    paddingTop: 5,
+  },
+  setMenuButton: { paddingVertical: 12, paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: '#444' },
+  setMenuText: {
+    color: '#fff',
+    fontSize: 14,
   },
   // Styles for Exercise Detail Modal
   detailModalContentWrapper: {
@@ -856,6 +1040,14 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  dropsetTag: {
+    color: '#0d181c',
+    backgroundColor: '#1cb0f6',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontSize: 10,
   },
   detailModalSetInfoContainer: {
     flexDirection: 'row',

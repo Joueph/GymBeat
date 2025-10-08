@@ -10,6 +10,7 @@ export interface Serie {
   id: string;
   repeticoes: string;
   peso?: number;
+  type?: 'normal' | 'dropset';
 }
 
 export interface Exercicio {

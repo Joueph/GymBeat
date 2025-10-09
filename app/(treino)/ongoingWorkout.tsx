@@ -3,13 +3,13 @@ import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { VideoView as Video, useVideoPlayer } from 'expo-video';
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState, } from 'react';
+import { ActivityIndicator, Alert, AppState, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+
 import DraggableFlatList, { RenderItemParams as DraggableRenderItemParams } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { SlideInUp, SlideOutDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
 import { addLog, getLogsByUsuarioId } from '../../services/logService';
 import { getTreinoById } from '../../services/treinoService';
@@ -17,7 +17,7 @@ import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 
 // A interface Serie agora inclui um tipo para diferenciar séries normais de dropsets.
-interface SerieEdit extends Serie {
+interface SerieEdit extends Omit<Serie, 'id'> {
   peso: number;
   repeticoes: any;
   id: string;
@@ -55,8 +55,9 @@ const ProgressBar = memo(({ progress }: { progress: number }) => (
 
 const WorkoutCompleteModal = memo(({
   isVisible, onClose, duration, exercisesCompleted, weeklyProgress, weekStreak,
+  volumeData
 }: {
-  isVisible: boolean; onClose: () => void; duration: number; exercisesCompleted: number; weeklyProgress: { completed: number; total: number }; weekStreak: number;
+  isVisible: boolean; onClose: () => void; duration: number; exercisesCompleted: number; weeklyProgress: { completed: number; total: number }; weekStreak: number; volumeData: { current: number; previous: number[]; percentageChange: number | null; } | null;
 }) => {
   const formatDuration = (totalSeconds: number) => {
     const minutes = Math.floor(totalSeconds / 60);
@@ -74,7 +75,7 @@ const WorkoutCompleteModal = memo(({
               <Text style={styles.completeModalSubtitle}>Você completou o treino de hoje!</Text>
             </View>
             
-            <View style={styles.bottomContentContainer}>
+            <ScrollView style={styles.bottomContentContainer} showsVerticalScrollIndicator={false}>
               <View style={styles.allStatsContainer}>
                 <View style={styles.statsSection}>
                   <Text style={styles.statsSectionTitle}>Seu Progresso</Text>
@@ -107,11 +108,39 @@ const WorkoutCompleteModal = memo(({
                     </View>
                   </View>
                 </View>
+
+                {volumeData && volumeData.current > 0 && (
+                  <View style={styles.statsSection}>
+                    <Text style={styles.statsSectionTitle}>Evolução de Carga</Text>
+                    <View style={styles.volumeCard}>
+                      <Text style={styles.volumeValue}>{volumeData.current.toLocaleString('pt-BR')} kg</Text>
+                      <Text style={styles.volumeLabel}>Carga total neste treino</Text>
+                      {volumeData.percentageChange !== null && (
+                        <View style={[styles.percentageBadge, volumeData.percentageChange >= 0 ? styles.percentagePositive : styles.percentageNegative]}>
+                          <FontAwesome name={volumeData.percentageChange >= 0 ? 'caret-up' : 'caret-down'} size={14} color="#fff" />
+                          <Text style={styles.percentageText}>
+                            {volumeData.percentageChange.toFixed(1)}% vs. último treino
+                          </Text>
+                        </View>
+                      )}
+                      {volumeData.previous.length > 0 && (
+                        <View style={styles.historyContainer}>
+                          <Text style={styles.historyTitle}>Histórico:</Text>
+                          <View style={styles.historyItems}>
+                            {volumeData.previous.map((vol, index) => (
+                              <Text key={index} style={styles.historyValue}>{vol.toLocaleString('pt-BR')} kg</Text>
+                            ))}
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
               </View>
-              <TouchableOpacity style={styles.continueButton} onPress={onClose}>
-                <Text style={styles.continueButtonText}>Fechar</Text>
-              </TouchableOpacity>
-            </View>
+            </ScrollView>
+            <TouchableOpacity style={styles.continueButton} onPress={onClose}>
+              <Text style={styles.continueButtonText}>Fechar</Text>
+            </TouchableOpacity>
           </View>
         </SafeAreaView>
       </View>
@@ -165,10 +194,15 @@ export default function OngoingWorkoutScreen() {
   const [isExerciseListVisible, setExerciseListVisible] = useState(false);
   const [isExerciseDetailModalVisible, setExerciseDetailModalVisible] = useState(false);
 
+  const [activeLogId, setActiveLogId] = useState<string | null>(null);
   // State for completion modal stats
   const [workoutDuration, setWorkoutDuration] = useState(0);
   const [weeklyProgress, setWeeklyProgress] = useState({ completed: 0, total: 0 });
   const [weekStreak, setWeekStreak] = useState(0);
+  const [volumeData, setVolumeData] = useState<{ current: number; previous: number[]; percentageChange: number | null; } | null>(null);
+
+  const [restStartTime, setRestStartTime] = useState<number | null>(null);
+  const appState = useRef(AppState.currentState);
 
   // Memoize the max rest time to avoid recalculation
   const maxRestTime = useMemo(() => {
@@ -196,7 +230,7 @@ export default function OngoingWorkoutScreen() {
 
   // Fetch workout data when the component mounts
   useEffect(() => {
-    setHorarioInicio(new Date());
+    const startTime = new Date();
     const fetchTreino = async () => {
       if (typeof treinoId !== 'string') {
         Alert.alert("Erro", "ID do treino inválido.");
@@ -204,19 +238,41 @@ export default function OngoingWorkoutScreen() {
         return;
       }
       try {
-        const treinoData = await getTreinoById(treinoId);
-        if (treinoData) {
-          if (!treinoData.exercicios || treinoData.exercicios.length === 0 || !treinoData.exercicios[0].series || treinoData.exercicios[0].series.length === 0) {
-            Alert.alert("Treino Vazio", "Este treino não possui exercícios. Adicione exercícios para poder iniciá-lo.", [{ text: "OK", onPress: () => router.back() }]);
-            return;
-          }
-          setTreino(treinoData);
-          const intervalo = treinoData.intervalo ?? { min: 1, seg: 0 };
-          setRestTime(intervalo.min * 60 + intervalo.seg);
-        } else {
-          Alert.alert("Erro", "Treino não encontrado.");
-          router.back();
+        const [treinoData, userLogs] = await Promise.all([
+          getTreinoById(treinoId),
+          user ? getLogsByUsuarioId(user.uid) : Promise.resolve([])
+        ]);
+
+        if (!treinoData) {
+          throw new Error("Treino não encontrado.");
         }
+        if (!treinoData.exercicios || treinoData.exercicios.length === 0 || !treinoData.exercicios[0].series || treinoData.exercicios[0].series.length === 0) {
+          Alert.alert("Treino Vazio", "Este treino não possui exercícios. Adicione exercícios para poder iniciá-lo.", [{ text: "OK", onPress: () => router.back() }]);
+          return;
+        }
+
+        setTreino(treinoData);
+        const intervalo = treinoData.intervalo ?? { min: 1, seg: 0 };
+        setRestTime(intervalo.min * 60 + intervalo.seg);
+
+        // Verifica se já existe um log ativo para este treino
+        const existingLog = userLogs.find(log => log.treino.id === treinoId && !log.horarioFim);
+        if (existingLog) {
+          setActiveLogId(existingLog.id);
+          const inicio = toDate(existingLog.horarioInicio);
+          setHorarioInicio(inicio);
+          // Se havia um descanso em andamento, recupera o estado
+          if (existingLog.lastInterval) {
+            setRestStartTime(existingLog.lastInterval);
+            setIsResting(true);
+          }
+        } else if (user) {
+          // Cria um novo log ativo
+          setHorarioInicio(startTime);
+          const newLogId = await addLog({ usuarioId: user.uid, treino: { ...treinoData, id: treinoId, fichaId: fichaId as string }, exercicios: treinoData.exercicios, exerciciosFeitos: [], horarioInicio: startTime }) ?? null;
+          setActiveLogId(newLogId);
+        }
+
       } catch (error) {
         console.error("Failed to fetch workout:", error);
         Alert.alert("Erro", "Não foi possível carregar o treino.");
@@ -227,22 +283,38 @@ export default function OngoingWorkoutScreen() {
     };
 
     fetchTreino();
-  }, [treinoId]);
+  }, [treinoId, user]);
+
+  // AppState listener to handle timer in background
+  useEffect(() => {
+    // A lógica de escuta do AppState foi removida.
+    // A nova abordagem do timer é inerentemente resiliente a pausas e
+    // reaberturas do app, tornando o AppState listener desnecessário para este caso.
+  }, []);
 
   // Handles the countdown timer logic
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    if (isResting && restTime > 0) {
+
+    if (isResting) {
       interval = setInterval(() => {
-        setRestTime(prevTime => prevTime - 1);
+        if (restStartTime) {
+          const elapsedSeconds = Math.floor((Date.now() - restStartTime) / 1000);
+          const remainingTime = maxRestTime - elapsedSeconds;
+          const newRestTime = Math.max(0, remainingTime);
+          setRestTime(newRestTime);
+
+          if (newRestTime <= 0) {
+            setIsResting(false);
+            setRestStartTime(null);
+            setRestTime(maxRestTime);
+          }
+        }
       }, 1000);
-    } else if (isResting && restTime === 0) {
-      setIsResting(false);
-      // Reset timer for the next rest period
-      setRestTime(maxRestTime);
     }
     return () => clearInterval(interval);
-  }, [isResting, restTime, maxRestTime]);
+  }, [isResting, restStartTime, maxRestTime]);
+  
 
   // Handles completing a set and moving to the next exercise or finishing the workout
   const handleCompleteSet = async () => {
@@ -263,20 +335,18 @@ export default function OngoingWorkoutScreen() {
         const horarioFim = new Date();
         const durationInSeconds = (horarioFim.getTime() - horarioInicio!.getTime()) / 1000;
         setWorkoutDuration(durationInSeconds);
-
-        const logData: Omit<Log, 'id'> = {
-          usuarioId: user.uid,
-          treino: { ...treino, id: treinoId as string }, // Ensure treino has an ID
-          exercicios: treino.exercicios,
-          exerciciosFeitos: treino.exercicios, // For simplicity, assumes all exercises were completed
-          horarioInicio: horarioInicio!,
-          horarioFim: horarioFim,
-        };
-
+        
         try {
-          await addLog(logData);
-          await calculateCompletionData(); // Calculate stats before showing modal
-          setWorkoutCompleteModalVisible(true); // Show the new detailed modal
+          if (activeLogId) {
+            // Atualiza o log existente com o horário de fim
+            const logUpdateData = {
+              horarioFim: horarioFim,
+              exerciciosFeitos: treino.exercicios, // Assume que todos foram feitos
+            };
+            await addLog(logUpdateData, activeLogId);
+            await calculateCompletionData();
+            setWorkoutCompleteModalVisible(true);
+          }
         } catch (error) {
           console.error("Failed to save workout log:", error);
           Alert.alert("Erro", "Não foi possível salvar seu progresso, mas parabéns por concluir!", [{ text: "OK", onPress: () => router.back() }]);
@@ -288,20 +358,60 @@ export default function OngoingWorkoutScreen() {
     }
 
     // Start resting after a set is completed
+    const restStartTimestamp = Date.now();
+    setRestStartTime(restStartTimestamp); // Record when rest officially starts
     setIsResting(true);
-  };
-
-  const handleSkipRest = () => {
-    if (isResting) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setIsResting(false);
-      // Reseta o timer para o próximo período de descanso
-      setRestTime(maxRestTime);
+    // Salva o início do descanso no log ativo
+    if (activeLogId) {
+      await addLog({ lastInterval: restStartTimestamp }, activeLogId);
     }
   };
 
+  const handleSkipRest = async () => {
+    if (isResting) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setIsResting(false);
+      setRestStartTime(null); // Clear rest start time when rest is skipped
+      // Reseta o timer para o próximo período de descanso
+      setRestTime(maxRestTime);
+      if (activeLogId) {
+        await addLog({ lastInterval: null }, activeLogId);
+      }
+    }
+  };
+
+  const parseReps = (reps: any): number => {
+    if (typeof reps === 'number') return reps;
+    if (typeof reps === 'string') {
+      // Extrai todos os números da string (ex: "8-12" -> ["8", "12"])
+      const numbers = reps.match(/\d+/g);
+      if (numbers && numbers.length > 0) {
+        if (numbers.length >= 2) {
+          // Se houver dois ou mais números (como em "10-12"), calcula a média dos dois primeiros
+          const num1 = Number(numbers[0]);
+          const num2 = Number(numbers[1]);
+          return Math.round((num1 + num2) / 2);
+        }
+        // Se houver apenas um número, retorna esse número
+        return Number(numbers[0]);
+      }
+    }
+    return 0; // Retorna 0 se não conseguir parsear
+  };
+
+  const calculateVolume = (exercicios: Exercicio[]): number => {
+    return exercicios.reduce((totalVolume, exercicio) => {
+      const exercicioVolume = exercicio.series.reduce((serieVolume, serie) => {
+        const reps = parseReps(serie.repeticoes);
+        const peso = serie.peso || 0;
+        return serieVolume + (reps * peso);
+      }, 0);
+      return totalVolume + exercicioVolume;
+    }, 0);
+  };
+
   const calculateCompletionData = async () => {
-    if (!user) return;
+    if (!user || !treino) return;
     try {
       const [userProfile, userLogs] = await Promise.all([
         getUserProfile(user.uid),
@@ -340,6 +450,33 @@ export default function OngoingWorkoutScreen() {
         } else { break; }
       }
       setWeekStreak(currentStreak);
+
+      // Preparar dados de comparação de volume
+      const relevantLogs = userLogs
+        .filter(log => log.horarioFim && log.treino.id === treino.id)
+        .sort((a, b) => toDate(a.horarioFim)!.getTime() - toDate(b.horarioFim)!.getTime());
+
+      if (relevantLogs.length > 0) {
+        // Calcula o volume do treino atual usando os dados do estado, que podem ter sido editados.
+        const currentVolume = calculateVolume(treino.exercicios);
+        // Calcula os volumes dos treinos anteriores a partir dos logs.
+        const previousLogs = relevantLogs.slice(0, -1);
+        const volumes = [...previousLogs.map(log => calculateVolume(log.exerciciosFeitos)), currentVolume];
+        const previousLogsVolumes = volumes.slice(Math.max(0, volumes.length - 4), volumes.length - 1).reverse();
+
+        let percentageChange: number | null = null;
+        if (volumes.length > 1) {
+          const previousVolume = volumes[volumes.length - 2];
+          if (previousVolume > 0) {
+            percentageChange = ((currentVolume - previousVolume) / previousVolume) * 100;
+          }
+        }
+        setVolumeData({
+          current: currentVolume,
+          previous: previousLogsVolumes,
+          percentageChange: percentageChange,
+        });
+      }
     } catch (error) { console.error("Error calculating completion data:", error); }
   };
 
@@ -413,12 +550,19 @@ export default function OngoingWorkoutScreen() {
 
   // Asks for confirmation before leaving the workout
   const handleBack = () => {
+    const exitWorkout = async () => {
+      if (activeLogId) {
+        // Exclui o log que foi criado no início do treino
+        await addLog(null, activeLogId, true); // Passa 'true' para deletar
+      }
+      router.back();
+    };
     Alert.alert(
       "Sair do Treino?",
       "Seu progresso não será salvo. Deseja continuar?",
       [
         { text: "Cancelar", style: "cancel" },
-        { text: "Sair", style: "destructive", onPress: () => router.back() },
+        { text: "Sair", style: "destructive", onPress: exitWorkout },
       ]
     );
   };
@@ -750,16 +894,32 @@ export default function OngoingWorkoutScreen() {
                 </View>
 
                 <View style={styles.detailModalSeriesContainer}>
-                  {currentExercise.series.map((item, index) => (
-                    <View key={item.id || `serie-detail-${index}`} style={styles.detailModalSetRow}>
-                      <Text style={styles.detailModalSetText}>Série {index + 1}</Text>
-                      {item.type === 'dropset' && <Text style={styles.dropsetTag}>DROPSER</Text>}
-                      <View style={styles.detailModalSetInfoContainer}>
-                        <Text style={styles.detailModalSetInfo}>{item.repeticoes}</Text>
-                        <Text style={styles.detailModalSetInfo}>{item.peso || 0} kg</Text>
-                      </View>
-                    </View>
-                  ))}
+                  {(() => {
+                    let normalSeriesCounter = 0;
+                    return currentExercise.series.map((item, index) => {
+                      const isDropset = item.type === 'dropset';
+                      if (!isDropset) {
+                        normalSeriesCounter++;
+                      }
+                      return (
+                        <View key={item.id || `serie-detail-${index}`} style={[styles.detailModalSetRow, isDropset && { marginLeft: 20 }]}>
+                          <View style={styles.detailModalSetTitleContainer}>
+                            {isDropset && (
+                              <FontAwesome5 name="arrow-down" size={14} color="#ccc" style={{ marginRight: 8 }} />
+                            )}
+                            <Text style={styles.detailModalSetText}>
+                              {isDropset ? 'Dropset' : `Série ${normalSeriesCounter}`}
+                            </Text>
+                          </View>
+                          {isDropset && <Text style={styles.dropsetTag}>DROPSET</Text>}
+                          <View style={styles.detailModalSetInfoContainer}>
+                            <Text style={styles.detailModalSetInfo}>{item.repeticoes}</Text>
+                            <Text style={styles.detailModalSetInfo}>{item.peso || 0} kg</Text>
+                          </View>
+                        </View>
+                      );
+                    });
+                  })()}
                 </View>
               </ScrollView>
             </View>
@@ -774,6 +934,7 @@ export default function OngoingWorkoutScreen() {
           exercisesCompleted={treino.exercicios.length}
           weeklyProgress={weeklyProgress}
           weekStreak={weekStreak}
+          volumeData={volumeData}
         />
       </SafeAreaView>
     </GestureHandlerRootView>
@@ -1036,13 +1197,18 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 10,
   },
+  detailModalSetTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
   detailModalSetText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
   dropsetTag: {
-    color: '#0d181c',
+    color: '#fff',
     backgroundColor: '#1cb0f6',
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -1074,6 +1240,7 @@ const styles = StyleSheet.create({
   completeModalHeader: {
     alignItems: "center",
     width: '100%',
+    paddingBottom: 30,
   },
   completeModalTitle: {
     color: '#fff',
@@ -1095,8 +1262,8 @@ const styles = StyleSheet.create({
     gap: 25,
   },
   bottomContentContainer: {
+    flex: 1,
     width: '100%',
-    gap: 40,
   },
   statsSectionTitle: {
     color: '#fff',
@@ -1173,11 +1340,69 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: '100%',
     alignItems: 'center',
-    // marginTop: 20, // Removido para ser controlado pelo gap do container pai
+    marginTop: 20,
   },
   continueButtonText: {
     color: '#fff',
     fontSize: 18, // Aumentado
     fontWeight: 'bold',
+  },
+  // Volume Card Styles
+  volumeCard: {
+    backgroundColor: '#1f1f1f',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    width: '100%',
+  },
+  volumeValue: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  volumeLabel: {
+    color: '#aaa',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  percentageBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    marginTop: 15,
+  },
+  percentagePositive: {
+    backgroundColor: 'rgba(22, 163, 74, 0.2)', // green-700 com 20% de opacidade
+  },
+  percentageNegative: {
+    backgroundColor: 'rgba(220, 38, 38, 0.2)', // red-600 com 20% de opacidade
+  },
+  percentageText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  historyContainer: {
+    marginTop: 20,
+    width: '100%',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+    paddingTop: 15,
+  },
+  historyTitle: {
+    color: '#aaa',
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  historyItems: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  historyValue: {
+    color: '#ccc',
+    fontSize: 14,
   },
 });

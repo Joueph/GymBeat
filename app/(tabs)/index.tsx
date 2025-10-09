@@ -62,6 +62,7 @@ export default function HomeScreen() {
   const [friends, setFriends] = useState<FriendData[]>([]);
   const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
   const [isModalVisible, setModalVisible] = useState(false);
+  const [activeLog, setActiveLog] = useState<Log | null>(null);
   const [weeklyStats, setWeeklyStats] = useState({ workoutsThisWeek: 0, streak: 0, goal: 2 });
 
   useFocusEffect(
@@ -80,6 +81,10 @@ export default function HomeScreen() {
             setLogs(userLogs);
             setProfile(userProfile);
             setActiveFicha(fichaAtiva);
+
+            // Verifica se há um treino em andamento
+            const ongoingLog = userLogs.find(log => !log.horarioFim);
+            setActiveLog(ongoingLog || null);
 
             // Calcular estatísticas semanais
             const streakGoal = userProfile?.streakGoal || 2;
@@ -265,10 +270,29 @@ export default function HomeScreen() {
     );
   };
 
+  const renderActiveWorkout = () => {
+    if (!activeLog) return null;
+
+    return (
+      <View style={styles.nextWorkoutCard}>
+        <ThemedText type="subtitle" style={styles.cardTitle}><MaterialCommunityIcons name="progress-clock" size={16} color="#FFA500" /> Treino Rolando</ThemedText>
+        <TouchableOpacity style={styles.workoutContent} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}`)}>
+          <View style={styles.workoutInfoContainer}>
+            <View style={styles.workoutTitleContainer}>
+              <MaterialCommunityIcons name="dumbbell" size={20} color="#fff" />
+              <ThemedText style={styles.workoutName}>{activeLog.treino.nome}</ThemedText>
+            </View>
+          </View>
+          <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}`)}>
+            <ThemedText style={styles.startButtonText}>Continuar</ThemedText>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const renderNextWorkout = () => {
-    if (treinos.length === 0 || !activeFicha) {
-      return null;
-    }
+    if (activeLog || treinos.length === 0 || !activeFicha) return null;
 
     const hoje = new Date().getDay();
     let proximoTreino: Treino | undefined;
@@ -369,7 +393,7 @@ export default function HomeScreen() {
           {renderWeeklyCalendar()}
         </ThemedView>
         <ThemedView style={styles.transparentSection}>
-          {renderNextWorkout()}
+          {activeLog ? renderActiveWorkout() : (treinos.length > 0 && activeFicha) ? renderNextWorkout() : null}
         </ThemedView>
 
 <ThemedView style={styles.section}>
@@ -628,6 +652,7 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     color: '#fff',
+    alignItems: 'center',
     marginBottom: 15,
   },
   workoutInfoContainer: {

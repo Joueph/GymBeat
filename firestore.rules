@@ -2,6 +2,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+
+
     // A função isFriend foi removida para evitar o loop de permissões.
 
     match /users/{userId} {
@@ -22,6 +24,8 @@ service cloud.firestore {
           (get(/databases/$(database)/documents/users/$(userId)).data.settings.privacy.workoutDetails == 'amigos' &&
            userId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.amizades);
         allow write: if false;
+        
+        allow write: if request.auth.uid == userId;
       }
     }
 
@@ -47,6 +51,7 @@ service cloud.firestore {
       allow read: if request.auth.uid == resource.data.usuarioId ||
                      resource.data.usuarioId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.amizades;
       allow create: if request.auth.uid == request.resource.data.usuarioId;
+      allow update, delete: if request.auth.uid == resource.data.usuarioId;
     }
 
     match /fichasModelos/{fichaModeloId} {

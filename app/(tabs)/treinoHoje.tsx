@@ -31,6 +31,34 @@ const toDate = (date: any): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+// --- Funções de Cálculo de Volume ---
+const parseReps = (reps: any): number => {
+  if (typeof reps === 'number') return reps;
+  if (typeof reps === 'string') {
+    const numbers = reps.match(/\d+/g);
+    if (numbers && numbers.length > 0) {
+      if (numbers.length >= 2) {
+        const num1 = Number(numbers[0]);
+        const num2 = Number(numbers[1]);
+        return Math.round((num1 + num2) / 2);
+      }
+      return Number(numbers[0]);
+    }
+  }
+  return 0;
+};
+
+const calculateVolume = (exercicios: Exercicio[]): number => {
+  return exercicios.reduce((totalVolume, exercicio) => {
+    const exercicioVolume = exercicio.series.reduce((serieVolume, serie) => {
+      const reps = parseReps(serie.repeticoes);
+      const peso = serie.peso || 0;
+      return serieVolume + (reps * peso);
+    }, 0);
+    return totalVolume + exercicioVolume;
+  }, 0);
+};
+
 // Componente LogItem permanece o mesmo
 const LogItem = ({ log }: { log: Log }) => {
   const [expanded, setExpanded] = useState(false);
@@ -51,13 +79,16 @@ const LogItem = ({ log }: { log: Log }) => {
     durationText = ` • ${durationMinutes} min`;
   }
 
+  const volumeTotal = calculateVolume(log.exerciciosFeitos);
+
   return (
     <View style={styles.logCard}>
       <TouchableOpacity onPress={() => setExpanded(!expanded)} style={styles.logHeader}>
         <View>
           <Text style={styles.logTitle}>{log.treino.nome}</Text>
           <Text style={styles.logDate}>
-            {logDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}{durationText}
+            {logDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}
+            {durationText} • {volumeTotal.toLocaleString('pt-BR')} kg
           </Text>
         </View>
         <FontAwesome name={expanded ? "chevron-up" : "chevron-down"} size={16} color="#ccc" />

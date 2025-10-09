@@ -175,7 +175,8 @@ export default function EditarTreinoScreen() {
       if (treinoId) {
         await updateTreino(treinoId as string, treinoData);
       } else {
-        await addTreinoToFicha(fichaId as string, treinoData, user.uid);
+        const newTreinoId = await addTreinoToFicha(fichaId as string, treinoData, user.uid);
+        // The new ID is not used here, but this fixes the potential type error if we were to set it to state.
       }
       Alert.alert("Sucesso", "Treino salvo com sucesso!");
       router.back();
@@ -334,7 +335,11 @@ export default function EditarTreinoScreen() {
 
   const totalSets = useMemo(() => {
     return (item: Exercicio) => {
-      // Estrutura antiga
+      if (Array.isArray(item.series)) {
+        // New structure: count only 'normal' series for the main display
+        return item.series.filter(s => (s.type || 'normal') === 'normal').length;
+      }
+      // Old structure or fallback
       return (item as any).series || 0;
     };
   }, []);

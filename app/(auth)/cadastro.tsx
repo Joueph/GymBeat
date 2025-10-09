@@ -1,9 +1,9 @@
 // app/(auth)/cadastro.tsx
 import { FontAwesome } from '@expo/vector-icons';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { createUserWithEmailAndPassword, getAdditionalUserInfo, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -145,51 +145,6 @@ export default function CadastroScreen() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    try {
-      setIsLoading(true);
-      // Inicia o fluxo de login do Google
-      await GoogleSignin.hasPlayServices();
-      const { idToken } = await GoogleSignin.signIn();
-
-      // Cria a credencial do Firebase com o token do Google
-      const googleCredential = GoogleAuthProvider.credential(idToken);
-
-      // Faz login no Firebase
-      const userCredential = await signInWithCredential(auth, googleCredential);
-      const user = userCredential.user;
-      const additionalInfo = getAdditionalUserInfo(userCredential);
-
-      // Verifica se é um novo usuário
-      if (additionalInfo?.isNewUser) {
-        const alturaNum = Number(altura);
-        const pesoNum = Number(peso);
-
-        await createUserProfileDocument(user, {
-          nome: user.displayName || nome || user.email?.split('@')[0] || '',
-          isPro: false,
-          altura: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : undefined,
-          peso: !isNaN(pesoNum) && pesoNum > 0 ? pesoNum : undefined,
-          genero: genero || undefined,
-          nivel: nivel || undefined,
-          streakGoal: streakGoal,
-          weeksStreakGoal: weeksStreakGoal,
-          photoURL: user.photoURL || '',
-        });
-        Alert.alert("Sucesso!", "Conta criada com sucesso com Google!");
-      }
-      // Se for um usuário existente, ele simplesmente é logado.
-      // O AuthProvider cuidará da navegação.
-    } catch (error: any) {
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-        // O usuário cancelou o fluxo de login
-      } else {
-        Alert.alert("Erro de Login", error.message);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const getStreakImage = () => {
     switch (streakGoal) {
@@ -386,11 +341,11 @@ export default function CadastroScreen() {
         return (
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <TouchableOpacity
-              style={styles.googleButton}
-              onPress={handleGoogleSignIn}
-              disabled={isLoading}>
+              style={[styles.googleButton, styles.googleButtonDisabled]}
+              onPress={() => Alert.alert("Em Breve", "O login com o Google estará disponível em breve!")}
+            >
               <Image source={require('../../assets/images/google_logo.png')} style={styles.googleLogo} />
-              <Text style={styles.googleButtonText}>Continuar com Google</Text>
+              <Text style={styles.googleButtonText}>Continuar com Google (Em Breve)</Text>
             </TouchableOpacity>
 
             <View style={styles.separatorContainer}>

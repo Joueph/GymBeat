@@ -17,5 +17,6 @@ export interface Exercicio {
   modelo: ExercicioModelo;
   modeloId: string;
   series: Serie[];
+  isBiSet?: boolean;
   // Outros campos como tempo de descanso, anotações, etc. podem ser adicionados aqui
 }

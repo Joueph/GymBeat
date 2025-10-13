@@ -1,7 +1,11 @@
+import { ReactNode } from 'react';
 import { Exercicio } from './exercicio';
 import { Treino } from './treino';
 
 export interface Log {
+  status: string;
+  observacoes: any;
+  nomeTreino: ReactNode;
   id: string;
   usuarioId: string;
   treino: Treino;

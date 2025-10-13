@@ -3,7 +3,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AnimatedGradientBorderButton from '../../components/AnimatedGradientBorderButton';
@@ -200,27 +200,28 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaView style={styles.container}>
-        <ScrollView contentContainerStyle={styles.listContainer}>
-          <Text style={styles.headerTitle}>Recomendado para você</Text>
-          <FlatList
-            data={recommendedFichas}
-            renderItem={({ item }) => renderFichaItem({ item, isCarousel: true })}
-            keyExtractor={(item) => `rec-${item.id}`}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 20, paddingLeft: 5 }}
-            ListEmptyComponent={<Text style={styles.emptyText}>Nenhum modelo recomendado encontrado.</Text>}
-          />
-
-          <Text style={styles.headerTitle}>Todos os Modelos</Text>
-          <FlatList
-            data={otherFichas}
-            renderItem={({ item }) => renderFichaItem({ item, isCarousel: false })}
-            keyExtractor={(item) => item.id}
-            scrollEnabled={false}
-            ListEmptyComponent={<Text style={styles.emptyText}>Nenhum modelo de treino encontrado.</Text>}
-          />
-        </ScrollView>
+        <FlatList
+          data={otherFichas}
+          renderItem={({ item }) => renderFichaItem({ item, isCarousel: false })}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContainer}
+          ListHeaderComponent={
+            <>
+              <Text style={styles.headerTitle}>Recomendado para você</Text>
+              <FlatList
+                data={recommendedFichas}
+                renderItem={({ item }) => renderFichaItem({ item, isCarousel: true })}
+                keyExtractor={(item) => `rec-${item.id}`}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 20, paddingLeft: 5 }}
+                ListEmptyComponent={<Text style={styles.emptyText}>Nenhum modelo recomendado encontrado.</Text>}
+              />
+              <Text style={styles.headerTitle}>Todos os Modelos</Text>
+            </>
+          }
+          ListEmptyComponent={<Text style={styles.emptyText}>Nenhum modelo de treino encontrado.</Text>}
+        />
 
         <Modal
           visible={isModalVisible}
@@ -266,11 +267,11 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: '#030405',
   },
   listContainer: {
-    padding: 15,
+    paddingHorizontal: 15,
   },
   headerTitle: {
     fontSize: 24,
@@ -285,8 +286,11 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#ffffff1a',
     alignItems: 'center',
+        borderTopColor: '#ffffff2a',
+        borderLeftColor: '#ffffff2a', 
+        borderBottomColor: '#ffffff1a',
+        borderRightColor: '#ffffff1a',
   },
   carouselCard: {
     backgroundColor: '#141414',
@@ -301,9 +305,12 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   cardImage: {
-    width: 40,
-    height: 40,
+    width: 140,
+    height: 140,
+    marginRight: 40,
     resizeMode: 'contain',
+    position: 'absolute',
+    opacity: 0.4,
   },
   carouselCardImage: {
     position: 'absolute',
@@ -384,7 +391,10 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#ffffff1a',
+        borderTopColor: '#ffffff2a',
+        borderLeftColor: '#ffffff2a', 
+        borderBottomColor: '#ffffff1a',
+        borderRightColor: '#ffffff1a',
   },
   treinoTitle: {
     fontSize: 16,

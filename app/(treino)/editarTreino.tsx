@@ -2,7 +2,7 @@ import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flatlist';
+import DraggableFlatList, { RenderItemParams, } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView, RectButton, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 // import AsyncStorage from '@react-native-async-storage/async-storage'; // Removed for pagination
@@ -12,7 +12,7 @@ import { getExerciciosModelos } from '../../services/exercicioService';
 import { addTreinoToFicha, getTreinoById, updateTreino } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 
-// NOTE: The Exercicio model needs to be updated to support per-set data.
+// NOTE: The Exercicio model needs to be updated to support per-set data. 
 // The 'series: number', 'repeticoes: string', and 'peso: number' should be replaced with 'series: Serie[]'
 import { DocumentSnapshot } from 'firebase/firestore'; // Import DocumentSnapshot
 import Animated, { SlideInUp, SlideOutDown } from 'react-native-reanimated';
@@ -24,15 +24,18 @@ import { Exercicio, ExercicioModelo, Serie } from '../../models/exercicio';
 interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
+  isBiSet?: boolean;
   showMenu?: boolean;
 }
 
 const DIAS_SEMANA: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
 // const EXERCICIOS_CACHE_KEY = 'exerciciosModelosCache'; // Removed for pagination
 
-// A new component to manage each video player instance
+// A new component to manage each video player instance, now with WebP support
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
-  const player = useVideoPlayer(uri, (player) => {
+  const isWebP = uri?.toLowerCase().endsWith('.webp');
+
+  const player = useVideoPlayer(isWebP ? null : uri, (player) => {
     player.loop = true;
     player.muted = true;
     player.play();
@@ -40,17 +43,22 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
 
   // useEffect for player cleanup.
   useEffect(() => {
-    // The pre-flight network request to check video status has been removed
-    // to improve performance, especially on screens with many videos.
-    // It's better to handle potential loading errors gracefully, for example
-    // by using the `onError` prop on the <Video> component to show a placeholder.
-    // Diagnostic console logs have also been removed for production.
-
     // Cleanup the player when the component unmounts or the URI changes.
     return () => {
-      player.release();
+      // Only release the player if it was actually used (i.e., not a WebP image)
+      if (!isWebP) {
+        player.release();
+      }
     };
-  }, [uri, player]); // Adicionamos 'uri' à lista de dependências
+  }, [uri, player, isWebP]);
+
+  // If the URI points to a WebP image, render an Image component instead.
+  if (isWebP) {
+    // We need to import the Image component from 'react-native' for this to work.
+    // Assuming the import is added at the top of the file.
+    const { Image } = require('react-native');
+    return <Image source={{ uri }} style={style} />;
+  }
 
   return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
 }
@@ -231,7 +239,7 @@ export default function EditarTreinoScreen() {
     setExercicioModalVisible(true);
   };
 
-  const handleSaveExercicio = () => {
+const handleSaveExercicio = () => {
     if (!selectedExercicioModelo || sets.length === 0 || sets.some(s => !s.repeticoes)) {
       Alert.alert("Erro", "O exercício deve ter pelo menos uma série e todas as séries devem ter repetições definidas.");
       return;
@@ -246,24 +254,51 @@ export default function EditarTreinoScreen() {
         peso: s.peso || 0,
         type: s.type || 'normal',
       })),
+      // Mantém o estado 'isBiSet' se já existir no exercício que está sendo editado
+      isBiSet: editingExercicioIndex !== null ? treino.exercicios?.[editingExercicioIndex]?.isBiSet : false,
     };
 
+    // 1. Criar uma cópia mutável da lista de exercícios
+    const updatedExercicios = [...(treino.exercicios || [])];
+
     if (editingExercicioIndex !== null) {
-      // Editing existing exercise
-      const updatedExercicios = [...(treino.exercicios || [])];
+      // 2. Atualizar o exercício principal na cópia
       updatedExercicios[editingExercicioIndex] = novoExercicio;
-      setTreino(prev => ({ ...prev, exercicios: updatedExercicios }));
+
+      // 3. Verificar se este exercício é a primeira parte de um bi-set
+      const nextExercicio = updatedExercicios[editingExercicioIndex + 1];
+      if (nextExercicio && nextExercicio.isBiSet) {
+        const targetSeriesCount = novoExercicio.series.length;
+        let partnerSeries = [...nextExercicio.series];
+
+        // Sincroniza (adiciona ou remove séries) para igualar a contagem
+        while (partnerSeries.length < targetSeriesCount) {
+          const lastSerie = partnerSeries.length > 0 ? partnerSeries[partnerSeries.length - 1] : { id: `set-sync-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' as const };
+          partnerSeries.push({ ...lastSerie, id: `set-sync-${Date.now()}-${partnerSeries.length}` });
+        }
+        if (partnerSeries.length > targetSeriesCount) {
+          partnerSeries = partnerSeries.slice(0, targetSeriesCount);
+        }
+
+        // 4. Atualizar o exercício parceiro do bi-set na cópia
+        updatedExercicios[editingExercicioIndex + 1] = { ...nextExercicio, series: partnerSeries };
+      }
     } else {
-      // Adding new exercise
-      setTreino(prev => ({ ...prev, exercicios: [...(prev.exercicios || []), novoExercicio] }));
+      // Adicionando um novo exercício
+      updatedExercicios.push(novoExercicio);
     }
 
+    // 5. Atualizar o estado do treino UMA VEZ com a lista completamente modificada
+    setTreino(prev => ({ ...prev, exercicios: updatedExercicios }));
+
+    // Limpar e fechar o modal
     setExercicioModalVisible(false);
     setSelectedExercicioModelo(null);
     setEditingExercicioIndex(null);
     setSets([]);
   };
 
+  
   const removeExercicio = (index: number) => {
     setTreino(prev => ({ ...prev, exercicios: prev.exercicios?.filter((_, i) => i !== index) }));
   };
@@ -303,6 +338,12 @@ export default function EditarTreinoScreen() {
     // Fecha todos os outros menus
     newSets.forEach((set, i) => { if (i !== index) set.showMenu = false; });
 
+    // Impede a exclusão de séries se for o segundo exercício de um bi-set
+    if (option === 'delete' && editingExercicioIndex !== null && treino.exercicios?.[editingExercicioIndex]?.isBiSet) {
+      Alert.alert("Ação não permitida", "Não é possível remover séries do segundo exercício de um bi-set. Altere o exercício principal.");
+      return;
+    }
+
     if (option === 'delete') {
       newSets.splice(index, 1);
     } else if (option === 'copy') {
@@ -333,6 +374,43 @@ export default function EditarTreinoScreen() {
     setSets(newSets);
   };
 
+  const handleToggleBiSet = (index: number) => {
+    if (index === 0) return; // Não pode ser bi-set com um exercício inexistente
+  
+    const updatedExercicios = [...(treino.exercicios || [])];
+    const currentExercicio = { ...updatedExercicios[index] }; // Exercício que está sendo marcado como bi-set
+    const previousExercicio = updatedExercicios[index - 1]; // Exercício principal do bi-set
+  
+    // Alterna o estado do bi-set
+    currentExercicio.isBiSet = !currentExercicio.isBiSet;
+  
+    // Se o exercício foi MARCADO como bi-set, sincroniza as séries
+    if (currentExercicio.isBiSet && previousExercicio) {
+      const targetSeriesCount = previousExercicio.series.length;
+      let currentSeries = [...currentExercicio.series];
+  
+      if (currentSeries.length > targetSeriesCount) {
+        // Se tem mais séries, corta as excedentes
+        currentSeries = currentSeries.slice(0, targetSeriesCount);
+      } else if (currentSeries.length < targetSeriesCount) {
+        // Se tem menos séries, adiciona as que faltam
+        const seriesToAdd = targetSeriesCount - currentSeries.length;
+        const lastSerie = currentSeries.length > 0 
+          ? currentSeries[currentSeries.length - 1] 
+          : { id: `set-new-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' as const };
+        
+        for (let i = 0; i < seriesToAdd; i++) {
+          currentSeries.push({ ...lastSerie, id: `set-new-${Date.now()}-${i}` });
+        }
+      }
+      currentExercicio.series = currentSeries;
+    }
+  
+    updatedExercicios[index] = currentExercicio;
+    setTreino(prev => ({ ...prev, exercicios: updatedExercicios }));
+    require('expo-haptics').impactAsync(require('expo-haptics').ImpactFeedbackStyle.Medium);
+  };
+
   const totalSets = useMemo(() => {
     return (item: Exercicio) => {
       if (Array.isArray(item.series)) {
@@ -358,30 +436,56 @@ export default function EditarTreinoScreen() {
     const index = getIndex();
     if (index === undefined) return null;
 
+    const isPartOfBiSet = item.isBiSet;
+    const isPreviousBiSet = index > 0 && treino.exercicios?.[index - 1]?.isBiSet;
+
     return (
-      <Swipeable
-        renderLeftActions={() => <LeftActions onPress={() => openEditExercicioModal(item, index)} />}
-        renderRightActions={() => <RightActions onPress={() => removeExercicio(index)} />}
-        overshootRight={false}
-        overshootLeft={false}
-      >
-        <TouchableOpacity
-          onLongPress={drag}
-          disabled={isActive}
-          style={[styles.exercicioCard, { backgroundColor: isActive ? '#3a3a3a' : '#222' }]}
+      <View>
+        {index > 0 && (
+          <TouchableOpacity
+            style={[styles.biSetLinker, isPreviousBiSet && { opacity: 0.5 }]}
+            onPress={() => handleToggleBiSet(index)}
+            disabled={isPreviousBiSet}
+          >
+            <FontAwesome name="link" size={20} color={isPartOfBiSet ? '#1cb0f6' : '#666'} />
+            {isPartOfBiSet && (
+              <Animated.Text entering={require('react-native-reanimated').FadeInLeft.duration(400)} style={styles.biSetLabel}>
+                Bi-set
+              </Animated.Text>
+            )}
+          </TouchableOpacity>
+        )}
+        <Swipeable
+          renderLeftActions={() => <LeftActions onPress={() => openEditExercicioModal(item, index)} />}
+          renderRightActions={() => <RightActions onPress={() => removeExercicio(index)} />}
+          overshootRight={false}
+          overshootLeft={false}
         >
-          <View style={{flex: 1}}>
-              <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
-              <Text style={styles.exercicioDetails}>
-                {totalSets(item)} séries
-                {item.series?.filter(s => s.type === 'dropset').length > 0 &&
-                  ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`
-                }
-              </Text>
-          </View>
-          <FontAwesome name="bars" size={20} color="#666" style={{ marginLeft: 15 }} />
-        </TouchableOpacity>
-      </Swipeable>
+          <TouchableOpacity
+            onLongPress={drag}
+            disabled={isActive}
+            style={[styles.exercicioCard, { backgroundColor: isActive ? '#3a3a3a' : '#222' }]}
+          >
+            <View style={{flex: 1}}>
+                <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
+                <Text style={styles.exercicioDetails}>
+                  {totalSets(item)} séries
+                  {item.series?.filter(s => s.type === 'dropset').length > 0 &&
+                    ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`
+                  }
+                </Text>
+            </View>
+            {/* Oculta o ícone de reordenação se for o último item de um bi-set */}
+            <TouchableOpacity disabled={isPartOfBiSet}>
+              <FontAwesome 
+                name="bars" 
+                size={20} 
+                color="#666" 
+                style={{ marginLeft: 15, opacity: isPartOfBiSet ? 0.5 : 1 }} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Swipeable>
+      </View>
     );
   };
 
@@ -391,7 +495,7 @@ export default function EditarTreinoScreen() {
         <DraggableFlatList
           containerStyle={{ flex: 1 }}
           contentContainerStyle={{ padding: 15, paddingBottom: 100 }}
-          data={treino.exercicios || []}
+          data={treino.exercicios || []} // Adicionado o tipo aqui
           renderItem={renderExercicioItem}
           keyExtractor={(item, index) => `exercicio-${index}`}
           onDragEnd={({ data }) => setTreino(prev => ({ ...prev, exercicios: data }))}
@@ -619,9 +723,12 @@ export default function EditarTreinoScreen() {
                       }
                       ListFooterComponent={
                         <>
-                          <TouchableOpacity style={styles.addSetButton} onPress={() => setSets([...sets, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}>
-                            <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
-                          </TouchableOpacity>
+                          {/* Oculta o botão de adicionar série se for o segundo exercício de um bi-set */}
+                          {!(editingExercicioIndex !== null && treino.exercicios?.[editingExercicioIndex]?.isBiSet) && (
+                            <TouchableOpacity style={styles.addSetButton} onPress={() => setSets([...sets, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}>
+                              <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+                            </TouchableOpacity>
+                          )}
 
                           <View style={styles.modalButtons}>
                               <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => {
@@ -688,6 +795,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: '#ffffff1a',
+  },
+  biSetLinker: {
+    height: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 10,
+    paddingLeft: 15, // Alinha com o conteúdo do card
+  },
+  biSetLabel: {
+    color: '#1cb0f6',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   exercicioName: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   exercicioDetails: { color: '#aaa', fontSize: 14, marginTop: 4 },

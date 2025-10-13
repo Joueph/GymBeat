@@ -1,38 +1,29 @@
-// joueph/gymbeat/GymBeat-Android/gymbeat/app/(tabs)/index.tsx
-
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { doc, onSnapshot } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { db } from '../../firebaseconfig';
 import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
 import { DiaSemana, Treino } from '../../models/treino';
 import { Usuario } from '../../models/usuario';
 import { addFicha, getFichaAtiva } from '../../services/fichaService';
-import { getLogsByUsuarioId } from '../../services/logService';
-import { getTreinosByIds } from '../../services/treinoService';
-import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 
-// Helper para converter Timestamps do Firestore e outros formatos para um objeto Date.
 const toDate = (date: any): Date | null => {
   if (!date) return null;
-  // Se for um objeto Timestamp do Firestore, use o método toDate()
   if (typeof date.toDate === 'function') return date.toDate();
-  // Tenta criar uma data a partir do valor (pode ser string, número ou já um Date)
   const d = new Date(date);
   return isNaN(d.getTime()) ? null : d;
 };
 
-// Helper para obter o início da semana (domingo) para uma data.
 const getStartOfWeek = (date: Date): Date => {
     const d = new Date(date);
-    const day = d.getDay(); // 0 para Domingo
+    const day = d.getDay();
     const diff = d.getDate() - day;
     d.setDate(diff);
     d.setHours(0, 0, 0, 0);
@@ -47,10 +38,13 @@ const DIAS_SEMANA_ABREV: { [key: string]: string } = {
   'dom': 'dom', 'seg': 'seg', 'ter': 'ter', 'qua': 'qua', 'qui': 'qui', 'sex': 'sex', 'sab': 'sáb'
 };
 
-interface FriendData extends Usuario {
-  hasTrainedToday: boolean;
-  weeklyLogs: Log[];
+interface TimelineItem {
+  id: string;
+  type: 'workout' | 'rest' | 'header';
+  date: Date;
+  treino?: Treino;
 }
+
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -59,124 +53,166 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<Log[]>([]);
   const [treinos, setTreinos] = useState<Treino[]>([]);
-  const [friends, setFriends] = useState<FriendData[]>([]);
   const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
   const [isModalVisible, setModalVisible] = useState(false);
   const [activeLog, setActiveLog] = useState<Log | null>(null);
+  const [treinoDeHoje, setTreinoDeHoje] = useState<Treino | null>(null);
   const [weeklyStats, setWeeklyStats] = useState({ workoutsThisWeek: 0, streak: 0, goal: 2 });
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      const fetchData = async () => {
-        if (user) {
-          setLoading(true);
-          try {
-            // Fetch logs, profile, and active ficha in parallel
-            const [userLogs, userProfile, fichaAtiva] = await Promise.all([
-              getLogsByUsuarioId(user.uid),
-              getUserProfile(user.uid),
-              getFichaAtiva(user.uid),
-            ]);
+  useEffect(() => {
+    if (!user) {
+        setLoading(false);
+        return;
+    }
+    
+    setLoading(true);
 
-            setLogs(userLogs);
+    const unsubscribeUser = onSnapshot(doc(db, "users", user.uid), async (userDoc) => {
+        if (userDoc.exists()) {
+            const userProfile = { id: userDoc.id, ...userDoc.data() } as Usuario;
             setProfile(userProfile);
+
+            const fichaAtiva = await getFichaAtiva(user.uid);
             setActiveFicha(fichaAtiva);
+            if (fichaAtiva && fichaAtiva.treinos.length > 0) {
+                const { getTreinosByIds } = require('../../services/treinoService');
+                const userTreinos = await getTreinosByIds(fichaAtiva.treinos);
+                
+                const hoje = new Date();
+                const diaString = DIAS_SEMANA_MAP[hoje.getDay()] as DiaSemana;
+                const treinoDoDia = userTreinos.find((t: { diasSemana: string | string[]; }) => t.diasSemana.includes(diaString));
 
-            // Verifica se há um treino em andamento
-            const ongoingLog = userLogs.find(log => !log.horarioFim);
-            setActiveLog(ongoingLog || null);
+                setTreinos(userTreinos);
+                setTreinoDeHoje(treinoDoDia || null);
+            } else {
+                setTreinos([]);
+            }
+        } else {
+            setProfile(null);
+        }
+        // Apenas para garantir que o loading pare se o usuário não tiver perfil/ficha
+        if (!dataLoaded) {
+            setLoading(false);
+            setDataLoaded(true);
+        }
+    });
 
-            // Calcular estatísticas semanais
-            const streakGoal = userProfile?.streakGoal || 2;
+    const { collection, query, where, onSnapshot: onLogsSnapshot } = require('firebase/firestore');
+    const logsQuery = query(collection(db, 'logs'), where('usuarioId', '==', user.uid));
 
-            // 1. Calcular treinos nesta semana
-            const today = new Date();
-            const startOfThisWeek = getStartOfWeek(today);
-            const workoutsThisWeek = userLogs.filter(log => {
+    const unsubscribeLogs = onLogsSnapshot(logsQuery, (querySnapshot: any[]) => {
+        const userLogs: Log[] = [];
+        querySnapshot.forEach((doc) => {
+            userLogs.push({ id: doc.id, ...doc.data() } as Log);
+        });
+        setLogs(userLogs);
+
+        const ongoingLog = userLogs.find(log => !log.horarioFim && log.status !== 'cancelado');
+        setActiveLog(ongoingLog || null);
+
+        const streakGoal = profile?.streakGoal || 2;
+        const today = new Date();
+        const startOfThisWeek = getStartOfWeek(today);
+        const workoutsThisWeek = userLogs.filter(log => {
+            const logDate = toDate(log.horarioFim);
+            return logDate && logDate >= startOfThisWeek;
+        }).length;
+
+        let streak = 0;
+        if (userLogs.length > 0) {
+            const workoutsByWeek: { [weekStart: string]: number } = {};
+            userLogs.forEach(log => {
                 const logDate = toDate(log.horarioFim);
-                return logDate && logDate >= startOfThisWeek;
-            }).length;
+                if (logDate) {
+                    const weekStartDate = getStartOfWeek(logDate);
+                    const weekStartString = weekStartDate.toISOString().split('T')[0];
+                    workoutsByWeek[weekStartString] = (workoutsByWeek[weekStartString] || 0) + 1;
+                }
+            });
 
-            // 2. Calcular sequência (streak)
-            let streak = 0;
-            if (userLogs.length > 0) {
-                const workoutsByWeek: { [weekStart: string]: number } = {};
-                userLogs.forEach(log => {
-                    const logDate = toDate(log.horarioFim);
-                    if (logDate) {
-                        const weekStartDate = getStartOfWeek(logDate);
-                        const weekStartString = weekStartDate.toISOString().split('T')[0];
-                        workoutsByWeek[weekStartString] = (workoutsByWeek[weekStartString] || 0) + 1;
-                    }
-                });
-
-                let weekToCheck = getStartOfWeek(new Date());
-                while (true) {
-                    const weekString = weekToCheck.toISOString().split('T')[0];
-                    if (workoutsByWeek[weekString] && workoutsByWeek[weekString] >= streakGoal) {
-                        streak++;
-                        weekToCheck.setDate(weekToCheck.getDate() - 7);
-                    } else {
-                        break; // A sequência é interrompida na primeira semana que não atinge a meta.
-                    }
+            let weekToCheck = getStartOfWeek(new Date());
+            while (true) {
+                const weekString = weekToCheck.toISOString().split('T')[0];
+                if (workoutsByWeek[weekString] && workoutsByWeek[weekString] >= streakGoal) {
+                    streak++;
+                    weekToCheck.setDate(weekToCheck.getDate() - 7);
+                } else {
+                    break;
                 }
             }
-            setWeeklyStats({ workoutsThisWeek, streak, goal: streakGoal });
-
-            if (fichaAtiva && fichaAtiva.treinos.length > 0) {
-              const userTreinos = await getTreinosByIds(fichaAtiva.treinos);
-              setTreinos(userTreinos);
-            } else {
-              setTreinos([]);
-            }
-
-            if (userProfile && Array.isArray(userProfile.amizades)) {
-              const friendsData = await Promise.all(
-                userProfile.amizades.map(async (friendId: string) => {
-                  const friendProfile = await getUserProfile(friendId);
-                  // VERIFICAÇÃO DE AMIZADE MÚTUA
-                  if (friendProfile && friendProfile.amizades?.includes(user.uid)) {
-                    // NOVA VERIFICAÇÃO DE PRIVACIDADE
-                    const friendPrivacy = friendProfile.settings?.privacy;
-                    // Se o perfil do amigo estiver configurado como privado, não o exiba.
-                    if (friendPrivacy?.profileVisibility === 'ninguém') {
-                      return null;
-                    }
-
-                    // Fetch logs for the current week
-                    const weekStart = getStartOfWeek(new Date());
-                    const friendLogs = await getLogsByUsuarioId(friendId);
-                    const weeklyLogs = friendLogs.filter(log => {
-                        const logDate = toDate(log.horarioFim);
-                        return logDate && logDate >= weekStart;
-                    });
-                    // VERIFICAÇÃO DE TREINO HOJE
-                    const today = new Date().toDateString();
-                    let hasTrainedToday = false;
-                    if (friendProfile.lastTrained) {
-                      const lastTrainedDate = toDate(friendProfile.lastTrained);
-                      hasTrainedToday = lastTrainedDate?.toDateString() === today;
-                    }
-                    return { ...friendProfile, hasTrainedToday, weeklyLogs };
-                  }
-                  return null;
-                })
-              );
-              setFriends(friendsData.filter(Boolean) as FriendData[]);
-            }
-          } catch (error) {
-            console.error("Erro ao buscar dados:", error);
-          } finally {
-            setLoading(false);
-          }
         }
-      };
-      fetchData();
-    }, [user])
-  );
+        setWeeklyStats({ workoutsThisWeek, streak, goal: streakGoal });
+
+        if (!dataLoaded) {
+            setLoading(false);
+            setDataLoaded(true);
+        }
+    });
+
+    return () => {
+        unsubscribeUser();
+        unsubscribeLogs();
+    };
+  }, [user, profile?.streakGoal]);
+
+  const getAverageDuration = (treinoId: string): number | null => {
+    const relevantLogs = logs.filter(log => 
+      log.treino.id === treinoId && 
+      log.horarioFim && 
+      log.status !== 'cancelado'
+    );
+
+    if (relevantLogs.length === 0) return null;
+
+    const totalDuration = relevantLogs.reduce((acc, log) => {
+      const start = toDate(log.horarioInicio);
+      const end = toDate(log.horarioFim);
+      if (start && end) {
+        return acc + (end.getTime() - start.getTime());
+      }
+      return acc;
+    }, 0);
+
+    return Math.round(totalDuration / relevantLogs.length / 60000); // em minutos
+  };
+
+  const getMuscleGroups = (treino: Treino): string => [...new Set(treino.exercicios.map(ex => ex.modelo.grupoMuscular))].join(' • ');
+
+  const generateTimelineData = (): TimelineItem[] => {
+    if (!activeFicha || treinos.length === 0) {
+        return [];
+    }
+
+    const timeline: TimelineItem[] = [];
+    const today = new Date();
+
+    for (let i = 1; i < 7; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i);
+        const dayString = DIAS_SEMANA_MAP[date.getDay()] as DiaSemana;
+
+        const treinoDoDia = treinos.find(t => t.diasSemana.includes(dayString) && t.id !== treinoDeHoje?.id);
+
+        if (treinoDoDia) {
+            timeline.push({
+              id: `workout-${date.toISOString()}`,
+              type: 'workout', date, treino: treinoDoDia,
+            });
+        } else {
+            if (i < 6) {
+                timeline.push({
+                  id: `rest-${date.toISOString()}`,
+                  type: 'rest', date,
+                });
+            }
+        }
+    }
+    return timeline;
+  };
 
   const getStreakImage = () => {
-    const streakGoal = profile?.streakGoal || 2; // Usa a meta do perfil
+    const streakGoal = profile?.streakGoal || 2;
     switch (streakGoal) {
       case 2: return require('../../assets/images/Streak-types/Vector_2_dias.png');
       case 3: return require('../../assets/images/Streak-types/Vector_3_dias.png');
@@ -185,7 +221,6 @@ export default function HomeScreen() {
       case 6: return require('../../assets/images/Streak-types/Vector_6_dias.png');
       case 7: return require('../../assets/images/Streak-types/Vector_7_dias.png');
       default:
-        // Retorna uma imagem padrão
         return require('../../assets/images/Streak-types/Vector_2_dias.png');
     }
   };
@@ -211,21 +246,6 @@ export default function HomeScreen() {
     } catch (error) {
       console.error("Erro ao criar nova ficha:", error);
     }
-  };
-
-  const renderWeeklyDots = (item: FriendData) => {
-    const trainedDays = new Set(
-      item.weeklyLogs.map(log => toDate(log.horarioFim)?.getDay())
-    );
-
-    return (
-      <View style={styles.weeklyDotsContainer}>
-        {Array.from({ length: 7 }).map((_, i) => (
-          // Domingo é 0, então o mapeamento está correto
-          <View key={i} style={[styles.dot, trainedDays.has(i) && styles.dotFilled]} />
-        ))}
-      </View>
-    );
   };
 
   const renderWeeklyCalendar = () => {
@@ -270,91 +290,8 @@ export default function HomeScreen() {
     );
   };
 
-  const renderActiveWorkout = () => {
-    if (!activeLog) return null;
-
-    return (
-      <View style={styles.nextWorkoutCard}>
-        <ThemedText type="subtitle" style={styles.cardTitle}><MaterialCommunityIcons name="progress-clock" size={16} color="#FFA500" /> Treino Rolando</ThemedText>
-        <TouchableOpacity style={styles.workoutContent} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}`)}>
-          <View style={styles.workoutInfoContainer}>
-            <View style={styles.workoutTitleContainer}>
-              <MaterialCommunityIcons name="dumbbell" size={20} color="#fff" />
-              <ThemedText style={styles.workoutName}>{activeLog.treino.nome}</ThemedText>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}`)}>
-            <ThemedText style={styles.startButtonText}>Continuar</ThemedText>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
-  const renderNextWorkout = () => {
-    if (activeLog || treinos.length === 0 || !activeFicha) return null;
-
-    const hoje = new Date().getDay();
-    let proximoTreino: Treino | undefined;
-    let diaDoTreino: number = -1;
-
-    // 1. Find today's workout
-    const diaStringHoje = DIAS_SEMANA_MAP[hoje] as DiaSemana;
-    proximoTreino = treinos.find(t => t.diasSemana.includes(diaStringHoje));
-
-    if (proximoTreino) {
-      diaDoTreino = hoje;
-    } else {
-      // 2. If no workout today, find the next one
-      for (let i = 1; i < 7; i++) {
-        const proximoDiaIndex = (hoje + i) % 7;
-        const proximoDiaString = DIAS_SEMANA_MAP[proximoDiaIndex] as DiaSemana;
-        const treinoEncontrado = treinos.find(t => t.diasSemana.includes(proximoDiaString));
-        if (treinoEncontrado) {
-          proximoTreino = treinoEncontrado;
-          diaDoTreino = proximoDiaIndex;
-          break;
-        }
-      }
-    }
-
-    if (!proximoTreino) {
-      return null; // No workouts scheduled at all
-    }
-
-    const titulo = diaDoTreino === hoje ? "Treino de Hoje" : `Treino de ${DIAS_SEMANA_ABREV[DIAS_SEMANA_MAP[diaDoTreino]]}`;
-    
-    const nextTreino = proximoTreino;
-    const lastLog = logs.find(log => log.treino.id === nextTreino.id);
-    const duration = lastLog ? `${Math.round((toDate(lastLog.horarioFim)!.getTime() - toDate(lastLog.horarioInicio)!.getTime()) / 60000)} min` : "N/A";
-    const numExercicios = nextTreino.exercicios.length;
-
-    return (
-      <View style={styles.nextWorkoutCard}>
-        <ThemedText type="subtitle" style={styles.cardTitle}>{titulo}</ThemedText>
-        <TouchableOpacity style={styles.workoutContent} onPress={() => router.push(`/(treino)/editarTreino?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
-          <View style={styles.workoutInfoContainer}>
-            <View style={styles.workoutTitleContainer}>
-              <MaterialCommunityIcons name="dumbbell" size={20} color="#ccc" />
-              <ThemedText style={styles.workoutName}>{nextTreino.nome}</ThemedText>
-            </View>
-            <View style={styles.workoutDetailsContainer}>
-              <FontAwesome name="bars" size={16} color="#ccc" />
-              <ThemedText style={styles.workoutDetailText}>{numExercicios} {numExercicios === 1 ? 'exercício' : 'exercícios'}</ThemedText>
-              <FontAwesome name="clock-o" size={16} color="#ccc" style={{ marginLeft: 15 }} />
-              <ThemedText style={styles.workoutDetailText}>{duration}</ThemedText>
-            </View>
-          </View>
-          <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${nextTreino.id}`)}>
-            <ThemedText style={styles.startButtonText}>Começar</ThemedText>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </View>
-    );
-  };
-  
-  // Componente do Header Customizado
-  const CustomHeader = () => (
+  const CustomHeader = () => {
+    const insets = useSafeAreaInsets();
     <View style={styles.customHeaderContainer}>
       <View style={styles.headerLeft}>
         <TouchableOpacity onPress={() => router.push('./perfil')} style={styles.profileImageContainer}>
@@ -365,157 +302,266 @@ export default function HomeScreen() {
         </TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('./perfil')}>
           <View style={styles.headerTextContainer}>
-            <ThemedText style={styles.greetingText}>Olá, {profile?.nome?.split(' ')[0]}!</ThemedText>
-            <ThemedText style={styles.subGreetingText}>Vamos treinar hoje?</ThemedText>
+            <Text style={styles.greetingText}>Olá, {profile?.nome?.split(' ')[0]}!</Text>
+            <Text style={styles.subGreetingText}>Vamos treinar hoje?</Text>
           </View>
         </TouchableOpacity>
       </View>
       <View style={styles.headerStreakContainer}>
         <Image source={getStreakImage()} style={styles.headerStreakImage} />
         <View style={styles.headerStreakTextContainer}>
-          <ThemedText style={styles.headerStreakNumber}>{weeklyStats.streak}</ThemedText>
-          <ThemedText style={styles.headerStreakLabel}>semanas</ThemedText>
+          <Text style={styles.headerStreakNumber}>{weeklyStats.streak}</Text>
+          <Text style={styles.headerStreakLabel}>semanas</Text>
         </View>
       </View>
     </View>
-  );
+};
 
+const HeroWorkoutCard = () => {
+  if (activeLog) {
+    // Card para "Continuar Treino"
+    return (
+      <TouchableOpacity style={styles.heroCard} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}&logId=${activeLog.id}`)}>
+        <View style={styles.heroTextContainer}>
+          <Text style={styles.heroTitle}>{activeLog.treino.nome}</Text>
+          <Text style={styles.heroInfo}>Treino em andamento...</Text>
+        </View>
+        <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}&logId=${activeLog.id}`)}>
+          <FontAwesome name="play" size={16} color="#030405" />
+          <Text style={styles.heroStartButtonText}>Continuar Treino</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  }
+
+  if (treinoDeHoje && activeFicha) {
+    const avgDuration = getAverageDuration(treinoDeHoje.id);
+    const muscleGroups = getMuscleGroups(treinoDeHoje);
+    const exerciseCount = treinoDeHoje.exercicios.length;
+
+    return (
+      <TouchableOpacity style={styles.heroCard} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${treinoDeHoje.id}`)}>
+        <View style={styles.heroTextContainer}>
+          <Text style={styles.heroTitle}>{treinoDeHoje.nome}</Text>
+          <Text style={styles.heroInfo}>
+            {exerciseCount} Exercícios • {muscleGroups}
+            {avgDuration && ` • ~${avgDuration} min`}
+          </Text>
+        </View>
+        <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${treinoDeHoje.id}`)}>
+          <FontAwesome name="play" size={16} color="#030405" />
+          <Text style={styles.heroStartButtonText}>Iniciar Treino</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  }
+
+  if (!activeFicha) {
+    return (
+      <View style={styles.heroCard}>
+        <View style={styles.heroTextContainer}>
+          <Text style={styles.heroTitle}>Nenhum plano ativo</Text>
+          <Text style={styles.heroInfo}>Crie um novo plano de treino para começar sua jornada.</Text>
+        </View>
+        <TouchableOpacity style={styles.heroStartButton} onPress={() => setModalVisible(true)}>
+          <FontAwesome name="plus" size={16} color="#030405" />
+          <Text style={styles.heroStartButtonText}>Criar Nova Ficha</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return null; // Não mostra nada se houver ficha ativa mas nenhum treino para hoje
+};
+  
   if (loading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
   }
 
-  const ListHeader = () => {
-    const workoutsThisWeekMet = weeklyStats.workoutsThisWeek >= weeklyStats.goal;
+  const TimelineHeader = () => {
     return (
       <>
-        {/* O header antigo foi removido daqui */}
-        <ThemedView style={styles.section}>
-          {renderWeeklyCalendar()}
-        </ThemedView>
-        <ThemedView style={styles.transparentSection}>
-          {activeLog ? renderActiveWorkout() : (treinos.length > 0 && activeFicha) ? renderNextWorkout() : null}
-        </ThemedView>
+        <View style={styles.customHeaderContainer}>
+            <View style={styles.headerLeft}>
+                <TouchableOpacity onPress={() => router.push('./perfil')} style={styles.profileImageContainer}>
+                <Image source={{ uri: profile?.photoURL || 'https://via.placeholder.com/150' }} style={styles.profileImage} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => router.push('./perfil')}>
+                <View style={styles.headerTextContainer}>
+                    <Text style={styles.greetingText}>Olá, {profile?.nome?.split(' ')[0]}!</Text>
+                    <Text style={styles.subGreetingText}>Vamos treinar hoje?</Text>
+                </View>
+                </TouchableOpacity>
+            </View>
+            <View style={styles.headerStreakContainer}>
+                <Image source={getStreakImage()} style={styles.headerStreakImage} />
+                <View style={styles.headerStreakTextContainer}>
+                <Text style={styles.headerStreakNumber}>{weeklyStats.streak}</Text>
+                <Text style={styles.headerStreakLabel}>semanas</Text>
+                </View>
+            </View>
+        </View>
+        <View style={styles.transparentSection}>
+          {renderWeeklyCalendar()} 
+        </View>
+        
+        <View style={styles.transparentSection}>
+          <Text style={styles.cardTitle}>Minhas Metas</Text>
+          <View style={styles.goalsContainer}>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{weeklyStats.workoutsThisWeek}/{weeklyStats.goal}</Text>
+              <Text style={styles.statLabel}>Treinos na semana</Text>
+            </View>
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{weeklyStats.streak}/{profile?.weeksStreakGoal || 4}</Text>
+              <Text style={styles.statLabel}>Semanas em sequência</Text>
+            </View>
+          </View>
+        </View>
 
-<ThemedView style={styles.section}>
-    <ThemedText type="subtitle" style={styles.cardTitle}>Minhas Metas</ThemedText>
-    <View style={styles.goalsContainer}>
-      
-      {/* Meta de Treinos na Semana */}
-      <View style={styles.statBox}>
-        {/* Este é o "progressBarFill" da sua barra vertical */}
-        <LinearGradient
-          colors={['#1cb0f620', '#1cb0f6']} // Cor sólida para o preenchimento
-          style={[
-            styles.statBoxProgress,
-            {
-              // Ajustamos a ALTURA com base na porcentagem
-              height: `${Math.min(100, (weeklyStats.workoutsThisWeek / (weeklyStats.goal || 1)) * 100)}%`,
-            },
-          ]}
-        />
-        {/* Conteúdo fica por cima do preenchimento */}
-        <ThemedText style={styles.statValue}>{weeklyStats.workoutsThisWeek}/{weeklyStats.goal}</ThemedText>
-        <ThemedText style={styles.statLabel}>Treinos na semana</ThemedText>
-      </View>
-      
-      {/* Meta de Semanas em Sequência */}
-      <View style={styles.statBox}>
-        {/* "progressBarFill" para a segunda barra */}
-        <LinearGradient
-          colors={['#DAA52020', '#DAA520']} // Cor sólida para o preenchimento
-          style={[
-            styles.statBoxProgress,
-            {
-              // Novamente, ajustamos a ALTURA
-              height: `${Math.min(100, (weeklyStats.streak / (profile?.weeksStreakGoal || 1)) * 100)}%`,
-            }
-          ]}
-        />
-        <ThemedText style={styles.statValue}>{weeklyStats.streak}/{profile?.weeksStreakGoal || 4}</ThemedText>
-        <ThemedText style={styles.statLabel}>Semanas em sequência</ThemedText>
-      </View>
-
-    </View>
-</ThemedView>
-        {!activeFicha && (
-          <ThemedView style={styles.section}>
-            <TouchableOpacity style={styles.newSheetButton} onPress={() => setModalVisible(true)}>
-              <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Criar Nova Ficha</ThemedText>
-            </TouchableOpacity>
-          </ThemedView>
+        <View style={[styles.transparentSection, { marginTop: 0 }]}>
+            <Text style={styles.cardTitle}>Treino de Hoje</Text>
+            <HeroWorkoutCard />
+        </View>        
+        {timelineData.length > 0 && (
+          <Text style={[styles.cardTitle, { paddingHorizontal: 10, marginTop: 20, marginBottom: 0 }]}>Minha agenda</Text>
         )}
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={{ marginBottom: 10, color:'#fff' }}>Amigos</ThemedText>
-        </ThemedView>
       </>
     );
   };
 
+  const TimelineWorkoutItem = ({ item, isWorkoutActive }: { item: TimelineItem, isWorkoutActive: boolean }) => {
+    if (!item.treino || !activeFicha) return null;
+
+    const title = `Treino de ${DIAS_SEMANA_ABREV[DIAS_SEMANA_MAP[item.date.getDay()]]}`;
+    const numExercicios = item.treino.exercicios.length;
+    
+    const lastCompletedLog = logs.find(log => log.treino.id === item.treino?.id && log.horarioFim);
+    let duration = "N/A";
+    if (lastCompletedLog) {
+        const startTime = toDate(lastCompletedLog.horarioInicio);
+        const endTime = toDate(lastCompletedLog.horarioFim);
+        if (startTime && endTime) {
+            duration = `${Math.round((endTime.getTime() - startTime.getTime()) / 60000)} min`;
+        }
+    }
+
+    return (
+        <View style={styles.timelineItemContainer}>
+            <View style={styles.timelineTrackContainer}>
+                <View style={styles.timelineDot} />
+                <View style={styles.timelineTrack} />
+            </View>
+            <View style={styles.nextWorkoutCard}>
+                <Text style={styles.cardTitle}>{title}</Text>
+                <View style={styles.workoutContent}>
+                    <View style={styles.workoutInfoContainer}>
+                        <TouchableOpacity style={styles.workoutTitleContainer} onPress={() => router.push(`/(treino)/editarTreino?fichaId=${activeFicha.id}&treinoId=${item.treino!.id}`)}>
+                            <FontAwesome5 name="dumbbell" size={16} color="#ccc" />
+                            <Text style={styles.workoutName}>{item.treino.nome}</Text>
+                        </TouchableOpacity>
+                        <View style={styles.workoutDetailsContainer}>
+                            <FontAwesome name="bars" size={16} color="#ccc" />
+                            <Text style={styles.workoutDetailText}>{numExercicios} {numExercicios === 1 ? 'exercício' : 'exercícios'}</Text>
+                            <FontAwesome name="clock-o" size={16} color="#ccc" style={{ marginLeft: 15 }} />
+                            <Text style={styles.workoutDetailText}>{duration}</Text>
+                        </View>
+                    </View>
+                    <TouchableOpacity 
+                        style={[styles.startButton, isWorkoutActive && styles.disabledButton]} 
+                        onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${item.treino!.id}`)}
+                        disabled={isWorkoutActive}
+                    >
+                        <Text style={styles.startButtonText}>Começar</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        </View>
+    );
+  };
+
+  const TimelineRestItem = ({ item }: { item: TimelineItem }) => {
+    const title = `Descanso - ${DIAS_SEMANA_ABREV[DIAS_SEMANA_MAP[item.date.getDay()]]}`;
+
+    return (
+        <View style={styles.timelineItemContainer}>
+            <View style={styles.timelineTrackContainer}>
+                <View style={styles.timelineDot} />
+                <View style={styles.timelineTrack} />
+            </View>
+            <View style={styles.restCard}>
+                <FontAwesome5 name="bed" size={16} color="#ccc" />
+                <Text style={styles.restCardText}>{title}</Text>
+            </View>
+        </View>
+    );
+  };
+
+  const timelineData = generateTimelineData();
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        {/* Renderize o Header Customizado aqui */}
-        <CustomHeader />
-        
-        <FlatList
-          data={friends}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.friendItem}>
-              <ThemedText style={styles.friendName}>{item.nome}</ThemedText>
-              {renderWeeklyDots(item)}
-            </View>
-          )}
-          ListEmptyComponent={
-            <View style={styles.emptyFriendsContainer}>
-              <ThemedText style={styles.emptyFriendsText}>
-                Você ainda não tem amigos. Adicione amigos para ver a atividade deles aqui!
-              </ThemedText>
-            </View>
+    <>
+      <FlatList
+        data={timelineData}
+        style={styles.container}
+        contentContainerStyle={{ paddingHorizontal: 10, paddingBottom: 50 }}
+        renderItem={({ item }) => {
+          if (item.type === 'workout') {
+              return <TimelineWorkoutItem item={item} isWorkoutActive={!!activeLog} />;
           }
-          ListHeaderComponent={ListHeader}
-        />
-        <Modal
-          animationType="slide"
-          transparent={true}
-          visible={isModalVisible}
-          onRequestClose={() => setModalVisible(false)}
-        >
-          <BlurView intensity={50} tint="dark" style={styles.blurContainer}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
-
-            <View style={styles.modalView}>
-              <ThemedText type="title" style={{ marginBottom: 15 }}>Criar Nova Ficha</ThemedText>
-              <ThemedText style={{ marginBottom: 20, textAlign: 'center' }}>
-                Comece um novo plano de treino. Você pode montar sua própria ficha ou usar um de nossos modelos pré-definidos.
-              </ThemedText>
-              <TouchableOpacity style={styles.modalButton} onPress={handleCreateNewFicha}>
-                <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Criar Ficha do Zero</ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={[styles.modalButton, {  borderBlockColor: '#58CC02' }]} onPress={() => {
-                setModalVisible(false);
-                router.push('/(tabs)/workouts');
-              }}>
-                <ThemedText style={{ color: '#fff', fontWeight: 'bold' }}>Ver Modelos</ThemedText>
-              </TouchableOpacity>
+          if (item.type === 'rest') {
+              return <TimelineRestItem item={item} />;
+          }
+          return null;
+        }}
+        ListEmptyComponent={
+          !activeLog ? ( // Só mostra a mensagem de empty se não houver treino ativo
+            <View style={[styles.emptyTimelineContainer, { marginTop: 20 }]}>
+              <Text style={styles.emptyTimelineText}>
+                {activeFicha ? "Nenhum treino agendado para os próximos dias." : "Crie ou ative uma ficha para ver seus treinos aqui."}
+              </Text>
             </View>
-          </BlurView>
-        </Modal>
-      </View>
-    </SafeAreaView>
+          ) : null
+        }
+        ListHeaderComponent={TimelineHeader}
+      />
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={isModalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <BlurView intensity={50} tint="dark" style={styles.blurContainer}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
+
+          <View style={styles.modalView}>
+            <Text style={{fontSize: 22, fontWeight: 'bold', color: '#fff', marginBottom: 15 }}>Criar Nova Ficha</Text>
+            <Text style={{ marginBottom: 20, textAlign: 'center', color: '#ccc' }}>
+              Comece um novo plano de treino. Você pode montar sua própria ficha ou usar um de nossos modelos pré-definidos.
+            </Text>
+            <TouchableOpacity style={styles.modalButton} onPress={handleCreateNewFicha}>
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Criar Ficha do Zero</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.modalButton, {  borderBlockColor: '#58CC02' }]} onPress={() => {
+              setModalVisible(false);
+              router.push('/(tabs)/workouts');
+            }}>
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Ver Modelos</Text>
+            </TouchableOpacity>
+          </View>
+        </BlurView>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
+    paddingTop: "15%",
     flex: 1,
     backgroundColor: '#030405',
   },
-  container: {
-    flex: 1,
-  },
-  // ESTILOS PARA O NOVO HEADER
   customHeaderContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -524,7 +570,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: '#030405',
     marginBottom: 20,
-    marginTop: 30,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -535,7 +580,7 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 2,
-    borderColor: '#FFA500', // Laranja
+    borderColor: '#FFA500', 
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -555,9 +600,6 @@ const styles = StyleSheet.create({
   subGreetingText: {
     fontSize: 14,
     color: '#aaa',
-  },
-  headerRight: {
-    // Espaçamento se necessário
   },
   headerStreakContainer: {
     flexDirection: 'row',
@@ -582,11 +624,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#aaa',
   },
-  // ESTILOS ANTIGOS
   section: {
     marginBottom: 15,
     backgroundColor: '#030405',
-    paddingHorizontal: 10,
   },
   transparentSection: {
     marginTop: 20,
@@ -607,7 +647,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#141414',
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: '#ffffff29',
+    borderTopColor: '#ffffff2a',
+    borderLeftColor: '#ffffff2a', 
+    borderBottomColor: '#ffffff1a',
+    borderRightColor: '#ffffff1a',
     width: '100%',
     gap: 5,
   },
@@ -628,7 +671,11 @@ const styles = StyleSheet.create({
   },
   scheduledDay: {
     borderWidth: 1.5,
-    borderColor: '#ffffff1a',
+    borderTopColor: '#ffffff2a',
+    borderLeftColor: '#ffffff2a', 
+    borderBottomColor: '#ffffff1a',
+    borderRightColor: '#ffffff1a',
+    backgroundColor: '#ffffff0d',
   },
   dayText: {
     fontWeight: 'bold',
@@ -639,21 +686,20 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   nextWorkoutCard: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1C1C1E',
     padding: 15,
     borderRadius: 15,
     borderWidth: 1,
-    borderColor: '#ffffff29',
+    borderTopColor: '#ffffff1a',
+    borderLeftColor: '#ffffff1a', 
+    borderBottomColor: '#ffffff0a',
+    borderRightColor: '#ffffff0a',
+    flex: 1,
   },
   workoutContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  cardTitle: {
-    color: '#fff',
-    alignItems: 'center',
-    marginBottom: 15,
   },
   workoutInfoContainer: {
     flex: 1,
@@ -663,12 +709,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
+    flex: 1,
   },
   workoutName: {
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: 18,
-    marginLeft: 10,
+    fontSize: 16,
+    marginLeft: 8,
   },
   workoutDetailsContainer: {
     flexDirection: 'row',
@@ -685,34 +732,23 @@ const styles = StyleSheet.create({
     gap: 10,
     width: '100%',
   },
-
-// ...dentro do StyleSheet.create
-
-statBox: {
-  flex: 1,
-  position: 'relative', // Essencial para o posicionamento absoluto do filho
-  backgroundColor: '#ffffff1a',
-  paddingVertical: 20,
-  paddingHorizontal: 10,
-  borderWidth: 1,
-  borderColor: 'rgba(255, 255, 255, 0.2)',
-  alignItems: 'center',
-  justifyContent: 'center',
-  overflow: 'hidden', // Garante que o gradiente não vaze para fora
-  borderRadius: 15,
-  height: 140,
-},
-
-// Este é o nosso "progressBarFill"
-statBoxProgress: {
-  position: 'absolute',
-  left: 0,
-  bottom: 0,       // Começa de baixo
-  width: '100%',   // Ocupa a largura total
-  // A altura ('height') é definida dinamicamente no componente
-},
-
-// ...resto dos estilos
+  statBox: {
+    flex: 1,
+    position: 'relative',
+    backgroundColor: '#ffffff1a',
+    paddingVertical: 20,
+    paddingHorizontal: 10,    
+    borderWidth: 1,
+    borderTopColor: '#ffffff2a',
+    borderLeftColor: '#ffffff2a', 
+    borderBottomColor: '#ffffff1a',
+    borderRightColor: '#ffffff1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden', 
+    borderRadius: 15,
+    height: 140,
+  },
   statValue: {
     fontSize: 28,
     fontWeight: 'bold',
@@ -733,45 +769,25 @@ statBoxProgress: {
     paddingHorizontal: 20,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderTopColor: '#ffffff2a',
+    borderLeftColor: '#ffffff2a', 
+    borderBottomColor: '#ffffff1a',
+    borderRightColor: '#ffffff1a',
   },
-  friendItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 15,
-    marginHorizontal: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  disabledButton: {
+    opacity: 0.5,
   },
   startButtonText: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
   },
-  friendName: {
-    fontSize: 16,
-    color: '#fff',
-  },
-  weeklyDotsContainer: {
-    flexDirection: 'row',
-    gap: 5,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#333',
-  },
-  dotFilled: {
-    backgroundColor: '#DAA520',
-  },
-  emptyFriendsContainer: {
+  emptyTimelineContainer: {
     paddingHorizontal: 15,
     paddingVertical: 20,
     alignItems: 'center',
   },
-  emptyFriendsText: {
+  emptyTimelineText: {
     color: '#aaa',
     textAlign: 'center',
     fontSize: 16,
@@ -810,5 +826,84 @@ statBoxProgress: {
     width: '100%',
     alignItems: 'center',
     marginTop: 10,
+  },
+  timelineItemContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginLeft: 10,
+    marginRight: 10,
+    marginBottom: 15,
+  },
+  timelineTrackContainer: {
+    width: 30,
+    alignItems: 'center',
+  },
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#333',
+    marginTop: 20,
+    zIndex: 1,
+  },
+  timelineTrack: {
+    flex: 1,
+    width: 2,
+    backgroundColor: '#333',
+    borderStyle: 'dotted',
+    borderColor: '#555',
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  restCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 15,
+    marginLeft: 10,
+  },
+  restCardText: {
+    color: '#aaa',
+    fontSize: 16,
+    marginLeft: 10,
+    fontStyle: 'italic',
+  },
+  cardTitle: { color: '#fff', alignItems: 'center', marginBottom: 15, fontSize: 20, fontWeight: 'bold', paddingBottom: 5, },
+  // Hero Card
+  heroCard: {
+    backgroundColor: '#141414f1',
+    borderRadius: 16,
+    padding: 20,
+    borderTopColor: '#00A6FFca',
+    borderLeftColor: '#00A6FFca', 
+    borderBottomColor: '#00A6FFaa',
+    borderRightColor: '#00A6FFaa',
+    borderWidth: 2,
+    shadowColor: '#00A6FF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 15,
+  },
+  heroTextContainer: {
+    marginBottom: 20,
+  },
+  heroTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  heroInfo: {
+    color: '#ccc',
+    fontSize: 14,
+    marginTop: 5,
+  },
+  heroStartButton: { backgroundColor: '#00A6FF', borderRadius: 10, paddingVertical: 15, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', },
+  heroStartButtonText: {
+    color: '#030405',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
   },
 });

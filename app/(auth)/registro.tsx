@@ -1,6 +1,5 @@
-// app/(auth)/cadastro.tsx
+// app/(auth)/registro.tsx
 import { FontAwesome } from '@expo/vector-icons';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
@@ -25,6 +24,7 @@ import { NumberSlider } from "../../components/NumberSlider";
 import { auth } from "../../firebaseconfig";
 import { uploadImageAndGetURL } from '../../services/storageService'; // Assumimos que esta função existe
 import { createUserProfileDocument } from "../../userService"; // Assumimos que esta função aceita os novos campos
+
 
 
 const ProgressBar = ({ progress }: { progress: number }) => (
@@ -55,16 +55,6 @@ export default function CadastroScreen() {
   const [confirmarSenha, setConfirmarSenha] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
-
-  // --- Configuração do Google Sign-In ---
-  React.useEffect(() => {
-    GoogleSignin.configure({
-      // O webClientId é obtido do seu arquivo google-services.json (Android) ou GoogleService-Info.plist (iOS)
-      // e geralmente é o mesmo que o seu Android Client ID.
-      webClientId: '418244836174-ml3uqj3cibd8qruohmg2se2h4f7citfl.apps.googleusercontent.com',
-      offlineAccess: true, // Necessário para obter o idToken
-    });
-  }, []);
 
   // This validation is now only for the email/password form
   const isCredentialsValid = nome.trim().length > 0 && email.trim().length > 5 && email.includes('@') && senha.length >= 6 && senha === confirmarSenha;
@@ -178,7 +168,7 @@ export default function CadastroScreen() {
               <Text style={styles.title}>Faça com que a academia se torne um vício</Text>
               <View style={styles.welcomeButtonContainer}>
                 <TouchableOpacity style={styles.welcomePrimaryButton} onPress={handleNext}>
-                  <Text style={styles.welcomePrimaryButtonText}>Vamos começar seu cadastro</Text>
+                  <Text style={styles.welcomePrimaryButtonText}>Vamos começar seu registro</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("/login")}>
                   <Text style={styles.welcomeSecondaryButtonText}>Já tenho uma conta (Login)</Text>
@@ -340,20 +330,6 @@ export default function CadastroScreen() {
       case 8: // Credenciais
         return (
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
-            <TouchableOpacity
-              style={[styles.googleButton, styles.googleButtonDisabled]}
-              onPress={() => Alert.alert("Em Breve", "O login com o Google estará disponível em breve!")}
-            >
-              <Image source={require('../../assets/images/google_logo.png')} style={styles.googleLogo} />
-              <Text style={styles.googleButtonText}>Continuar com Google (Em Breve)</Text>
-            </TouchableOpacity>
-
-            <View style={styles.separatorContainer}>
-              <View style={styles.separatorLine} />
-              <Text style={styles.separatorText}>ou</Text>
-              <View style={styles.separatorLine} />
-            </View>
-
             <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#ccc" />
             <TextInput placeholder="Senha (mínimo 6 caracteres)" secureTextEntry value={senha} onChangeText={setSenha} style={styles.input} placeholderTextColor="#ccc" />
             <TextInput placeholder="Confirme a senha" secureTextEntry value={confirmarSenha} onChangeText={setConfirmarSenha} style={styles.input} placeholderTextColor="#ccc" />
@@ -476,29 +452,6 @@ export default function CadastroScreen() {
 }
 
 const styles = StyleSheet.create({
-  googleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 15,
-    width: '100%',
-    marginBottom: 20,
-  },
-  googleLogo: {
-    width: 24,
-    height: 24,
-    marginRight: 15,
-  },
-  googleButtonText: {
-    color: '#000',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  googleButtonDisabled: {
-    opacity: 0.5,
-  },
   container: { flex: 1, justifyContent: "center", backgroundColor: "#030405" },
   welcomeScreenContainer: { flex: 1, backgroundColor: "#030405" },
   welcomeContainer: { flex: 1, justifyContent: 'flex-end', alignItems: 'center',},
@@ -900,21 +853,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  separatorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    marginVertical: 20,
-  },
-  separatorLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#ffffff3a',
-  },
-  separatorText: {
-    color: '#aaa',
-    marginHorizontal: 15,
   },
   
 

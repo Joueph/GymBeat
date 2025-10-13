@@ -40,6 +40,13 @@ export default function TreinoLayout() {
         }}
       />
 
+            <Stack.Screen
+        name="treinoCompleto"
+        options={{
+          headerShown: false,
+        }}
+      />
+
       {/* >>> ADICIONE A TELA QUE ESTÁ CAUSANDO O PROBLEMA AQUI <<<
         Para a tela que está mostrando "(treino)" como título, encontre
         o nome do arquivo .tsx correspondente e adicione uma entrada

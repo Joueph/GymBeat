@@ -56,7 +56,7 @@ export default function LoginScreen() {
         <Button
           title="Ir para Cadastro"
           color="#555"
-          onPress={() => router.push("./cadastro")}
+          onPress={() => router.push("./registro")}
         />
       </View>
     </View>

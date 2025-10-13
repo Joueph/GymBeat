@@ -25,35 +25,21 @@ export const sendFriendRequest = onCall(async (request) => {
 
   const toUserDoc = querySnapshot.docs[0];
   const toUserId = toUserDoc.id;
-  const toUserData = toUserDoc.data();
 
   if (fromUserId === toUserId) {
     throw new HttpsError("invalid-argument", "Você não pode adicionar a si mesmo.");
   }
-
-  const toUserRef = db.collection("users").doc(toUserId);
+  
   const fromUserRef = db.collection("users").doc(fromUserId);
-  const autoAccept = toUserData?.settings?.notifications?.autoAcceptFriendRequests === true;
+  const toUserRef = db.collection("users").doc(toUserId);
   const batch = db.batch();
 
-  if (autoAccept) {
-    // ALTERAÇÃO AQUI: Usando notação de ponto para criar um mapa em vez de arrayUnion
-    batch.update(toUserRef, {
-      [`amizades.${fromUserId}`]: true, // Cria a chave com o ID do amigo
-      solicitacoesRecebidas: admin.firestore.FieldValue.arrayRemove(fromUserId)
-    });
-    batch.update(fromUserRef, {
-      [`amizades.${toUserId}`]: true, // Cria a chave com o ID do amigo
-      solicitacoesEnviadas: admin.firestore.FieldValue.arrayRemove(toUserId)
-    });
-  } else {
-    batch.update(toUserRef, {
-      solicitacoesRecebidas: admin.firestore.FieldValue.arrayUnion(fromUserId)
-    });
-  }
+  // Escreve o estado inicial da amizade em ambos os documentos
+  batch.update(fromUserRef, { [`amizades.${toUserId}`]: true });
+  batch.update(toUserRef, { [`amizades.${fromUserId}`]: false });
 
   await batch.commit();
-  return { success: true, autoAccepted: autoAccept };
+  return { success: true };
 });
 
 
@@ -64,23 +50,41 @@ export const onFriendRequestAccepted = onDocumentUpdated("users/{acceptingUserId
   const afterData = event.data.after.data();
   const acceptingUserId = event.params.acceptingUserId;
 
-  if (!beforeData || !afterData) return;
+  if (!beforeData?.amizades || !afterData?.amizades) {
+    functions.logger.info("Dados de amizades ausentes ou incompletos.");
+    return null;
+  }
+  
+  // LÓGICA CORRIGIDA (SOLUÇÃO PARA O MOTIVO 2)
+  // Encontra o ID do amigo cujo status mudou de 'false' para 'true'
+  const afterFriendsMap = afterData.amizades;
+  const beforeFriendsMap = beforeData.amizades;
+  
+  let acceptedFriendId: string | null = null;
+  
+  // Itera sobre as amizades no estado "depois"
+  for (const friendId in afterFriendsMap) {
+    // Verifica se a amizade é nova ou se mudou de false para true
+    const wasFalse = beforeFriendsMap[friendId] === false;
+    const isTrueNow = afterFriendsMap[friendId] === true;
 
-  // ALTERAÇÃO AQUI: Lógica para detectar novo amigo em um mapa
-  const beforeFriends = beforeData.amizades ? Object.keys(beforeData.amizades) : [];
-  const afterFriends = afterData.amizades ? Object.keys(afterData.amizades) : [];
-
-  if (afterFriends.length > beforeFriends.length) {
-    const requesterId = afterFriends.find((id: string) => !beforeFriends.includes(id));
-
-    if (requesterId) {
-      const requesterUserRef = db.collection("users").doc(requesterId);
-      // ALTERAÇÃO AQUI: Atualiza o documento do solicitante usando a estrutura de mapa
-      await requesterUserRef.update({
-        [`amizades.${acceptingUserId}`]: true
-      });
+    if (wasFalse && isTrueNow) {
+      acceptedFriendId = friendId;
+      break; 
     }
   }
+
+  if (acceptedFriendId) {
+    functions.logger.info(`Detectada aceitação de amizade. ${acceptingUserId} aceitou ${acceptedFriendId}.`);
+    const requesterUserRef = db.collection("users").doc(acceptedFriendId);
+    
+    // Atualiza o documento do solicitante (Usuário A) para confirmar a amizade mútua.
+    await requesterUserRef.update({
+      [`amizades.${acceptingUserId}`]: true
+    });
+    functions.logger.info(`Documento de ${acceptedFriendId} atualizado com sucesso.`);
+  }
+
   return null;
 });
 
@@ -95,7 +99,6 @@ export const syncPublicProfile = onDocumentUpdated("users/{userId}", async (even
   const beforeData = event.data.before.data();
   const userId = event.params.userId;
 
-  // Verifica se as amizades ou as configurações de privacidade mudaram.
   const amizadesChanged = JSON.stringify(afterData.amizades) !== JSON.stringify(beforeData.amizades);
   const settingsChanged = JSON.stringify(afterData.settings) !== JSON.stringify(beforeData.settings);
 
@@ -104,7 +107,7 @@ export const syncPublicProfile = onDocumentUpdated("users/{userId}", async (even
 
     const publicData = {
       amizades: afterData.amizades || {},
-      profileVisibility: afterData.settings?.privacy?.profileVisibility || 'amigos', // 'amigos' como padrão
+      profileVisibility: afterData.settings?.privacy?.profileVisibility || 'amigos',
     };
 
     functions.logger.info(`Sincronizando perfil público para ${userId}`, publicData);
@@ -114,8 +117,8 @@ export const syncPublicProfile = onDocumentUpdated("users/{userId}", async (even
   return null;
 });
 
-
 // Nenhuma alteração necessária aqui, pois é tratado no cliente.
 export const onFriendRequestRejected = onDocumentUpdated("users/{rejectingUserId}", async (event) => {
   return null;
 });
+

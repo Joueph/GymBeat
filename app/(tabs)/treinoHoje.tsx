@@ -1,7 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useLayoutEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // GestureHandlerRootView não é mais necessário aqui se a FlatList de fichas foi removida
 // mas é uma boa prática mantê-lo no topo da árvore de componentes
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
@@ -63,6 +63,20 @@ const calculateVolume = (exercicios: Exercicio[]): number => {
 const LogItem = ({ log }: { log: Log }) => {
   const [expanded, setExpanded] = useState(false);
 
+  // Se o treino foi cancelado, exibe um card simplificado.
+  if (log.status === 'cancelado') {
+    const logDate = toDate(log.horarioInicio) || new Date();
+    return (
+      <View style={styles.logCard}>
+        <View style={styles.logHeader}>
+          <View>
+            <Text style={styles.logTitle}>{log.treino.nome}</Text>
+            <Text style={styles.logDate}>{logDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })} - <Text style={{ color: '#ff3b30' }}>Cancelado</Text></Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
   const getMaxWeight = (exercicio: Exercicio) => {
     if (!exercicio.series || exercicio.series.length === 0) return 0;
     // @ts-ignore
@@ -118,6 +132,7 @@ export default function MeusTreinosScreen() {
   const [outrosTreinos, setOutrosTreinos] = useState<Treino[]>([]);
   const [loading, setLoading] = useState(true);
   const [logs, setLogs] = useState<Log[]>([]);
+  const [activeLog, setActiveLog] = useState<Log | null>(null);
   const [treinosConcluidos, setTreinosConcluidos] = useState(0);
   const [isManageModalVisible, setManageModalVisible] = useState(false);
   const [dataVersion, setDataVersion] = useState(0); // Estado para forçar a recarga
@@ -174,6 +189,10 @@ export default function MeusTreinosScreen() {
           setTodasAsFichas(todas);
           const sortedLogs = userLogs.sort((a, b) => (toDate(b.horarioFim)?.getTime() || 0) - (toDate(a.horarioFim)?.getTime() || 0));
           setLogs(sortedLogs);
+
+          // Verifica se há um treino em andamento
+          const ongoingLog = userLogs.find(log => !log.horarioFim && log.status !== 'cancelado');
+          setActiveLog(ongoingLog || null);
 
           // Lógica para calcular treinos concluídos na semana
           const hoje = new Date();
@@ -277,31 +296,43 @@ export default function MeusTreinosScreen() {
     return <View style={styles.centeredContainer}><ActivityIndicator size="large" color="#00A6FF" /></View>;
   }
 
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ScrollView style={styles.container}>
-        {user?.displayName && (
-          <Text style={styles.greeting}>Olá, {user.displayName}!</Text>
-        )}
+  const ListHeader = () => (
+    <>
+      {/* --- Card de Progresso --- */}
+      {fichaAtiva && (
+          <View style={[styles.progressContainer, { marginHorizontal: 15 }]}>
+              <View style={styles.progressCircle}>
+                  <FontAwesome name="check" size={24} color="#00A6FF" />
+              </View>
+              <View>
+                  <Text style={styles.progressMainText}>{treinosConcluidos}/{totalTreinosPlano} treinos concluídos</Text>
+                  <Text style={styles.progressSubText}>Continue com o bom trabalho!</Text>
+              </View>
+          </View>
+      )}
 
-        {/* --- Card de Progresso --- */}
-        {fichaAtiva && (
-            <View style={styles.progressContainer}>
-                <View style={styles.progressCircle}>
-                    <FontAwesome name="check" size={24} color="#00A6FF" />
+      {/* --- Card de Treino de Hoje (Herói) --- */}
+      {fichaAtiva && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Treino de Hoje</Text>
+          <View style={styles.heroCardGlow}>
+            {activeLog ? (
+              // Card para "Continuar Treino"
+              <TouchableOpacity
+                style={styles.heroCard} 
+                onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}&logId=${activeLog.id}`)}
+              >
+                <View style={styles.heroTextContainer}>
+                    <Text style={styles.heroTitle}>{activeLog.treino.nome}</Text>
+                    <Text style={styles.heroInfo}>Treino em andamento...</Text>
                 </View>
-                <View>
-                    <Text style={styles.progressMainText}>{treinosConcluidos}/{totalTreinosPlano} treinos concluídos</Text>
-                    <Text style={styles.progressSubText}>Continue com o bom trabalho!</Text>
-                </View>
-            </View>
-        )}
-
-        {/* --- Card de Treino de Hoje (Herói) --- */}
-        {fichaAtiva && treinoDeHoje && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Treino de Hoje</Text>
-            <View style={styles.heroCardGlow}>
+                <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}&logId=${activeLog.id}`)}>
+                  <FontAwesome name="play" size={16} color="#030405" />
+                  <Text style={styles.startButtonText}>Continuar Treino</Text>
+                </TouchableOpacity>
+              </TouchableOpacity>
+            ) : treinoDeHoje ? (
+              // Card para "Iniciar Treino"
               <TouchableOpacity
                 style={styles.heroCard}
                 onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva.id}&treinoId=${treinoDeHoje.id}`)}
@@ -310,81 +341,75 @@ export default function MeusTreinosScreen() {
                     <Text style={styles.heroTitle}>{treinoDeHoje.nome}</Text>
                     <Text style={styles.heroInfo}>{treinoDeHoje.exercicios.length} Exercícios • ~{treinoDeHoje.exercicios.length * 6} min</Text>
                 </View>
-                
-                <TouchableOpacity 
-                    style={styles.startButton}
-                    onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva.id}&treinoId=${treinoDeHoje.id}`)}
-                >
+                <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva?.id}&treinoId=${treinoDeHoje.id}`)}>
                   <FontAwesome name="play" size={16} color="#030405" />
                   <Text style={styles.startButtonText}>Iniciar Treino</Text>
                 </TouchableOpacity>
               </TouchableOpacity>
-            </View>
+            ) : null}
           </View>
-        )}
-
-        {/* --- Carrossel de Próximos Treinos --- */}
-        {fichaAtiva && outrosTreinos.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Próximos Treinos</Text>
-            <FlatList
-              data={outrosTreinos}
-              renderItem={renderProximoTreino}
-              keyExtractor={(item) => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 5 }}
-            />
-          </View>
-        )}
-
-        {/* --- Seção Meu Plano Ativo --- */}
-        {fichaAtiva ? (
-          <View style={styles.section}>
-              <View style={styles.activePlanContainer}>
-                  <Text style={styles.activePlanText}>Plano Ativo: <Text style={{fontWeight: 'bold'}}>{fichaAtiva.nome}</Text></Text>
-                  <TouchableOpacity style={styles.manageButton} onPress={() => setManageModalVisible(true)}>
-                      <FontAwesome name="pencil" size={14} color="#fff" />
-                      <Text style={styles.manageButtonText}>Gerenciar</Text>
-                  </TouchableOpacity>
-              </View>
-          </View>
-        ) : todasAsFichas.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.noActiveFichaCard}>
-              <Text style={styles.noActiveFichaText}>
-                Você possui {todasAsFichas.length} {todasAsFichas.length === 1 ? 'ficha' : 'fichas'} em sua conta, mas nenhuma está definida como ativa.
-              </Text>
-              <TouchableOpacity style={styles.manageButton} onPress={() => setManageModalVisible(true)}>
-                <Text style={styles.manageButtonText}>Gerenciar fichas</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>Nenhum plano ativo.</Text>
-            <Text style={styles.emptySubText}>Crie um novo plano de treino para começar.</Text>
-          </View>
-        )}
-        
-        {/* --- Histórico de Sessões --- */}
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Histórico de Sessões</Text>
-            {logs.length > 0 ? (
-                <FlatList
-                    data={logs}
-                    renderItem={({ item }) => <LogItem log={item} />}
-                    keyExtractor={(item) => item.id}
-                    scrollEnabled={false}
-                />
-            ) : (
-                <View style={styles.emptyContainer}>
-                    <Text style={styles.emptyText}>Você ainda não completou nenhum treino.</Text>
-                    <Text style={styles.emptySubText}>Seu histórico aparecerá aqui.</Text>
-                </View>
-            )}
         </View>
-      </ScrollView>
+      )}
+
+      {/* --- Carrossel de Próximos Treinos --- */}
+      {fichaAtiva && outrosTreinos.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Próximos Treinos</Text>
+          <FlatList
+            data={outrosTreinos}
+            renderItem={renderProximoTreino}
+            keyExtractor={(item) => item.id}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 5 }}
+          />
+        </View>
+      )}
+
+      {/* --- Seção Meu Plano Ativo --- */}
+      {fichaAtiva ? (
+        <View style={styles.section}>
+            <View style={styles.activePlanContainer}>
+                <Text style={styles.activePlanText}>Plano Ativo: <Text style={{fontWeight: 'bold'}}>{fichaAtiva.nome}</Text></Text>
+                <TouchableOpacity style={styles.manageButton} onPress={() => setManageModalVisible(true)}>
+                    <FontAwesome name="pencil" size={14} color="#fff" />
+                    <Text style={styles.manageButtonText}>Gerenciar</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+      ) : todasAsFichas.length > 0 ? (
+        <View style={styles.section}>
+          <View style={styles.noActiveFichaCard}>
+            <Text style={styles.noActiveFichaText}>
+              Você possui {todasAsFichas.length} {todasAsFichas.length === 1 ? 'ficha' : 'fichas'} em sua conta, mas nenhuma está definida como ativa.
+            </Text>
+            <TouchableOpacity style={styles.manageButton} onPress={() => setManageModalVisible(true)}>
+              <Text style={styles.manageButtonText}>Gerenciar fichas</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>Nenhum plano ativo.</Text>
+          <Text style={styles.emptySubText}>Crie um novo plano de treino para começar.</Text>
+        </View>
+      )}
+      <Text style={[styles.sectionTitle, { marginTop: 15, marginBottom: 0 }]}>Histórico de Sessões</Text>
+    </>
+  );
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <FlatList
+        data={logs}
+        renderItem={({ item }) => <LogItem log={item} />}
+        keyExtractor={(item) => item.id}
+        style={styles.container}
+        ListHeaderComponent={ListHeader}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}><Text style={styles.emptyText}>Você ainda não completou nenhum treino.</Text><Text style={styles.emptySubText}>Seu histórico aparecerá aqui.</Text></View>
+        }
+      />
 
       <Modal
         visible={isManageModalVisible}
@@ -418,7 +443,6 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#030405',
-        paddingHorizontal: 15,
         paddingTop: 15,
     },
     centeredContainer: {
@@ -432,10 +456,13 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         marginTop: 10,
-        marginBottom: 20,
+        marginBottom: 20, 
+        paddingHorizontal: 15,
     },
     section: {
         marginBottom: 30,
+        paddingHorizontal: 15,
+        
     },
     sectionTitle: {
         color: '#fff',
@@ -449,8 +476,15 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         padding: 15,
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'center', 
         marginBottom: 30,
+        borderTopColor: '#ffffff2a',
+        borderLeftColor: '#ffffff2a', 
+        borderBottomColor: '#ffffff1a',
+        borderRightColor: '#ffffff1a',
+        borderWidth: 1,
+        
+        
     },
     progressCircle: {
         width: 50,
@@ -474,17 +508,21 @@ const styles = StyleSheet.create({
     heroCardGlow: {
         borderRadius: 16,
         shadowColor: '#00A6FF',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
+        shadowOffset: { width: -5, height: -5 },
+        shadowOpacity: 0.2,
         shadowRadius: 10,
         elevation: 15, // para Android
     },
     heroCard: {
-        backgroundColor: '#141414',
+        backgroundColor: '#141414f1',
         borderRadius: 16,
         padding: 20,
-        borderColor: '#00A6FF',
-        borderWidth: 1.5,
+        borderTopColor: '#00A6FFca',
+        borderLeftColor: '#00A6FFca', 
+        borderBottomColor: '#00A6FFaa',
+        borderRightColor: '#00A6FFaa',
+        
+        borderWidth: 2,
     },
     heroTextContainer: {
         marginBottom: 20,
@@ -522,6 +560,11 @@ const styles = StyleSheet.create({
         height: 140,
         marginRight: 10,
         justifyContent: 'space-between',
+        borderTopColor: '#ffffff2a',
+        borderLeftColor: '#ffffff2a', 
+        borderBottomColor: '#ffffff1a',
+        borderRightColor: '#ffffff1a',
+        borderWidth: 1,
     },
     nextWorkoutDay: {
         color: '#00A6FF',
@@ -545,6 +588,11 @@ const styles = StyleSheet.create({
         backgroundColor: '#141414',
         padding: 15,
         borderRadius: 12,
+        borderWidth: 1,
+        borderTopColor: '#ffffff2a',
+        borderLeftColor: '#ffffff2a', 
+        borderBottomColor: '#ffffff1a',
+        borderRightColor: '#ffffff1a',
     },
     activePlanText: {
         color: '#ccc',
@@ -558,6 +606,11 @@ const styles = StyleSheet.create({
         paddingVertical: 8,
         paddingHorizontal: 12,
         borderRadius: 8,
+        borderWidth: 1,
+        borderTopColor: '#ffffff2a',
+        borderLeftColor: '#ffffff2a', 
+        borderBottomColor: '#ffffff1a',
+        borderRightColor: '#ffffff1a',
     },
     manageButtonText: {
         color: '#fff',
@@ -570,6 +623,7 @@ const styles = StyleSheet.create({
       borderRadius: 12,
       padding: 20,
       alignItems: 'center',
+      
     },
     noActiveFichaText: {
       color: '#ccc',
@@ -585,6 +639,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         backgroundColor: '#141414',
         borderRadius: 12,
+                borderWidth: 1,
+        borderTopColor: '#ffffff2a',
+        borderLeftColor: '#ffffff2a', 
+        borderBottomColor: '#ffffff1a',
+        borderRightColor: '#ffffff1a', 
+        marginHorizontal: 15,
     },
     emptyText: {
         color: '#aaa',
@@ -603,6 +663,12 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         marginBottom: 10,
         padding: 15,
+        marginHorizontal: 15,
+          borderWidth: 1,
+        borderTopColor: '#ffffff2a',
+        borderLeftColor: '#ffffff2a', 
+        borderBottomColor: '#ffffff1a',
+        borderRightColor: '#ffffff1a',
     },
     logHeader: {
         flexDirection: 'row',

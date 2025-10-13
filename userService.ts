@@ -1,10 +1,25 @@
-//userService.ts
+// userService.ts
 
 import { User } from "firebase/auth";
-import { arrayRemove, arrayUnion, collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
-import { db } from "./firebaseconfig"; // Verifique se o caminho para sua config do Firebase está correto
-import { Usuario } from "./models/usuario"; // Verifique se o caminho para seu modelo Usuario está correto
+// ADICIONADO: deleteField e writeBatch para operações atômicas
+import {
+  arrayRemove,
+  collection,
+  deleteField,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch
+} from "firebase/firestore";
+import { db } from "./firebaseconfig";
+import { Usuario } from "./models/usuario";
 
+// ... (as outras funções como getUserProfile, updateUserProfile, etc. permanecem as mesmas)
 export const getUserProfile = async (uid: string) => {
   if (!uid) return null;
   try {
@@ -55,31 +70,19 @@ export const searchUsers = async (searchText: string, currentUserId: string): Pr
   }
 };
 
-/**
- * Cria ou atualiza o documento de um usuário no Firestore, juntamente com seu subdocumento de perfil público.
- * @param user O objeto de usuário do Firebase Authentication.
- * @param additionalData Dados adicionais coletados durante o cadastro.
- */
 export const createUserProfileDocument = async (
   user: User,
   additionalData: Partial<Usuario>
 ) => {
   if (!user) return;
-
-  // Referência para o documento principal do usuário
   const userRef = doc(db, `users/${user.uid}`);
-
   const nome = additionalData.nome || user.email || 'Usuário Sem Nome';
-
-  // Construindo o objeto de dados do usuário de forma segura
   const userData = {
     uid: user.uid,
     email: user.email,
     dataCriacao: serverTimestamp(),
     nome: nome,
     nome_lowercase: nome.toLowerCase(),
-    
-    // Dados adicionais tratados explicitamente para evitar 'undefined'
     photoURL: additionalData.photoURL || '',
     dataNascimento: additionalData.dataNascimento || null,
     altura: additionalData.altura || null,
@@ -87,12 +90,10 @@ export const createUserProfileDocument = async (
     genero: additionalData.genero || null,
     nivel: additionalData.nivel || null,
     isPro: additionalData.isPro || false,
-    streakGoal: additionalData.streakGoal || 3, // Valor padrão de 3 treinos/semana
-    weeksStreakGoal: additionalData.weeksStreakGoal || 4, // Valor padrão de 4 semanas
-
-    // Valores padrão para novos usuários
+    streakGoal: additionalData.streakGoal || 3,
+    weeksStreakGoal: additionalData.weeksStreakGoal || 4,
     fichas: [],
-    amizades: {},
+    amizades: {}, // Inicia o mapa de amizades vazio
     solicitacoesRecebidas: [],
     settings: {
       privacy: {
@@ -101,40 +102,24 @@ export const createUserProfileDocument = async (
     },
     role: 'usuario',
   };
-
   try {
-    // Usando { merge: true } é uma boa prática para não sobrescrever dados acidentalmente
-    // caso esta função seja chamada em outros contextos além do cadastro inicial.
     await setDoc(userRef, userData, { merge: true });
-
-    // Cria o documento de perfil público inicial na subcoleção
     const publicProfileRef = doc(db, `users/${user.uid}/publicProfile/data`);
     await setDoc(publicProfileRef, {
-      amizades: {}, // Pode conter contagem de amigos, etc.
-      profileVisibility: 'amigos', // Corresponde ao `settings` do documento principal
+      amizades: {},
+      profileVisibility: 'amigos',
     });
-
     console.log(`Documento de perfil criado com sucesso para: ${user.email}`);
   } catch (error) {
     console.error("Erro ao criar o documento de perfil do usuário:", error);
-    // Propaga o erro para que a UI possa notificar o usuário
     throw new Error('Ocorreu um erro ao criar o perfil do usuário.');
   }
 };
 
 
-// Esta função parece ser legada, pois AmigosScreen.tsx usa a Cloud Function "onCall".
-// Não necessita de alteração, mas considere removê-la se não estiver em uso.
-export const sendFriendRequest = async (fromUserId: string, toUserId: string) => {
-  if (!fromUserId || !toUserId) return;
-  const fromUserRef = doc(db, `users/${fromUserId}`);
-  await updateDoc(fromUserRef, {
-    solicitacoesEnviadas: arrayUnion(toUserId)
-  });
-};
-
 /**
- * Aceita um pedido de amizade.
+ * ATUALIZADO: Aceita um pedido de amizade.
+ * Altera o status da amizade para 'true' no documento do usuário atual.
  * @param currentUserId ID do usuário que está aceitando o pedido.
  * @param requesterId ID do usuário que enviou o pedido.
  */
@@ -142,24 +127,46 @@ export const acceptFriendRequest = async (currentUserId: string, requesterId: st
   if (!currentUserId || !requesterId) return;
   const currentUserRef = doc(db, `users/${currentUserId}`);
 
-  // ALTERAÇÃO PRINCIPAL AQUI
+  // Atualiza o mapa de amizades, mudando o status de `false` (pendente) para `true` (confirmado).
   await updateDoc(currentUserRef, {
-    // Adiciona o amigo ao MAPA usando notação de ponto.
     [`amizades.${requesterId}`]: true,
-    // Remove a solicitação do array.
+    // Remove a solicitação da lista antiga para manter a consistência.
     solicitacoesRecebidas: arrayRemove(requesterId)
   });
 };
 
 
 /**
- * Rejeita um pedido de amizade.
+ * ATUALIZADO: Rejeita um pedido de amizade.
+ * Remove a relação de amizade de AMBOS os documentos de usuário para evitar inconsistências.
  * @param currentUserId ID do usuário que está rejeitando o pedido.
  * @param requesterId ID do usuário que enviou o pedido.
  */
 export const rejectFriendRequest = async (currentUserId: string, requesterId: string) => {
   if (!currentUserId || !requesterId) return;
+
   const currentUserRef = doc(db, `users/${currentUserId}`);
-  // ALTERAÇÃO DE CONSISTÊNCIA: Renomeado para bater com o resto do código.
-  await updateDoc(currentUserRef, { solicitacoesRecebidas: arrayRemove(requesterId) });
+  const requesterRef = doc(db, `users/${requesterId}`);
+
+  try {
+    // Usamos um "write batch" para garantir que a exclusão ocorra em ambos os documentos
+    // de forma atômica (ou tudo funciona, ou nada funciona).
+    const batch = writeBatch(db);
+
+    // 1. Remove o pedido pendente (e.g., { [requesterId]: false }) do usuário atual.
+    batch.update(currentUserRef, {
+      [`amizades.${requesterId}`]: deleteField(),
+      solicitacoesRecebidas: arrayRemove(requesterId) // Limpeza da lista antiga
+    });
+
+    // 2. Remove a amizade enviada (e.g., { [currentUserId]: true }) do outro usuário.
+    batch.update(requesterRef, {
+      [`amizades.${currentUserId}`]: deleteField()
+    });
+
+    await batch.commit();
+  } catch (error) {
+    console.error("Erro ao rejeitar pedido de amizade:", error);
+    throw new Error("Não foi possível rejeitar o pedido de amizade.");
+  }
 };

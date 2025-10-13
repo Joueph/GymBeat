@@ -52,3 +52,32 @@ export const getLogsByUsuarioId = async (usuarioId: string): Promise<Log[]> => {
     throw error;
   }
 };
+
+/**
+ * Busca os logs de treino associados a um projeto.
+ * @param projetoId - O ID do projeto.
+ */
+export const getLogsByProjetoId = async (projetoId: string): Promise<Log[]> => {
+  try {
+    // Presume-se que os logs compartilhados com um projeto têm um campo 'projetoId'
+    const q = query(logsCollection, where('projetoId', '==', projetoId));
+    const querySnapshot = await getDocs(q);
+
+    const logs: Log[] = [];
+    querySnapshot.forEach((doc) => {
+      logs.push({ id: doc.id, ...doc.data() } as Log);
+    });
+    
+    // Ordena os logs por data, do mais recente para o mais antigo
+    logs.sort((a, b) => {
+      const dateA = a.horarioFim?.toDate ? a.horarioFim.toDate() : new Date(0);
+      const dateB = b.horarioFim?.toDate ? b.horarioFim.toDate() : new Date(0);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    return logs;
+  } catch (error) {
+    console.error('Erro ao buscar logs do projeto: ', error);
+    throw error;
+  }
+};

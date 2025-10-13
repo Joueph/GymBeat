@@ -49,7 +49,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="amigos"
         options={{
-          title: "Amigos",
+          title: "Social",
           tabBarIcon: ({ color }) => <TabBarIcon name="users" color={color} />,
         }}
       />

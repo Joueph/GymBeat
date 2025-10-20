@@ -71,7 +71,7 @@
         }
       ],
       "expo-font",
-      "./plugins/withFirebasePlistFix.js" // <-- ADICIONE ESTA LINHA NO FINAL DA LISTA
+      "./plugins/with-rnfb-nonmodular-fix.js" // <-- ADICIONE ESTA LINHA NO FINAL DA LISTA
     ],
     "experiments": {
       "typedRoutes": true,

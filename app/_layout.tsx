@@ -1,4 +1,5 @@
 // Em app/_layout.tsx
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
 import { AuthProvider, useAuth } from './authprovider'; // Verifique o caminho
@@ -17,7 +18,7 @@ function MainNavigation() {
     if (user && inAuthGroup) {
       router.replace('/');
     } else if (!user && !inAuthGroup) {
-      router.replace('/(auth)/login'); // Verifique sua rota de login
+      router.replace('/(auth)/registro'); // Verifique sua rota de login
     }
   }, [user, initialized, segments, router]);
 
@@ -47,9 +48,28 @@ function MainNavigation() {
 
 // O layout raiz que apenas fornece o contexto
 export default function RootLayout() {
+  useEffect(() => {
+    // Configura o modo de áudio do app para não interromper a música de outros apps.
+    const setAudioMode = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          playsInSilentModeIOS: true,
+          allowsRecordingIOS: false,
+          interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+          interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+          shouldDuckAndroid: true,
+          staysActiveInBackground: false,
+        });
+      } catch (e) {
+        console.error('Falha ao configurar o modo de áudio', e);
+      }
+    };
+    setAudioMode();
+  }, []);
   return (
     <AuthProvider>
       <MainNavigation />
     </AuthProvider>
   );
 }
+

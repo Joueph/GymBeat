@@ -1,6 +1,6 @@
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DraggableFlatList, { RenderItemParams, } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView, RectButton, Swipeable } from 'react-native-gesture-handler';
@@ -9,7 +9,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import { DiaSemana, Treino } from '../../models/treino';
 import { getExerciciosModelos } from '../../services/exercicioService';
-import { addTreinoToFicha, getTreinoById, updateTreino } from '../../services/treinoService';
+import { addTreinoToFicha, deleteTreino, getTreinoById, updateTreino } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 
 // NOTE: The Exercicio model needs to be updated to support per-set data. 
@@ -33,7 +33,7 @@ const DIAS_SEMANA: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab
 
 // A new component to manage each video player instance, now with WebP support
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
-  const isWebP = uri?.toLowerCase().endsWith('.webp');
+  const isWebP = uri?.toLowerCase().includes('.webp');
 
   const player = useVideoPlayer(isWebP ? null : uri, (player) => {
     player.loop = true;
@@ -81,6 +81,7 @@ const RightActions = ({ onPress }: { onPress: () => void }) => {
 
 export default function EditarTreinoScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { user } = useAuth();
   const { fichaId, treinoId } = useLocalSearchParams();
 
@@ -166,6 +167,28 @@ export default function EditarTreinoScreen() {
     }
   }, [loadingMoreExercicios, allExerciciosLoaded, lastVisibleDoc, activeSearchTerm]);
 
+  const handleDelete = async () => {
+    if (!treinoId || typeof treinoId !== 'string' || !fichaId || typeof fichaId !== 'string') return;
+
+    Alert.alert(
+      "Apagar Treino",
+      "Você tem certeza que deseja apagar este treino? Esta ação não pode ser desfeita.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Apagar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteTreino(treinoId, fichaId);
+              Alert.alert("Sucesso", "Treino apagado.");
+              router.back();
+            } catch (error) { Alert.alert("Erro", "Não foi possível apagar o treino."); }
+          },
+        },
+      ]
+    );
+  };
   const handleSave = async () => {
     if (!user || !fichaId || !treino.nome) {
       Alert.alert("Erro", "O nome do treino é obrigatório.");
@@ -196,6 +219,16 @@ export default function EditarTreinoScreen() {
     }
   };
 
+  useLayoutEffect(() => {
+    // Só mostra o botão de apagar se estiver editando um treino existente
+    if (treinoId) {
+      navigation.setOptions({
+        headerRight: () => (
+          <TouchableOpacity onPress={handleDelete} style={{ marginRight: 15 }}><FontAwesome name="trash" size={24} color="#ff3b30" /></TouchableOpacity>
+        ),
+      });
+    }
+  }, [navigation, treinoId, handleDelete]);
   const toggleDiaSemana = (dia: DiaSemana) => {
     const currentDias = treino.diasSemana || [];
     const newDias = currentDias.includes(dia)

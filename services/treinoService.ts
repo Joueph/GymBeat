@@ -1,4 +1,4 @@
-import { addDoc, collection, doc, documentId, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, documentId, getDoc, getDocs, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebaseconfig';
 import { Exercicio, ExercicioModelo } from '../models/exercicio';
 import { Ficha } from '../models/ficha';
@@ -14,8 +14,8 @@ export type DiaSemana = 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab' | 'dom';
 const resolveExercicios = async (exerciciosData: any[]): Promise<Exercicio[]> => {
   return Promise.all(
     (exerciciosData || []).map(async (exData: any) => {
-      // Check if ex.modelo is a DocumentReference (has a .get() method)
-      if (exData.modelo && typeof exData.modelo.get === 'function') {
+      // Check if ex.modelo is a DocumentReference (v9+ compatible check)
+      if (exData.modelo && exData.modelo.path && exData.modelo.converter) {
         const modeloDoc = await getDoc(exData.modelo);
         if (modeloDoc.exists()) {
           // Combine a base do exercício do modelo (com series, reps, etc.)
@@ -150,4 +150,25 @@ export const addTreinoToFicha = async (fichaId: string, treinoData: Omit<Treino,
 export const updateTreino = async (treinoId: string, data: Partial<Omit<Treino, 'id' | 'usuarioId'>>): Promise<void> => {
   const treinoRef = doc(db, 'treinos', treinoId);
   await updateDoc(treinoRef, data);
+};
+
+/**
+ * Deletes a user-specific workout and removes its reference from the corresponding ficha.
+ * @param treinoId The ID of the treino to delete.
+ * @param fichaId The ID of the ficha that contains the treino.
+ */
+export const deleteTreino = async (treinoId: string, fichaId: string): Promise<void> => {
+  // 1. Delete the treino document itself
+  const treinoRef = doc(db, 'treinos', treinoId);
+  await deleteDoc(treinoRef);
+
+  // 2. Remove the treino's ID from the ficha's 'treinos' array
+  const fichaRef = doc(db, 'fichas', fichaId);
+  const fichaSnap = await getDoc(fichaRef);
+
+  if (fichaSnap.exists()) {
+    const fichaData = fichaSnap.data() as Ficha;
+    const updatedTreinos = (fichaData.treinos || []).filter(id => id !== treinoId);
+    await updateDoc(fichaRef, { treinos: updatedTreinos });
+  }
 };

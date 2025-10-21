@@ -11,6 +11,10 @@ import { deleteFicha, getFichaById, setFichaAtiva, updateFicha } from '../../ser
 import { getTreinosByIds } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 
+const DIAS_SEMANA_ORDEM: { [key: string]: number } = {
+  'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6
+};
+
 export default function CriarFichaScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -34,6 +38,8 @@ export default function CriarFichaScreen() {
         setFicha(fichaData);
         if (fichaData.treinos && fichaData.treinos.length > 0) {
           const treinosData = await getTreinosByIds(fichaData.treinos);
+          // Ordena os treinos pela ordem dos dias da semana (dom a sab)
+          treinosData.sort((a, b) => (DIAS_SEMANA_ORDEM[a.diasSemana[0]] ?? 7) - (DIAS_SEMANA_ORDEM[b.diasSemana[0]] ?? 7));
           setTreinos(treinosData);
         } else {
           setTreinos([]);

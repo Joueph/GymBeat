@@ -17,7 +17,7 @@ import { useAuth } from '../authprovider';
 
 export default function WorkoutsScreen() {
   const { user, initialized } = useAuth();
-  const router = useRouter(); // router não é usado, mas pode ser útil no futuro.
+  const router = useRouter();
   const [fichasModelos, setFichasModelos] = useState<FichaModelo[]>([]);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Usuario | null>(null);
@@ -30,8 +30,6 @@ export default function WorkoutsScreen() {
   useFocusEffect(
     useCallback(() => {
       const fetchFichas = async () => {
-        // Se a autenticação ainda não foi inicializada, simplesmente aguardamos.
-        // O estado 'loading' já é 'true' por padrão, então a UI mostrará o spinner.
         if (!initialized) {
           return;
         }
@@ -49,6 +47,7 @@ export default function WorkoutsScreen() {
           const modelosComTotalDias = await Promise.all(fichas.map(async (ficha) => {
             if (ficha.treinos && ficha.treinos.length > 0) {
               const treinosDaFicha = await getTreinosModelosByIds(ficha.treinos);
+              // Corretamente soma os dias de cada treino
               const totalDias = treinosDaFicha.reduce((sum, treino) => sum + (treino.diasSemana?.length || 0), 0);
               return { ...ficha, totalDias };
             }
@@ -81,7 +80,7 @@ export default function WorkoutsScreen() {
               return scoreB - scoreA;
             }
 
-            // Critério de desempate: mais treinos primeiro
+            // Critério de desempate: mais dias de treino primeiro
             return (b.totalDias || 0) - (a.totalDias || 0);
           };
 
@@ -111,8 +110,6 @@ export default function WorkoutsScreen() {
   };
 
 const handleSelectFicha = async (ficha: FichaModelo) => {
-  console.log("[handleSelectFicha] Ficha selecionada:", ficha.id, ficha.nome, "treinos:", ficha.treinos);
-
   setSelectedFicha(ficha);
   setModalVisible(true);
   setLoadingTreinos(true);
@@ -132,10 +129,10 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     setIsCopying(true);
     try {
       const newFichaId = await copyFichaModeloToUser(selectedFicha, user.uid);
-      await setFichaAtiva(user.uid, newFichaId); // Define a nova ficha como ativa
+      await setFichaAtiva(user.uid, newFichaId);
       setIsCopying(false);
       setModalVisible(false);
-      router.push('/treinoHoje'); // Leva o usuário direto para a tela de treinos
+      router.push('/treinoHoje');
     } catch (error) {
       setIsCopying(false);
       console.error("Erro ao copiar ficha:", error);
@@ -160,7 +157,8 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
               <Text style={styles.cardDetailText}>{item.sexo}</Text>
             </View>
           </View>
-          <Image source={getStreakImage(item.treinos?.length || 0)} style={styles.carouselCardImage} />
+          {/* CORREÇÃO APLICADA AQUI: Usa item.totalDias em vez de item.treinos.length */}
+          <Image source={getStreakImage(item.totalDias || 0)} style={styles.carouselCardImage} />
         </>
       ) : (
         <>
@@ -181,7 +179,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
   );
 
   const recommendedFichas = fichasModelos.slice(0, 5);
-  const otherFichas = fichasModelos; // A lista completa já está ordenada
+  const otherFichas = fichasModelos;
 
   const renderTreinoDetailItem = ({ item }: { item: TreinoModelo }) => (
     <View style={styles.treinoContainer}>

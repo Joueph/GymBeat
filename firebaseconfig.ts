@@ -2,13 +2,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { initializeApp } from "firebase/app";
 import {
-    Auth,
-    getAuth,
-    getReactNativePersistence,
-    initializeAuth,
+  Auth,
+  getAuth,
+  getReactNativePersistence,
+  initializeAuth,
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-
+import { getStorage } from "firebase/storage"; // <--- 1. IMPORTE O getStorage
 
 // Coloque as configs do seu projeto Firebase aqui
 const firebaseConfig = {
@@ -35,9 +35,13 @@ try {
   auth = getAuth(app);
 }
 
-export const firebase = { app, auth };
 // Inicializa o Firestore
 const db = getFirestore(app);
 
-export { app, auth, db };
+// Inicializa o Storage
+const storage = getStorage(app); // <--- 2. INICIALIZE O STORAGE AQUI
 
+// Remova a exportação 'firebase', ela é redundante
+// export const firebase = { app, auth };
+
+export { app, auth, db, storage }; // <--- 3. EXPORTE A INSTÂNCIA 'storage'

@@ -1,6 +1,7 @@
 // app/(auth)/registro.tsx
 import { FontAwesome } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import React, { useState } from 'react';
@@ -85,6 +86,27 @@ export default function CadastroScreen() {
     if (step > 0) {
       setAnimationDirection('backward');
       setStep(s => s - 1);
+    }
+  };
+
+  const handlePickImage = async () => {
+    // Pedir permissão para acessar a galeria de mídia
+    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permissionResult.granted) {
+      Alert.alert("Permissão necessária", "Você precisa permitir o acesso à galeria para escolher uma foto.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      const uri = result.assets[0].uri;
+      setPhotoURI(uri); // Armazena a URI local da nova imagem
     }
   };
 
@@ -298,12 +320,16 @@ export default function CadastroScreen() {
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             {/* --- Seção de Resumo --- */}
             <View style={styles.finalSummaryContainer}>
-              <View style={styles.summaryPfpContainer}>
-                <View style={styles.pfpPlaceholderMedium}>
-                  <FontAwesome name="camera" size={30} color="#555" />
-                </View>
-                <Text style={styles.pfpSubtext}>Foto de perfil (em breve)</Text>
-              </View>
+              <TouchableOpacity style={styles.summaryPfpContainer} onPress={handlePickImage}>
+                {photoURI ? (
+                  <Image source={{ uri: photoURI }} style={styles.pfpPlaceholderMedium} />
+                ) : (
+                  <View style={styles.pfpPlaceholderMedium}>
+                    <FontAwesome name="camera" size={30} color="#555" />
+                  </View>
+                )}
+                <Text style={styles.pfpSubtext}>Toque para adicionar uma foto</Text>
+              </TouchableOpacity>
 
               <View style={styles.summaryInfoRow}>
                 <Text style={styles.summaryInfoText}>{genero?.charAt(0) || 'N/A'}</Text>

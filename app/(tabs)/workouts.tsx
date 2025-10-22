@@ -1,10 +1,11 @@
 // app/(tabs)/workouts.tsx
 
 import { FontAwesome } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AnimatedGradientBorderButton from '../../components/AnimatedGradientBorderButton';
 import { FichaModelo } from '../../models/fichaModelo';
@@ -14,6 +15,15 @@ import { copyFichaModeloToUser, getFichasModelos, setFichaAtiva } from '../../se
 import { getTreinosModelosByIds } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
+
+const DIAS_SEMANA_ORDEM: { [key: string]: number } = {
+  'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6
+};
+const DIAS_SEMANA_ARRAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+
+const DIAS_SEMANA_MAP: { [key: number]: string } = {
+  0: 'dom', 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sab'
+};
 
 export default function WorkoutsScreen() {
   const { user, initialized } = useAuth();
@@ -26,74 +36,79 @@ export default function WorkoutsScreen() {
   const [treinos, setTreinos] = useState<TreinoModelo[]>([]);
   const [loadingTreinos, setLoadingTreinos] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
+  // Novos estados para personalização do calendário
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const [customDays, setCustomDays] = useState<string[]>([]);
+  const [originalDays, setOriginalDays] = useState<Set<string>>(new Set());
+  const [isCustomizationAllowed, setIsCustomizationAllowed] = useState(true);
 
-  useFocusEffect(
-    useCallback(() => {
-      const fetchFichas = async () => {
-        if (!initialized) {
-          return;
-        }
-        setLoading(true);
-
-
-        try {
-          const [fichas, userProfile] = await Promise.all([
-            getFichasModelos(),
-            user ? getUserProfile(user.uid) : Promise.resolve(null)
-          ]);
-          setProfile(userProfile);
-
-          // Mapeia todas as fichas para buscar seus treinos e calcular o total de dias
-          const modelosComTotalDias = await Promise.all(fichas.map(async (ficha) => {
-            if (ficha.treinos && ficha.treinos.length > 0) {
-              const treinosDaFicha = await getTreinosModelosByIds(ficha.treinos);
-              // Corretamente soma os dias de cada treino
-              const totalDias = treinosDaFicha.reduce((sum, treino) => sum + (treino.diasSemana?.length || 0), 0);
-              return { ...ficha, totalDias };
-            }
-            // Se não houver treinos, o total de dias é 0
-            return { ...ficha, totalDias: 0 };
-          }));
+  // Alterado de useFocusEffect para useEffect para carregar dados apenas uma vez.
+  // A estrutura foi corrigida para remover o useCallback aninhado.
+  useEffect(() => {
+    const fetchFichas = async () => {
+      if (!initialized) {
+        return;
+      }
+      setLoading(true);
 
 
-          // Lógica de Ordenação
-          const sortFichas = (a: FichaModelo, b: FichaModelo) => {
-            if (!userProfile) return 0;
+      try {
+        const [fichas, userProfile] = await Promise.all([
+          getFichasModelos(),
+          user ? getUserProfile(user.uid) : Promise.resolve(null)
+        ]);
+        setProfile(userProfile);
 
-            const getScore = (ficha: FichaModelo) => {
-              let score = 0;
-              // Prioridade por nível
-              if (ficha.dificuldade === userProfile.nivel) score += 10;
-              else if (ficha.dificuldade === 'Todos') score += 5;
+        // Mapeia todas as fichas para buscar seus treinos e calcular o total de dias
+        const modelosComTotalDias = await Promise.all(fichas.map(async (ficha) => {
+          if (ficha.treinos && ficha.treinos.length > 0) {
+            const treinosDaFicha = await getTreinosModelosByIds(ficha.treinos);
+            // Corretamente soma os dias de cada treino
+            const totalDias = treinosDaFicha.reduce((sum, treino) => sum + (treino.diasSemana?.length || 0), 0);
+            return { ...ficha, totalDias };
+          }
+          // Se não houver treinos, o total de dias é 0
+          return { ...ficha, totalDias: 0 };
+        }));
 
-              // Prioridade por gênero
-              if (ficha.sexo === (userProfile.genero === 'Masculino' ? 'Homem' : userProfile.genero === 'Feminino' ? 'Mulher' : undefined)) score += 10;
-              else if (ficha.sexo === 'Ambos') score += 5;
 
-              return score;
-            };
+        // Lógica de Ordenação
+        const sortFichas = (a: FichaModelo, b: FichaModelo) => {
+          if (!userProfile) return 0;
 
-            const scoreA = getScore(a);
-            const scoreB = getScore(b);
+          const getScore = (ficha: FichaModelo) => {
+            let score = 0;
+            // Prioridade por nível
+            if (ficha.dificuldade === userProfile.nivel) score += 10;
+            else if (ficha.dificuldade === 'Todos') score += 5;
 
-            if (scoreB !== scoreA) {
-              return scoreB - scoreA;
-            }
+            // Prioridade por gênero
+            if (ficha.sexo === (userProfile.genero === 'Masculino' ? 'Homem' : userProfile.genero === 'Feminino' ? 'Mulher' : undefined)) score += 10;
+            else if (ficha.sexo === 'Ambos') score += 5;
 
-            // Critério de desempate: mais dias de treino primeiro
-            return (b.totalDias || 0) - (a.totalDias || 0);
+            return score;
           };
 
-          setFichasModelos(modelosComTotalDias.sort(sortFichas));
-        } catch (error) {
-          Alert.alert("Erro", "Não foi possível carregar os dados.");
-        } finally {
-          setLoading(false);
-        }
-      };
-      fetchFichas();
-    }, [user, initialized])
-  );
+          const scoreA = getScore(a);
+          const scoreB = getScore(b);
+
+          if (scoreB !== scoreA) {
+            return scoreB - scoreA;
+          }
+
+          // Critério de desempate: mais dias de treino primeiro
+          return (b.totalDias || 0) - (a.totalDias || 0);
+        };
+
+        setFichasModelos(modelosComTotalDias.sort(sortFichas));
+      } catch (error) {
+        Alert.alert("Erro", "Não foi possível carregar os dados.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchFichas();
+  }, [user, initialized]);
 
   const getStreakImage = (numTreinos: number) => {
     const dias = Math.max(2, Math.min(7, numTreinos)); // Garante que o número esteja entre 2 e 7
@@ -115,6 +130,16 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
   setLoadingTreinos(true);
   try {
     const treinosData = await getTreinosModelosByIds(ficha.treinos ?? []);
+
+    // Verifica se algum treino tem mais de um dia, desabilitando a customização se for o caso.
+    const allowCustomization = treinosData.every(t => t.diasSemana.length <= 1);
+    setIsCustomizationAllowed(allowCustomization);
+    // Ordena os treinos pela ordem dos dias da semana (dom a sab)
+    treinosData.sort((a, b) => (DIAS_SEMANA_ORDEM[a.diasSemana[0]] ?? 7) - (DIAS_SEMANA_ORDEM[b.diasSemana[0]] ?? 7));
+    const initialDays = new Set(treinosData.flatMap(t => t.diasSemana));
+    setOriginalDays(initialDays);
+    setCustomDays(Array.from(initialDays).sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]));
+    setIsCustomizing(false); // Reseta o modo de customização ao abrir
     setTreinos(treinosData);
   } catch (error) {
     console.error("Erro ao buscar treinos da ficha:", error);
@@ -125,14 +150,22 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
 };
 
   const handleCopyFicha = async () => {
-    if (!user || !selectedFicha) return;
+    if (!user || !selectedFicha || !treinos) return;
     setIsCopying(true);
     try {
-      const newFichaId = await copyFichaModeloToUser(selectedFicha, user.uid);
+      // Se a customização estiver permitida e ativa, envia os treinos com os dias alterados
+      const treinosParaCopiar = isCustomizing
+        ? treinos.map((treino, index) => ({
+            ...treino,
+            diasSemana: customDays[index] ? [customDays[index]] : [],
+          }))
+        : treinos;
+
+      const newFichaId = await copyFichaModeloToUser(selectedFicha, user.uid, treinosParaCopiar);
       await setFichaAtiva(user.uid, newFichaId);
       setIsCopying(false);
       setModalVisible(false);
-      router.push('/treinoHoje');
+      router.replace('/(tabs)/treinoHoje');
     } catch (error) {
       setIsCopying(false);
       console.error("Erro ao copiar ficha:", error);
@@ -144,6 +177,34 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     setModalVisible(false);
     setSelectedFicha(null);
     setTreinos([]);
+    setIsCustomizing(false);
+    setCustomDays([]);
+    setIsCustomizationAllowed(true);
+  };
+
+  const handleResetCustomization = () => {
+    setIsCustomizing(false);
+    // Reseta para os dias originais, ordenados
+    setCustomDays(Array.from(originalDays).sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]));
+  };
+
+  const handleDayPress = (day: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCustomDays(prev => {
+      let newDays = new Set(prev);
+      if (!isCustomizing) { // Primeira interação, reseta tudo
+        newDays.clear();
+        newDays.add(day);
+      } else { // Interações subsequentes
+        if (newDays.has(day)) {
+          newDays.delete(day);
+        } else if (newDays.size < treinos.length) { // Impede adicionar mais dias que o número de treinos
+          newDays.add(day);
+        }
+      }
+      setIsCustomizing(true);
+      return Array.from(newDays).sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]);
+    });
   };
 
   const renderFichaItem = ({ item, isCarousel }: { item: FichaModelo, isCarousel?: boolean }) => (
@@ -184,12 +245,88 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
   const renderTreinoDetailItem = ({ item }: { item: TreinoModelo }) => (
     <View style={styles.treinoContainer}>
       <Text style={styles.treinoTitle}>{item.nome}</Text>
-      <Text style={styles.treinoDays}>{item.diasSemana.join(', ').toUpperCase()}</Text>
-      {item.exercicios.map((ex, index) => (
-        <Text key={`${ex.modeloId}-${index}`} style={styles.exercicioText}>- {ex.modelo.nome}</Text>
-      ))}
+      {isCustomizing ? (
+        <Text style={styles.treinoDays}>
+          {customDays[treinos.indexOf(item)] ? customDays[treinos.indexOf(item)].toUpperCase() : 'NÃO ATRIBUÍDO'}
+        </Text>
+      ) : (
+        <Text style={styles.treinoDays}>{item.diasSemana.join(', ').toUpperCase()}</Text>
+      )}
+      {item.exercicios.map((ex, index) => {
+        // CORREÇÃO: Em TreinoModelo, 'series' e 'repeticoes' são propriedades diretas do exercício.
+        // A lógica anterior era para o modelo 'Treino', não 'TreinoModelo'.
+        // A lógica anterior era para o modelo 'Treino', não 'TreinoModelo'.
+        const seriesCount = (ex as any).series || 0;
+        const reps = (ex as any).repeticoes || 'N/A';
+        return (
+          <View key={`${ex.modeloId}-${index}`} style={styles.exercicioContainer}>
+            <Text style={styles.exercicioText}>{ex.modelo.nome}</Text>
+            <Text style={styles.exercicioDetailText}>{seriesCount}x {reps}</Text>
+          </View>
+        );
+      })}
     </View>
   );
+
+  const renderCalendar = () => {
+    return (
+      <View>
+        <View style={styles.calendarContainer}> 
+          {DIAS_SEMANA_ARRAY.map((day) => {
+            const isScheduled = originalDays.has(day);
+            const isSelected = customDays.includes(day);
+            const isDisabled = isCustomizing && !isSelected && customDays.length >= treinos.length;
+            
+            return (
+              <TouchableOpacity
+                key={day}
+                style={[
+                  styles.dayContainer,
+                  // Estilo para dias agendados inicialmente (com opacidade)
+                  isScheduled && !isCustomizing && styles.dayScheduledInitial,
+                  // Estilo para dias selecionados na customização
+                  isCustomizing && isSelected && styles.daySelected,
+                ]}
+                onPress={() => handleDayPress(day)}
+              >
+                <Text style={styles.dayText}>{day.toUpperCase()}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <Text style={styles.calendarSubText}>
+          Configuração recomendada aplicada, você pode sobrescrever clicando nos dias que você quer treinar.
+        </Text>
+      </View>
+    );
+  };
+
+  const renderCustomizationCard = () => {
+    if (!isCustomizing) return null;
+
+    return (
+      <View style={styles.customizationCard}>
+        <Text style={styles.customizationTitle}>Agende seus treinos</Text>
+        <View style={styles.progressBarContainer}>
+          <View style={[styles.progressBarFill, { width: `${(customDays.length / treinos.length) * 100}%` }]} />
+        </View>
+        <Text style={styles.progressText}>{customDays.length} de {treinos.length} treinos agendados</Text>
+        {treinos.map((treino, index) => {
+          const isAssigned = index < customDays.length;
+          return (
+            <View key={treino.id} style={styles.customizationItem}>
+              <FontAwesome name={isAssigned ? "check-circle" : "circle-o"} size={20} color={isAssigned ? "#1cb0f6" : "#555"} />
+              <Text style={[styles.customizationText, isAssigned && styles.customizationTextAssigned]}>
+                {treino.nome}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
+
+  const isButtonDisabled = isCustomizationAllowed && isCustomizing && customDays.length !== treinos.length;
 
   if (loading) {
     return <ActivityIndicator style={styles.centered} size="large" color="#fff" />;
@@ -230,31 +367,51 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{selectedFicha?.nome}</Text>
-              <TouchableOpacity onPress={closeModal}>
-                <FontAwesome name="close" size={24} color="#fff" />
-              </TouchableOpacity>
+              <View style={styles.modalHeaderActions}>
+                {isCustomizationAllowed && isCustomizing && (
+                  <TouchableOpacity onPress={handleResetCustomization} style={{ marginRight: 20 }}>
+                    <FontAwesome name="undo" size={22} color="#ccc" />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={closeModal}>
+                  <FontAwesome name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+              </View>
             </View>
             
-            {loadingTreinos ? (
-              <ActivityIndicator style={styles.centered} size="large" color="#fff" />
-            ) : (
-              <FlatList
-                data={treinos}
-                renderItem={renderTreinoDetailItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.modalList}
-                ListEmptyComponent={<Text style={styles.emptyText}>Nenhum treino nesta ficha.</Text>}
-              />
-            )}
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalList}>
+              {isCustomizationAllowed && (
+                <>
+                  {renderCalendar()}
+                  {renderCustomizationCard()}
+                </>
+              )}
+
+              {loadingTreinos ? (
+                <ActivityIndicator style={{ marginTop: 40 }} size="large" color="#fff" />
+              ) : treinos.length > 0 ? (
+                  treinos.map(treino => <View key={treino.id}>{renderTreinoDetailItem({ item: treino })}</View>) ) : (
+                  <Text style={styles.emptyText}>Nenhum treino nesta ficha.</Text>
+                )
+              }
+            </ScrollView>
 
             <View style={styles.modalFooter}>
-              <AnimatedGradientBorderButton onPress={handleCopyFicha} disabled={isCopying}>
-                {isCopying ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.copyButtonText}>Usar este plano de treino</Text>
-                )}
-              </AnimatedGradientBorderButton>
+              {isButtonDisabled ? (
+                <View style={styles.disabledButtonContainer}>
+                  <Text style={styles.disabledButtonText}>
+                    Selecione {treinos.length} {treinos.length === 1 ? 'dia' : 'dias'} da semana para utilizar este plano de treino
+                  </Text>
+                </View>
+              ) : (
+                <AnimatedGradientBorderButton onPress={handleCopyFicha} disabled={isCopying}>
+                  {isCopying ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.copyButtonText}>Usar este plano de treino</Text>
+                  )}
+                </AnimatedGradientBorderButton>
+              )}
             </View>
           </View>
         </Modal>
@@ -376,9 +533,14 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   modalTitle: {
+    flex: 1,
     fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
+  },
+  modalHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   modalList: {
     paddingBottom: 20,
@@ -404,18 +566,106 @@ const styles = StyleSheet.create({
     color: '#1cb0f6',
     marginTop: 5,
   },
-  exercicioText: {
-    fontSize: 14,
-    color: '#ccc',
+  exercicioContainer: {
     marginLeft: 10,
-    marginTop: 3,
+    marginTop: 12, // Aumenta o espaçamento entre os exercícios
   },
+  exercicioText: {
+    fontSize: 16, // Aumenta o tamanho do nome do exercício
+    color: '#fff',
+    fontWeight: '500',
+  },
+  exercicioDetailText: {
+    fontSize: 14,
+    color: '#aaa',
+    marginTop: 4, // Adiciona espaço abaixo do nome do exercício
+  },
+  // Estilos do Calendário e Customização
+  calendarContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingVertical: 10,
+  },
+  dayContainer: {
+    flex: 1,
+    paddingVertical: 10,
+    marginHorizontal: 3,
+    borderRadius: 8,
+    backgroundColor: '#1f1f1f',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  dayScheduledInitial: { // Novo estilo para dias agendados inicialmente
+    backgroundColor: 'rgba(28, 176, 246, 0.5)', // 50% opacidade do #1cb0f6
+    borderColor: '#333',
+  },
+  daySelected: {
+    backgroundColor: '#1cb0f6',
+    borderColor: '#1cb0f6',
+  },
+  dayText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 12,
+  },
+  calendarSubText: {
+    color: '#888',
+    fontSize: 12,
+    textAlign: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 10,
+  },
+  customizationCard: {
+    backgroundColor: '#141414',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+  },
+  customizationTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 15 },
+  customizationItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, gap: 10 },
+  customizationText: { color: '#888', fontSize: 14 },
+  customizationTextAssigned: { color: '#fff', textDecorationLine: 'line-through' },
   modalFooter: {
     marginTop: 20,
     marginBottom: 10,
     borderTopWidth: 1,
     borderTopColor: '#ffffff1a',
     padding: 10,
+  },
+  disabledButtonContainer: {
+    backgroundColor: '#1f1f1f',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  disabledButtonText: {
+    color: '#888',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  progressBarContainer: {
+    height: 8,
+    width: '100%',
+    backgroundColor: '#333',
+    borderRadius: 4,
+    marginBottom: 5,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#1cb0f6',
+    borderRadius: 4,
+  },
+  progressText: {
+    color: '#ccc',
+    fontSize: 12,
+    textAlign: 'right',
+    marginBottom: 15,
   },
   copyButtonText: {
     color: '#fff',

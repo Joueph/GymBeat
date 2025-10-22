@@ -148,24 +148,19 @@ export const addTreinoToFicha = async (fichaId: string, treinoData: Omit<Treino,
  * @param data The partial data to update the treino with.
  */
 export const updateTreino = async (treinoId: string, data: Partial<Omit<Treino, 'id' | 'usuarioId'>>): Promise<void> => {
-  const dataToUpdate: { [key: string]: any } = { ...data };
+    const dataToUpdate: { [key: string]: any } = { ...data };
 
-  // Se os dados de atualização incluem exercícios (como ao final de um treino),
-  // precisamos garantir que eles estejam no formato correto para o Firestore,
-  // ou seja, sem o objeto 'modelo' completo, apenas com 'modeloId'.
-  if (dataToUpdate.exercicios) {
-    const processedExercicios = dataToUpdate.exercicios.map((ex: Exercicio) => {
-      // Remove o objeto 'modelo' para evitar redundância de dados
-      const { modelo, ...restOfExercise } = ex;
-      return {
-        ...restOfExercise,
-        modeloId: ex.modeloId || modelo?.id, // Garante que o modeloId esteja presente
-      };
-    });
-    dataToUpdate.exercicios = processedExercicios;
-  }
-  const treinoRef = doc(db, 'treinos', treinoId);
-  await updateDoc(treinoRef, dataToUpdate);
+    // Garante que o objeto 'modelo' seja preservado nos exercícios ao salvar.
+    // A estrutura do exercício no Firestore deve conter o objeto 'modelo' completo
+    // para que outras partes do app possam exibir nome, imagem, etc.
+    if (dataToUpdate.exercicios) {
+        dataToUpdate.exercicios = dataToUpdate.exercicios.map((ex: Exercicio) => ({
+            ...ex,
+            modeloId: ex.modeloId || ex.modelo?.id, // Garante que modeloId esteja presente
+        }));
+    }
+    const treinoRef = doc(db, 'treinos', treinoId);
+    await updateDoc(treinoRef, dataToUpdate);
 };
 
 /**

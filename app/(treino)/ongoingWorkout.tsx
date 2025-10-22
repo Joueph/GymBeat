@@ -549,18 +549,34 @@ export default function OngoingWorkoutScreen() {
     return { totalNormalSeries: total, completedNormalSeriesCount: completedCount };
   }, [treino, currentExerciseIndex, completedSets]);
 
+  const handleEditFromList = (exercise: Exercicio) => {
+    setExerciseListVisible(false); // Fecha o modal da lista
+    // Um pequeno atraso para garantir que a transição entre modais seja suave
+    setTimeout(() => {
+      openEditModalForExercise(exercise);
+    }, 300);
+  };
+
   const { totalNormalSeries: partnerTotalNormalSeries } = useMemo(() => {
     if (!treino || !treino.exercicios[currentExerciseIndex + 1]) return { totalNormalSeries: 0 };
     return { totalNormalSeries: treino.exercicios[currentExerciseIndex + 1].series.filter(s => (s.type || 'normal') === 'normal').length };
   }, [treino, currentExerciseIndex]);
 
-  const renderExerciseProgressItem = ({ item, index }: { item: Exercicio, index: number }) => {
+  const renderExerciseProgressItem = ({ item, index }: { item: Exercicio; index: number }) => {
     const isCompleted = index < currentExerciseIndex;
     const isCurrent = index === currentExerciseIndex;
     const totalExercises = treino!.exercicios.length;
     const TopTrack = () => <View style={{ position: 'absolute', top: 0, bottom: '50%', width: 2, backgroundColor: (isCompleted || isCurrent) ? '#1cb0f6' : '#333', opacity: index === 0 ? 0 : 1, }} />;
     const BottomTrack = () => <View style={{ position: 'absolute', top: '50%', bottom: 0, width: 2, backgroundColor: isCompleted ? '#1cb0f6' : '#333', opacity: index === totalExercises - 1 ? 0 : 1, }} />;
-    return (<View style={styles.progressListItem}><View style={styles.timelineContainer}><TopTrack /><BottomTrack /><View style={[styles.timelineDot, isCompleted && styles.completedDot, isCurrent && styles.currentDot,]} /></View><View style={styles.exerciseContent}><Text style={[styles.modalExerciseName, isCompleted && { textDecorationLine: 'line-through', opacity: 0.7 }]}>{item.modelo.nome}</Text><Text style={styles.modalExerciseDetails}>{item.series.filter(s => (s.type || 'normal') === 'normal').length} séries{item.series.filter(s => s.type === 'dropset').length > 0 && ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`}</Text></View></View>);
+    return (
+      <View style={styles.progressListItem}>
+        <View style={styles.timelineContainer}><TopTrack /><BottomTrack /><View style={[styles.timelineDot, isCompleted && styles.completedDot, isCurrent && styles.currentDot,]} /></View>
+        <View style={styles.exerciseContent}><Text style={[styles.modalExerciseName, isCompleted && { textDecorationLine: 'line-through', opacity: 0.7 }]}>{item.modelo.nome}</Text><Text style={styles.modalExerciseDetails}>{item.series.filter(s => (s.type || 'normal') === 'normal').length} séries{item.series.filter(s => s.type === 'dropset').length > 0 && ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`}</Text></View>
+        <TouchableOpacity style={styles.editListButton} onPress={() => handleEditFromList(item)}>
+          <FontAwesome name="pencil" size={20} color="#888" />
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   if (loading || !treino) {
@@ -588,7 +604,7 @@ export default function OngoingWorkoutScreen() {
                 </Animated.View>
                 ) : (
                 <TouchableOpacity onPress={() => setOverviewModalVisible(true)}>
-                    <FontAwesome name="cog" size={24} color="#fff" />
+                    <FontAwesome name="bar-chart" size={18} color="#fff" />
                 </TouchableOpacity>
                 )}
             </View>
@@ -753,7 +769,7 @@ const styles = StyleSheet.create({
     modalSafeArea: { flex: 1, backgroundColor: '#141414' },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' },
     modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-    progressListItem: { flexDirection: 'row', alignItems: 'flex-start', minHeight: 80 },
+    progressListItem: { flexDirection: 'row', alignItems: 'center', minHeight: 80 },
     timelineContainer: { width: 30, alignItems: 'center', alignSelf: 'stretch' },
     timelineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#333', position: 'absolute', top: 24 },
     exerciseContent: { flex: 1, paddingLeft: 10, paddingTop: 20, paddingBottom: 20 },
@@ -761,6 +777,10 @@ const styles = StyleSheet.create({
     currentDot: { width: 18, height: 18, borderRadius: 9, backgroundColor: '#0d181c', borderWidth: 3, borderColor: '#1cb0f6', top: 21 },
     modalExerciseName: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
     modalExerciseDetails: { color: '#aaa', fontSize: 14, marginTop: 4 },
+    editListButton: {
+      padding: 15,
+      alignSelf: 'center',
+    },
     modalScrollViewContent: { padding: 20, paddingBottom: 40 },
     modalButtons: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginTop: 20 },
     button: { borderRadius: 10, padding: 10, elevation: 2, flex: 1, marginHorizontal: 5 },

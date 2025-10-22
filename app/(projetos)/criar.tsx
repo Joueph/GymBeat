@@ -1,12 +1,15 @@
 import { FontAwesome } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
+// <!-- MUDANÇA 1: Remover getStorage desta linha -->
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { MetaProjeto, Projeto } from '../../models/projeto';
 import { createProjeto, getProjetoById, updateProjeto } from '../../services/projetoService';
 import { useAuth } from '../authprovider';
+// <!-- MUDANÇA 2: Importar a instância 'storage' do seu ficheiro config -->
+import { storage } from '../../firebaseconfig';
 
 // Helper function using a more robust XMLHttpRequest for blob conversion
 const uploadCapaProjeto = (uri: string | null, userId: string): Promise<string> => {
@@ -23,15 +26,31 @@ const uploadCapaProjeto = (uri: string | null, userId: string): Promise<string> 
         xhr.onload = async () => {
             try {
                 const blob = xhr.response; // This is the blob
-                const storage = getStorage();
+                
+                // <!-- MUDANÇA 3: Remover a linha abaixo. -->
+                // A 'storage' importada (MUDANÇA 2) será usada automaticamente no 'ref()'.
+                // const storage = getStorage(); 
+                
+                // A variável 'storage' aqui agora refere-se à instância importada
                 const storageRef = ref(storage, `projetos/${userId}/capa_${Date.now()}.jpg`);
                 
                 const snapshot = await uploadBytes(storageRef, blob);
                 const downloadURL = await getDownloadURL(snapshot.ref);
                 
                 resolve(downloadURL);
-            } catch (error) {
-                console.error("Erro durante o upload para o Firebase:", error);
+            } catch (error: any) { // <!-- MUDANÇA DE DEBUG: Tipar como 'any' para aceder a propriedades
+                
+                console.error("================ ERRO DETALHADO DO FIREBASE ================");
+                console.error("Mensagem:", error.message);
+                
+                // <!-- MUDANÇA DE DEBUG: AQUI ESTÁ O PAYLOAD QUE PROCURA! -->
+                if (error.serverResponse) {
+                    console.error("Payload do Servidor (serverResponse):", error.serverResponse);
+                } else {
+                    console.error("Objeto de erro completo (para mais detalhes):", JSON.stringify(error, null, 2));
+                }
+                console.error("==========================================================");
+
                 reject(error);
             }
         };
@@ -163,8 +182,17 @@ export default function CriarProjetoScreen() {
         Alert.alert("Sucesso!", "Seu projeto foi criado.");
         router.replace({ pathname: '/(projetos)/[id]', params: { id: novoProjetoId } });
       }
-    } catch (error) {
-      console.error("Erro ao salvar projeto:", error);
+    } catch (error: any) { // <!-- MUDANÇA DE DEBUG: Adicionando log detalhado aqui também -->
+      
+      console.error("================ ERRO NO HANDLESUBMIT ================");
+      console.error("Mensagem:", error.message);
+      if (error.serverResponse) {
+          console.error("Payload do Servidor (serverResponse):", error.serverResponse);
+      } else {
+          console.error("Objeto de erro completo:", JSON.stringify(error, null, 2));
+      }
+      console.error("====================================================");
+
       Alert.alert("Erro", "Não foi possível salvar o projeto. Tente novamente.");
     } finally {
       setLoading(false);

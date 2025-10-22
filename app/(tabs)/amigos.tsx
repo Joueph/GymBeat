@@ -395,7 +395,8 @@ export default function AmigosScreen() {
         data={friends}
         renderItem={({ item }) => <FriendListItem item={item} />}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.container}
+        style={{ flex: 1, backgroundColor: "#030405" }} // Ensure the FlatList itself fills the screen and has the correct background
+        contentContainerStyle={styles.container} // Keep contentContainerStyle for padding and flexGrow of the content
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={<View style={styles.centered}><Text style={styles.emptyText}>Adicione amigos para vê-los aqui!</Text></View>}
       />

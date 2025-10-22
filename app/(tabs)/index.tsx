@@ -3,7 +3,7 @@ import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
 import { WorkoutReviewModal } from '../(treino)/modalReviewTreinos';
 import { db } from '../../firebaseconfig';
@@ -27,7 +27,7 @@ const getStartOfWeek = (date: Date): Date => {
     const day = d.getDay();
     const diff = d.getDate() - day;
     d.setDate(diff);
-    d.setHours(0, 0, 0, 0);
+d.setHours(0, 0, 0, 0);
     return d;
 };
 
@@ -63,9 +63,10 @@ export default function HomeScreen() {
   const [treinoConcluidoHoje, setTreinoConcluidoHoje] = useState<Log | null>(null);
   const [isReviewModalVisible, setReviewModalVisible] = useState(false);
   const [dataVersion, setDataVersion] = useState(0); // Para forçar recarga
+  const isInitialLoad = useRef(true);
 
-  // Usando useFocusEffect para recarregar os dados quando a tela ganha foco
-
+  // Substituído useEffect por useFocusEffect para garantir que os dados sejam
+  // recarregados sempre que a tela ganhar foco.
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
@@ -74,25 +75,27 @@ export default function HomeScreen() {
           setLoading(false);
           return;
         }
+  
+        if (isInitialLoad.current) {
+          setLoading(true);
+        }
 
-        setLoading(true);
         try {
-          // Busca de perfil e ficha ativa em paralelo
           const userProfileDoc = await getDoc(doc(db, "users", user.uid));
           const userProfile = userProfileDoc.exists() ? { id: userProfileDoc.id, ...userProfileDoc.data() } as Usuario : null;
           setProfile(userProfile);
-
+  
           const [fichaAtiva, userLogs] = await Promise.all([
             getFichaAtiva(user.uid),
             getLogsByUsuarioId(user.uid)
           ]);
-
+  
           setActiveFicha(fichaAtiva);
           setLogs(userLogs);
-
+  
           const ongoingLog = userLogs.find(log => !log.horarioFim && log.status !== 'cancelado');
           setActiveLog(ongoingLog || null);
-
+  
           let userTreinos: Treino[] = [];
           if (fichaAtiva && fichaAtiva.treinos.length > 0) {
             const { getTreinosByIds } = require('../../services/treinoService');
@@ -101,19 +104,18 @@ export default function HomeScreen() {
           } else {
             setTreinos([]);
           }
-
+  
           const hoje = new Date();
           const diaString = DIAS_SEMANA_MAP[hoje.getDay()] as DiaSemana;
           const treinoDoDia = userTreinos.find(t => t.diasSemana.includes(diaString));
           setTreinoDeHoje(treinoDoDia || null);
-
+  
           const logConcluidoHoje = userLogs.find(log => {
             const logDate = toDate(log.horarioFim);
             return logDate && logDate.toDateString() === hoje.toDateString() && log.status !== 'cancelado';
           });
           setTreinoConcluidoHoje(logConcluidoHoje || null);
-
-          // Lógica para encontrar treino perdido
+  
           const diaDaSemanaHoje = hoje.getDay();
           const logsConcluidosIds = new Set(userLogs.filter(l => l.horarioFim).map(l => l.treino.id));
           let treinoFaltante = null;
@@ -126,26 +128,24 @@ export default function HomeScreen() {
             }
           }
           setTreinoPerdido(treinoFaltante);
-
-          // Lógica de estatísticas semanais
+  
           const streakGoal = userProfile?.streakGoal || 2;
           const startOfThisWeek = getStartOfWeek(hoje);
           const workoutsThisWeek = userLogs.filter(log => toDate(log.horarioFim) && toDate(log.horarioFim)! >= startOfThisWeek).length;
-
+  
           let streak = 0;
           // ... (a lógica de cálculo de streak permanece a mesma)
-
+  
           setWeeklyStats({ workoutsThisWeek, streak, goal: streakGoal });
-
+  
         } catch (error) {
-          console.error("Erro ao carregar dados da Home:", error);
-          // Alert.alert("Erro", "Não foi possível carregar os dados.");
         } finally {
+          isInitialLoad.current = false;
           setLoading(false);
         }
       };
       fetchData();
-    }, [user, authInitialized, dataVersion])
+    }, [user, authInitialized])
   );
 
   const getAverageDuration = (treinoId: string): number | null => {
@@ -260,17 +260,29 @@ export default function HomeScreen() {
         {weekDays.map((day, index) => {
           const date = new Date();
           date.setDate(today.getDate() - (currentDay - index));
-          const isPastOrToday = index <= currentDay;
+          const isToday = index === currentDay;
+          const isPast = index < currentDay;
+          
           const isLogged = loggedDays.has(date.toDateString());
           const dayString: DiaSemana = DIAS_SEMANA_MAP[index] as DiaSemana;
           const isScheduled = scheduledDays.has(dayString);
 
+          // -> Treino não realizado (Dia da semana está atras do atual e o treino desse dia não foi realizado)
+          const isMissed = isPast && isScheduled && !isLogged;
+
           const dayStyles = [
             styles.dayContainer,
-            isPastOrToday && styles.progressionOverlay,
-            isLogged && styles.loggedDay,
-            isScheduled && styles.scheduledDay,
+            (isPast || isToday) && styles.progressionOverlay, // Fundo cinza para dias passados/hoje
+            isScheduled && !isLogged && !isMissed && styles.scheduledDay, // Treino agendado (futuro ou hoje não feito)
+            
+            // -> Treino realizado: Não deve ser verde, mas azul com fundo em gradiente mais escuro
+            // A borda dos treinos realizados devem aparecer com esse mesmo azul
+            isLogged && styles.loggedDay, // Estilo azul para treino feito
+            
+            // -> Treino não realizado ... Deve ter a borda com o laranja
+            isMissed && styles.missedDay, // Estilo com borda laranja para treino perdido
           ];
+          
           return (
             <View key={day} style={dayStyles}>
               <ThemedText style={styles.dayText}>{day}</ThemedText>
@@ -353,7 +365,7 @@ export default function HomeScreen() {
           )}
         </View>
         {timelineData.length > 0 && (
-          <Text style={[styles.cardTitle, { paddingHorizontal: 10, marginTop: 20, marginBottom: 0 }]}>Minha agenda</Text>
+          <Text style={[styles.cardTitle, { paddingHorizontal: 10, marginTop: 20, marginBottom: 20 }]}>Minha agenda</Text>
         )}
       </>
     );
@@ -623,7 +635,7 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 2,
-    borderColor: '#FFA500', 
+    borderColor: '#00A6FF', 
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -710,7 +722,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff1a',
   },
   loggedDay: {
-    backgroundColor: '#DAA520',
+    // Fundo azul mais escuro (simulando gradiente) e borda azul
+    backgroundColor: '#00A6FF33', // Fundo azul com transparência
+    borderColor: '#00A6FF',
+    borderWidth: 1.5,
+  },
+  missedDay: {
+    // Borda laranja para treino perdido
+    borderColor: '#FFA500', // Mesma cor do card 'missedWorkoutCard'
+    borderWidth: 1.5,
   },
   scheduledDay: {
     borderWidth: 1.5,
@@ -968,14 +988,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   completedWorkoutCard: {
-    borderTopColor: '#58CC02',
-    borderLeftColor: '#58CC02',
-    borderBottomColor: '#58CC02aa',
-    borderRightColor: '#58CC02aa',
-    shadowColor: '#58CC02',
+    borderTopColor: '#00A6FFca', // Azul do heroCard
+    borderLeftColor: '#00A6FFca', // Azul do heroCard
+    borderBottomColor: '#00A6FFaa', // Azul do heroCard
+    borderRightColor: '#00A6FFaa', // Azul do heroCard
+    shadowColor: '#00A6FF', // Azul do heroCard
   },
   completedWorkoutButton: {
-    backgroundColor: '#58CC02',
+    backgroundColor: '#00A6FF', // Azul do heroStartButton
   },
 });
-

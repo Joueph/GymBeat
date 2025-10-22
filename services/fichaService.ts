@@ -1,5 +1,6 @@
 // services/fichaService.ts
 
+import { Exercicio } from '@/models/exercicio';
 import {
   addDoc,
   collection,
@@ -43,7 +44,7 @@ export const getFichasModelos = async (): Promise<FichaModelo[]> => {
 /**
  * Copies a FichaModelo and its associated TreinoModelos to a user-specific Ficha and Treinos.
  */
-export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: string): Promise<string> => {
+export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: string, treinosParaCopiar: { diasSemana: string[]; id: string; nome: string; intervalo: { min: number; seg: number; }; exercicios: Exercicio[]; }[]): Promise<string> => {
   const batch = writeBatch(db);
   const newTreinoRefs: any[] = [];
 

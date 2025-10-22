@@ -1,6 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import React, { useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 // GestureHandlerRootView não é mais necessário aqui se a FlatList de fichas foi removida
 // mas é uma boa prática mantê-lo no topo da árvore de componentes
@@ -124,6 +124,7 @@ export default function MeusTreinosScreen() {
   const [treinoConcluidoHoje, setTreinoConcluidoHoje] = useState<Log | null>(null);
   const [selectedLogForReview, setSelectedLogForReview] = useState<Log | null>(null);
   const [dataVersion, setDataVersion] = useState(0); // Estado para forçar a recarga
+  const isInitialLoad = useRef(true);
 
   const handleCreateNewFicha = async () => {
     if (!user) return;
@@ -154,60 +155,60 @@ export default function MeusTreinosScreen() {
     });
   }, [navigation, user]);
 
+  // Substituído useEffect por useFocusEffect para garantir que os dados sejam
+  // recarregados sempre que a tela ganhar foco.
   useFocusEffect(
     useCallback(() => {
       const fetchData = async () => {
-        // Aguarda a inicialização da autenticação.
-        // Se ainda não foi inicializado, o spinner de loading (que é true por padrão) continuará visível.
         if (!authInitialized) {
           return;
         }
-
-        if (!user) { setLoading(false); return; } // Se não houver usuário após a inicialização, para.
-
-        setLoading(true);
+  
+        if (!user) { setLoading(false); return; }
+  
+        if (isInitialLoad.current) {
+          setLoading(true);
+        }
         try {
           const [ativa, todas, userLogs] = await Promise.all([
             getFichaAtiva(user.uid),
             getFichasByUsuarioId(user.uid),
             getLogsByUsuarioId(user.uid)
           ]);
-
+  
           setFichaAtiva(ativa);
           setTodasAsFichas(todas);
           const sortedLogs = userLogs.sort((a, b) => (toDate(b.horarioFim)?.getTime() || 0) - (toDate(a.horarioFim)?.getTime() || 0));
           setLogs(sortedLogs);
-
-          // Verifica se há um treino em andamento
+  
           const ongoingLog = userLogs.find(log => !log.horarioFim && log.status !== 'cancelado');
           setActiveLog(ongoingLog || null);
-
-          // Lógica para calcular treinos concluídos na semana
+  
           const hoje = new Date();
-          const diaDaSemana = hoje.getDay(); // 0 = Domingo, 1 = Segunda...
+          const diaDaSemana = hoje.getDay();
           const inicioSemana = new Date(hoje);
-          inicioSemana.setDate(hoje.getDate() - diaDaSemana + (diaDaSemana === 0 ? -6 : 1)); // Início na segunda
+          inicioSemana.setDate(hoje.getDate() - diaDaSemana + (diaDaSemana === 0 ? -6 : 1));
           inicioSemana.setHours(0, 0, 0, 0);
-
+  
           const logsDaSemana = sortedLogs.filter(log => {
             const logDate = toDate(log.horarioFim);
             return logDate && logDate >= inicioSemana;
           });
           setTreinosConcluidos(logsDaSemana.length);
-
+  
           const logConcluidoHoje = userLogs.find(log => {
             const logDate = toDate(log.horarioFim);
             return logDate && logDate.toDateString() === hoje.toDateString() && log.status !== 'cancelado';
           });
           setTreinoConcluidoHoje(logConcluidoHoje || null);
-
+  
           if (ativa && ativa.treinos.length > 0) {
             const treinosData = await getTreinosByIds(ativa.treinos);
             treinosData.sort((a, b) => (DIAS_SEMANA_ORDEM[a.diasSemana[0]] ?? 7) - (DIAS_SEMANA_ORDEM[b.diasSemana[0]] ?? 7));
             
             const diaString = DIAS_SEMANA_MAP[hoje.getDay()] as DiaSemana;
             const treinoDoDia = treinosData.find(t => t.diasSemana.includes(diaString));
-
+  
             setTreinoDeHoje(treinoDoDia || null);
             setOutrosTreinos(treinosData.filter(t => t.id !== treinoDoDia?.id));
           } else {
@@ -218,11 +219,13 @@ export default function MeusTreinosScreen() {
           console.error("Erro ao carregar dados do treino:", err);
           Alert.alert("Erro", "Não foi possível carregar os dados de treino.");
         } finally {
+          isInitialLoad.current = false;
           setLoading(false);
         }
       };
+  
       fetchData();
-    }, [user, authInitialized, dataVersion]) // Adicionado authInitialized como dependência
+    }, [user, authInitialized]) // A dependência dataVersion não é mais necessária
   );
   
   const handleSetFichaAtiva = async (fichaId: string) => {
@@ -369,7 +372,17 @@ export default function MeusTreinosScreen() {
                   <Text style={styles.startButtonText}>Iniciar Treino</Text>
                 </TouchableOpacity>
               </TouchableOpacity>
-            ) : null}
+            ) : !activeLog && !treinoConcluidoHoje && !treinoDeHoje ? (
+              // Card para "Dia de Descanso" - Exibido apenas se não houver treino ativo, concluído ou agendado para hoje.
+              <View style={[styles.heroCard, styles.restDayCard]}>
+                <View style={styles.heroTextContainer}>
+                  <Text style={styles.heroTitle}>Dia de Descanso</Text>
+                  <Text style={styles.heroInfo}>
+                    Aproveite para se recuperar. O descanso é fundamental para a evolução.
+                  </Text>
+                </View>
+              </View>
+            ) : null }
           </View>
         </View>
       )}
@@ -606,6 +619,16 @@ const styles = StyleSheet.create({
     },
     completedWorkoutButton: {
       backgroundColor: '#58CC02',
+    },
+    // Estilo para o card de dia de descanso (adicionado para consistência)
+    restDayCard: {
+      backgroundColor: '#141414',
+      borderColor: '#444',
+      shadowColor: 'transparent',
+      elevation: 0,
+      borderWidth: 1,
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0,
     },
     // Next Workout Cards (Horizontal)
     nextWorkoutCard: {

@@ -366,14 +366,14 @@ const handleUpdate = async () => {
               </View>
 
               <View style={styles.modalPfpContainer}>
-                <TouchableOpacity disabled>
-                  {profile.photoURL ? (
+                <TouchableOpacity onPress={handlePickImage}>
+                  {newPhotoURI || profile.photoURL ? (
                     <Image source={{ uri: profile.photoURL }} style={styles.pfp} />
                   ) : (
                     <View style={styles.pfpPlaceholder}><FontAwesome name="camera" size={40} color="#555" /></View>
                   )}
                 </TouchableOpacity>
-                <Text style={styles.changePfpText}>Função para adicionar foto de perfil em breve</Text>
+                <Text style={styles.changePfpText}>Toque na imagem para alterar</Text>
               </View>
 
               <Text style={styles.label}>Nome</Text>

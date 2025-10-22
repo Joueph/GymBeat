@@ -13,7 +13,7 @@ import Animated, { FadeIn, FadeOut, FadeOutUp, SlideInUp, SlideOutDown } from 'r
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Treino } from '../../models/treino';
 import { addLog } from '../../services/logService';
-import { getTreinoById } from '../../services/treinoService';
+import { getTreinoById, updateTreino } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 import { WorkoutOverviewModal } from './modalOverview';
 
@@ -56,7 +56,11 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
 // Componente para exibir os detalhes de uma série normal.
 const NormalSetDetails = ({ currentSet }: { currentSet: Serie }) => (
   <>
-    <View style={styles.detailItem}><FontAwesome name="repeat" size={20} color="#ccc" /><Text style={styles.detailValue}>{currentSet.repeticoes}</Text><Text style={styles.detailLabel}>Repetições</Text></View>
+    <View style={styles.detailItem}>
+      <FontAwesome name={currentSet.isTimeBased ? "clock-o" : "repeat"} size={20} color="#ccc" />
+      <Text style={styles.detailValue}>{currentSet.repeticoes}{currentSet.isTimeBased ? 's' : ''}</Text>
+      <Text style={styles.detailLabel}>{currentSet.isTimeBased ? "Tempo" : "Repetições"}</Text>
+    </View>
     <View style={styles.detailItem}><FontAwesome name="dashboard" size={20} color="#ccc" /><Text style={styles.detailValue}>{currentSet.peso || 0} kg</Text><Text style={styles.detailLabel}>Peso</Text></View>
   </>
 );
@@ -144,6 +148,10 @@ export default function OngoingWorkoutScreen() {
   const [exerciciosFeitos, setExerciciosFeitos] = useState<Exercicio[]>([]);
   const [userLogs, setUserLogs] = useState<Log[]>([]);
   const [isOverviewModalVisible, setOverviewModalVisible] = useState(false);
+  // Novos estados para o timer do exercício
+  const [isDoingExercise, setIsDoingExercise] = useState(false);
+  const [exerciseTime, setExerciseTime] = useState(0);
+  const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
   
   // Novo estado para a animação da carga total no header
   const [animatedLoadValue, setAnimatedLoadValue] = useState<number | null>(null);
@@ -175,6 +183,12 @@ export default function OngoingWorkoutScreen() {
     }
     return { displayExercise: primaryExercise, isBiSet: false, biSetPartnerExercise: null };
   }, [treino, currentExerciseIndex, biSetToggle]);
+
+  const currentExercise = useMemo(() => displayExercise, [displayExercise]);
+  const currentSet = useMemo(() => {
+    if (!currentExercise || !currentExercise.series) return null;
+    return currentExercise.series[completedSets];
+  }, [currentExercise, completedSets]);
 
   const handleEdit = useCallback(() => {
     if (!treino) return;
@@ -289,7 +303,28 @@ export default function OngoingWorkoutScreen() {
     return () => clearInterval(interval);
   }, [isResting, restStartTime, maxRestTime]);
 
-  const handleCompleteSet = async () => {
+  // Efeito para o timer do exercício (quando isDoingExercise é true)
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isDoingExercise && exerciseStartTime) {
+      interval = setInterval(() => {
+        const initialTime = parseInt(String(currentSet?.repeticoes || '0'), 10);
+        const elapsedSeconds = Math.floor((Date.now() - exerciseStartTime) / 1000);
+        const remainingTime = Math.max(0, initialTime - elapsedSeconds);
+        setExerciseTime(remainingTime);
+
+        if (remainingTime <= 0) {
+          setIsDoingExercise(false);
+          setExerciseStartTime(null);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          completeTheSet(); // Chama a lógica de conclusão da série
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isDoingExercise, exerciseStartTime, currentSet]);
+
+  const completeTheSet = async () => {
     if (!treino || !user || !currentSet) return;
 
     const oldTotalLoad = cargaAcumuladaTotal;
@@ -349,7 +384,12 @@ export default function OngoingWorkoutScreen() {
         const horarioFim = new Date();
         try {
           if (activeLogId) {
-            await addLog({ horarioFim, exerciciosFeitos: newExerciciosFeitos, exercicios: treino.exercicios }, activeLogId);
+            // Salva o log final com os exercícios feitos
+            await addLog({ horarioFim, exerciciosFeitos: newExerciciosFeitos, cargaAcumulada: newTotalLoad, exercicios: treino.exercicios }, activeLogId);
+            
+            // Atualiza o treino original com os exercícios modificados durante a sessão
+            await updateTreino(treinoId as string, { exercicios: newExerciciosFeitos });
+
             router.replace({ pathname: '/treinoCompleto', params: { logId: activeLogId } });
           }
         } catch (error) {
@@ -367,6 +407,22 @@ export default function OngoingWorkoutScreen() {
     setIsResting(true);
     if (activeLogId) {
       await addLog({ lastInterval: restStartTimestamp }, activeLogId);
+    }
+  };
+
+  const handleMainAction = () => {
+    if (!currentSet) return;
+
+    // Se a série for baseada em tempo, inicia o timer do exercício
+    if (currentSet.isTimeBased) {
+      const duration = parseInt(String(currentSet.repeticoes), 10);
+      if (!isNaN(duration) && duration > 0) {
+        setExerciseTime(duration);
+        setExerciseStartTime(Date.now());
+        setIsDoingExercise(true);
+      }
+    } else { // Caso contrário, completa a série normalmente
+      completeTheSet();
     }
   };
 
@@ -414,14 +470,25 @@ export default function OngoingWorkoutScreen() {
     setExercicioSendoEditado(null);
   };
 
-  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete', index: number) => {
+  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
     if (exercicioSendoEditado?.isBiSet) {
       Alert.alert("Ação não permitida", "Para alterar a estrutura das séries, edite o exercício principal do bi-set.");
       return;
     }
     const newSets = [...editingSeries];
     newSets.forEach((set, i) => { if (i !== index) set.showMenu = false; });
-    if (option === 'delete') {
+    if (option === 'toggleTime') {
+      const currentSet = newSets[index];
+      // @ts-ignore
+      currentSet.isTimeBased = !currentSet.isTimeBased;
+      // @ts-ignore
+      currentSet.repeticoes = currentSet.isTimeBased ? '60' : '8-12';
+      // @ts-ignore
+      if (currentSet.isTimeBased) {
+        // @ts-ignore
+        currentSet.peso = 0;
+      }
+    } else if (option === 'delete') {
       newSets.splice(index, 1);
     } else if (option === 'copy') {
       newSets.splice(index + 1, 0, { ...newSets[index], id: `set-${Date.now()}`, showMenu: false });
@@ -432,7 +499,7 @@ export default function OngoingWorkoutScreen() {
     if (newSets[index]) newSets[index].showMenu = false;
     setEditingSeries(newSets);
   };
-
+  
   const formatTime = (seconds: number) => {
     const min = Math.floor(seconds / 60);
     const sec = seconds % 60;
@@ -487,24 +554,18 @@ export default function OngoingWorkoutScreen() {
     return { totalNormalSeries: treino.exercicios[currentExerciseIndex + 1].series.filter(s => (s.type || 'normal') === 'normal').length };
   }, [treino, currentExerciseIndex]);
 
-  const currentExercise = displayExercise;
-  const currentSet = useMemo(() => {
-    if (!currentExercise || !currentExercise.series) return null;
-    return currentExercise.series[completedSets];
-  }, [currentExercise, completedSets]);
-
-  if (loading || !treino) {
-    return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
-  }
-
   const renderExerciseProgressItem = ({ item, index }: { item: Exercicio, index: number }) => {
     const isCompleted = index < currentExerciseIndex;
     const isCurrent = index === currentExerciseIndex;
-    const totalExercises = treino.exercicios.length;
+    const totalExercises = treino!.exercicios.length;
     const TopTrack = () => <View style={{ position: 'absolute', top: 0, bottom: '50%', width: 2, backgroundColor: (isCompleted || isCurrent) ? '#1cb0f6' : '#333', opacity: index === 0 ? 0 : 1, }} />;
     const BottomTrack = () => <View style={{ position: 'absolute', top: '50%', bottom: 0, width: 2, backgroundColor: isCompleted ? '#1cb0f6' : '#333', opacity: index === totalExercises - 1 ? 0 : 1, }} />;
     return (<View style={styles.progressListItem}><View style={styles.timelineContainer}><TopTrack /><BottomTrack /><View style={[styles.timelineDot, isCompleted && styles.completedDot, isCurrent && styles.currentDot,]} /></View><View style={styles.exerciseContent}><Text style={[styles.modalExerciseName, isCompleted && { textDecorationLine: 'line-through', opacity: 0.7 }]}>{item.modelo.nome}</Text><Text style={styles.modalExerciseDetails}>{item.series.filter(s => (s.type || 'normal') === 'normal').length} séries{item.series.filter(s => s.type === 'dropset').length > 0 && ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`}</Text></View></View>);
   };
+
+  if (loading || !treino) {
+    return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -533,9 +594,23 @@ export default function OngoingWorkoutScreen() {
             </View>
         </View>
         <View style={styles.content}>
-          <TouchableOpacity style={styles.timerContainer} onPress={handleSkipRest} disabled={!isResting}>
-            <View><Text style={styles.timerLabel}>Tempo de Intervalo</Text><Text style={styles.timerText}>{isResting ? formatTime(restTime) : formatTime(maxRestTime)}</Text></View>
-          </TouchableOpacity>
+          <View style={styles.timerContainer}>
+            {isDoingExercise && (
+              <Animated.View style={styles.exerciseTimerContainer} entering={FadeIn.duration(300)}>
+                <Text style={styles.exerciseTimerLabel}>Exercício</Text>
+                <Text style={styles.exerciseTimerText}>{formatTime(exerciseTime)}</Text>
+              </Animated.View>
+            )}
+            <TouchableOpacity 
+              style={[styles.restTimerContainer, isDoingExercise && styles.restTimerContainerFaded]} 
+              onPress={handleSkipRest} 
+              disabled={!isResting}
+            >
+              <Text style={[styles.timerLabel, isDoingExercise && styles.timerLabelFaded]}>Intervalo</Text>
+              <Text style={[styles.timerText, isDoingExercise && styles.timerTextFaded]}>{isResting ? formatTime(restTime) : formatTime(maxRestTime)}</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.bottomSectionContainer}>
             <View style={styles.exerciseSectionContainer}>
               {isBiSet && biSetPartnerExercise ? (
@@ -551,7 +626,12 @@ export default function OngoingWorkoutScreen() {
             </View>
             <View style={styles.actionsContainer}>
               <TouchableOpacity style={styles.actionButton} onPress={handleEdit}><FontAwesome name={isBiSetEditing ? "check" : "pencil"} size={24} color={isBiSetEditing ? "#1cb0f6" : "#fff"} /><Text style={[styles.actionButtonText, isBiSetEditing && { color: '#1cb0f6' }]}>Editar</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.mainActionButton} onPress={handleCompleteSet}><FontAwesome name="check" size={40} color="#0d181c" /><Text style={styles.mainActionButtonText}>Concluir Série</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.mainActionButton} onPress={handleMainAction}>
+                <FontAwesome name={currentSet?.isTimeBased ? "play" : "check"} size={40} color="#0d181c" />
+                <Text style={styles.mainActionButtonText}>
+                  {currentSet?.isTimeBased ? 'Iniciar' : 'Concluir Série'}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity style={styles.actionButton} onPress={handleShowList}><FontAwesome name="list-ul" size={24} color="#fff" /><Text style={styles.actionButtonText}>Lista</Text></TouchableOpacity>
             </View>
           </View>
@@ -565,7 +645,24 @@ export default function OngoingWorkoutScreen() {
               const itemIndex = getIndex(); if (itemIndex === undefined) return null;
               const normalSeriesCount = editingSeries.slice(0, itemIndex + 1).filter(s => (s.type || 'normal') === 'normal').length;
               const isBiSetFollower = exercicioSendoEditado?.isBiSet ?? false;
-              return (<View style={{ marginLeft: item.type === 'dropset' ? 30 : 0, marginBottom: 10 }}><View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#1f1f1f' }]}><TouchableOpacity onLongPress={!isBiSetFollower ? drag : undefined} style={{ paddingHorizontal: 10, opacity: isBiSetFollower ? 0.3 : 1 }} disabled={isActive || isBiSetFollower}><FontAwesome5 name={(item.type || 'normal') === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" /></TouchableOpacity><Text style={styles.setText}>{(item.type || 'normal') === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text><TextInput style={styles.setInput} placeholder="Reps" placeholderTextColor="#888" value={String(item.repeticoes)} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].repeticoes = text; setEditingSeries(newSets); }} /><TextInput style={styles.setInput} placeholder="kg" placeholderTextColor="#888" keyboardType="numeric" value={String(item.peso || '')} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = parseFloat(text) || 0; setEditingSeries(newSets); }} /><TouchableOpacity style={{ padding: 10 }} onPress={() => { const newSets = [...editingSeries]; newSets.forEach((s, i) => s.showMenu = i === itemIndex ? !s.showMenu : false); setEditingSeries(newSets); }}><FontAwesome name="ellipsis-v" size={20} color="#ccc" /></TouchableOpacity></View>{item.showMenu && (<Animated.View entering={SlideInUp.duration(200)} exiting={SlideOutDown.duration(200)}><View style={styles.setMenu}>{(item.type || 'normal') === 'normal' && (<TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('addDropset', itemIndex)}><Text style={styles.setMenuText}>Adicionar Dropset</Text></TouchableOpacity>)}<TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('copy', itemIndex)}><Text style={styles.setMenuText}>Copiar Série</Text></TouchableOpacity><TouchableOpacity style={[styles.setMenuButton, { borderBottomWidth: 0 }]} onPress={() => handleSetOption('delete', itemIndex)}><Text style={[styles.setMenuText, { color: '#ff3b30' }]}>Deletar</Text></TouchableOpacity></View></Animated.View>)}</View>)
+              // @ts-ignore
+              const isTimeBased = item.isTimeBased;
+              return (
+                <View style={{ marginLeft: item.type === 'dropset' ? 30 : 0, marginBottom: 10 }}>
+                  <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#1f1f1f' }]}>
+                    <TouchableOpacity onLongPress={!isBiSetFollower ? drag : undefined} style={{ paddingHorizontal: 10, opacity: isBiSetFollower ? 0.3 : 1 }} disabled={isActive || isBiSetFollower}><FontAwesome5 name={(item.type || 'normal') === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" /></TouchableOpacity>
+                    <Text style={styles.setText}>{(item.type || 'normal') === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
+                    <TextInput style={styles.setInput} placeholder={isTimeBased ? "Tempo (s)" : "Reps"} placeholderTextColor="#888" value={String(item.repeticoes)} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].repeticoes = text; setEditingSeries(newSets); }} keyboardType={isTimeBased ? 'number-pad' : 'default'} />
+                    <TextInput style={styles.setInput} placeholder="kg" placeholderTextColor="#888" keyboardType="numeric" value={String(item.peso || '')} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = parseFloat(text) || 0; setEditingSeries(newSets); }} />
+                    <TouchableOpacity style={{ padding: 10 }} onPress={() => { const newSets = [...editingSeries]; newSets.forEach((s, i) => s.showMenu = i === itemIndex ? !s.showMenu : false); setEditingSeries(newSets); }}><FontAwesome name="ellipsis-v" size={20} color="#ccc" /></TouchableOpacity>
+                  </View>
+                  {item.showMenu && (<Animated.View entering={SlideInUp.duration(200)} exiting={SlideOutDown.duration(200)}><View style={styles.setMenu}>
+                    {(item.type || 'normal') === 'normal' && (<><TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('toggleTime', itemIndex)}><Text style={styles.setMenuText}>{isTimeBased ? 'Usar Reps' : 'Usar Tempo'}</Text></TouchableOpacity><TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('addDropset', itemIndex)}><Text style={styles.setMenuText}>Adicionar Dropset</Text></TouchableOpacity></>)}
+                    <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('copy', itemIndex)}><Text style={styles.setMenuText}>Copiar Série</Text></TouchableOpacity>
+                    <TouchableOpacity style={[styles.setMenuButton, { borderBottomWidth: 0 }]} onPress={() => handleSetOption('delete', itemIndex)}><Text style={[styles.setMenuText, { color: '#ff3b30' }]}>Deletar</Text></TouchableOpacity>
+                  </View></Animated.View>)}
+                </View>
+              )
             }}
             ListFooterComponent={<>{!exercicioSendoEditado?.isBiSet && (<TouchableOpacity style={styles.addSetButton} onPress={() => setEditingSeries([...editingSeries, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}><Text style={styles.addSetButtonText}>+ Adicionar Série</Text></TouchableOpacity>)}<View style={styles.modalButtons}><TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setEditExerciseModalVisible(false)}><Text style={[styles.textStyle, { color: '#ff3b30' }]}>Cancelar</Text></TouchableOpacity><TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExerciseChanges}><Text style={styles.textStyle}>Salvar</Text></TouchableOpacity></View></>}
           /></SafeAreaView>
@@ -597,7 +694,7 @@ const styles = StyleSheet.create({
     headerTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold', textAlign: 'center' },
     headerIconContainer: { flex: 1, alignItems: 'flex-end', justifyContent: 'center' },
     accumulatedLoadContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#1f1f1f', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
-    accumulatedLoadText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },    
+    accumulatedLoadText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
     cargaAnimacaoContainer: { position: 'absolute', top: 110, right: 20, zIndex: 10, padding: 5 },
     cargaAnimacaoText: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
     content: { flex: 1, justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingBottom: 40 },
@@ -612,9 +709,32 @@ const styles = StyleSheet.create({
     biSetLinker: { height: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginVertical: -5, zIndex: -1 },
     biSetToggleText: { color: '#1cb0f6', fontWeight: 'bold', fontSize: 12 },
     bottomSectionContainer: { width: '100%', alignItems: 'center', gap: 15 },
-    timerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%' },
+    timerContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', width: '100%', gap: 20 },
+    exerciseTimerContainer: {
+      alignItems: 'center',
+    },
+    exerciseTimerLabel: {
+      color: '#1cb0f6',
+      fontSize: 18,
+      fontWeight: 'bold',
+      marginBottom: 5,
+    },
+    exerciseTimerText: {
+      color: '#fff',
+      fontSize: 80,
+      fontWeight: 'bold',
+      fontVariant: ['tabular-nums'],
+    },
+    restTimerContainer: {
+      alignItems: 'center',
+    },
+    restTimerContainerFaded: {
+      opacity: 0.4,
+    },
     timerLabel: { color: '#aaa', fontSize: 18, marginBottom: 10 },
+    timerLabelFaded: { fontSize: 14, marginBottom: 5 },
     timerText: { color: '#fff', fontSize: 60, fontWeight: 'bold', letterSpacing: 2 },
+    timerTextFaded: { fontSize: 40 },
     inlineDetailsContainer: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#ffffff1a' },
     detailsContainer: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', paddingVertical: 15, borderRadius: 15 },
     detailItem: { alignItems: 'center', flex: 1 },

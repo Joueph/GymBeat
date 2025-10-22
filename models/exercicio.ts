@@ -11,6 +11,7 @@ export interface Serie {
   repeticoes: string;
   peso?: number;
   type?: 'normal' | 'dropset';
+  isTimeBased?: boolean; // Adicionado para diferenciar séries por tempo
 }
 
 export interface Exercicio {

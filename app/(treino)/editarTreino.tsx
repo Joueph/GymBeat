@@ -25,6 +25,7 @@ interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
   isBiSet?: boolean;
+  isTimeBased?: boolean;
   showMenu?: boolean;
 }
 
@@ -267,8 +268,8 @@ export default function EditarTreinoScreen() {
     setSelectedGroup(null);
     setExerciciosModelos([]);
     setLastVisibleDoc(null);
-    // Initialize with one default set when adding a new exercise
-    setSets([{ id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }]);
+    // Initialize with one default rep-based set when adding a new exercise
+    setSets([{ id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal', isTimeBased: false }]);
     setExercicioModalVisible(true);
   };
 
@@ -286,9 +287,10 @@ const handleSaveExercicio = () => {
         repeticoes: s.repeticoes || '',
         peso: s.peso || 0,
         type: s.type || 'normal',
+        isTimeBased: s.isTimeBased || false,
       })),
-      // Mantém o estado 'isBiSet' se já existir no exercício que está sendo editado
-      isBiSet: editingExercicioIndex !== null ? treino.exercicios?.[editingExercicioIndex]?.isBiSet : false,
+      // Garante que isBiSet seja sempre um booleano
+      isBiSet: (editingExercicioIndex !== null && treino.exercicios?.[editingExercicioIndex]?.isBiSet) || false,
     };
 
     // 1. Criar uma cópia mutável da lista de exercícios
@@ -307,7 +309,7 @@ const handleSaveExercicio = () => {
         // Sincroniza (adiciona ou remove séries) para igualar a contagem
         while (partnerSeries.length < targetSeriesCount) {
           const lastSerie = partnerSeries.length > 0 ? partnerSeries[partnerSeries.length - 1] : { id: `set-sync-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' as const };
-          partnerSeries.push({ ...lastSerie, id: `set-sync-${Date.now()}-${partnerSeries.length}` });
+          partnerSeries.push({ ...lastSerie, id: `set-sync-${Date.now()}-${partnerSeries.length}`, isTimeBased: lastSerie.isTimeBased });
         }
         if (partnerSeries.length > targetSeriesCount) {
           partnerSeries = partnerSeries.slice(0, targetSeriesCount);
@@ -331,6 +333,27 @@ const handleSaveExercicio = () => {
     setSets([]);
   };
 
+  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
+    const newSets = [...sets];
+    newSets.forEach((set, i) => { if (i !== index) set.showMenu = false; });
+  
+    if (option === 'delete') {
+      newSets.splice(index, 1);
+    } else if (option === 'copy') {
+      newSets.splice(index + 1, 0, { ...newSets[index], id: `set-${Date.now()}`, showMenu: false });
+    } else if (option === 'addDropset') {
+      const parentSet = newSets[index];
+      newSets.splice(index + 1, 0, { id: `set-${Date.now()}`, repeticoes: parentSet.repeticoes, peso: (parentSet.peso ?? 10) * 0.7, type: 'dropset', showMenu: false });
+    } else if (option === 'toggleTime') {
+      const currentSet = newSets[index];
+      currentSet.isTimeBased = !currentSet.isTimeBased;
+      // Define valores padrão ao alternar
+      currentSet.repeticoes = currentSet.isTimeBased ? '30' : '8-12'; 
+    }
+  
+    if (newSets[index]) newSets[index].showMenu = false;
+    setSets(newSets);
+  };
   
   const removeExercicio = (index: number) => {
     setTreino(prev => ({ ...prev, exercicios: prev.exercicios?.filter((_, i) => i !== index) }));
@@ -350,7 +373,7 @@ const handleSaveExercicio = () => {
     // @ts-ignore - Assuming old and new structures might coexist during transition
     if (exercicio.series && typeof exercicio.series !== 'number') {
       // New structure
-      setSets(exercicio.series.map(s => ({ ...s, id: s.id || `set-${Date.now()}`, type: s.type || 'normal' })));
+      setSets(exercicio.series.map(s => ({ ...s, id: s.id || `set-${Date.now()}`, type: s.type || 'normal', isTimeBased: s.isTimeBased || false })));
     } else {
       // Old structure: convert to new structure for editing
       const numberOfSets = (exercicio as any).series || 1;
@@ -359,52 +382,12 @@ const handleSaveExercicio = () => {
         repeticoes: (exercicio as any).repeticoes || '8-12',
         peso: (exercicio as any).peso || 10,
         type: 'normal' as 'normal' | 'dropset',
+        isTimeBased: false,
       }));
       setSets(newSets);
     }
     setEditingExercicioIndex(index);
     setExercicioModalVisible(true);
-  };
-
-  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete', index: number) => {
-    const newSets = [...sets];
-    // Fecha todos os outros menus
-    newSets.forEach((set, i) => { if (i !== index) set.showMenu = false; });
-
-    // Impede a exclusão de séries se for o segundo exercício de um bi-set
-    if (option === 'delete' && editingExercicioIndex !== null && treino.exercicios?.[editingExercicioIndex]?.isBiSet) {
-      Alert.alert("Ação não permitida", "Não é possível remover séries do segundo exercício de um bi-set. Altere o exercício principal.");
-      return;
-    }
-
-    if (option === 'delete') {
-      newSets.splice(index, 1);
-    } else if (option === 'copy') {
-      const originalSet = newSets[index];
-      const newSet: SerieEdit = {
-        ...originalSet,
-        id: `set-${Date.now()}`,
-        showMenu: false,
-      };
-      newSets.splice(index + 1, 0, newSet);
-    } else if (option === 'addDropset') {
-      const parentSet = newSets[index];
-      const newDropset: SerieEdit = {
-        id: `set-${Date.now()}`,
-        repeticoes: parentSet.repeticoes,
-        peso: (parentSet.peso || 10) * 0.7, // Sugestão de peso para o dropset
-        type: 'dropset',
-        showMenu: false,
-      };
-      newSets.splice(index + 1, 0, newDropset);
-    }
-
-    // Fecha o menu que foi clicado
-    if (newSets[index]) {
-      newSets[index].showMenu = false;
-    }
-
-    setSets(newSets);
   };
 
   const handleToggleBiSet = (index: number) => {
@@ -433,7 +416,7 @@ const handleSaveExercicio = () => {
           : { id: `set-new-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' as const };
         
         for (let i = 0; i < seriesToAdd; i++) {
-          currentSeries.push({ ...lastSerie, id: `set-new-${Date.now()}-${i}` });
+          currentSeries.push({ ...lastSerie, id: `set-new-${Date.now()}-${i}`, isTimeBased: lastSerie.isTimeBased });
         }
       }
       currentExercicio.series = currentSeries;
@@ -501,10 +484,14 @@ const handleSaveExercicio = () => {
           >
             <View style={{flex: 1}}>
                 <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
-                <Text style={styles.exercicioDetails}>
-                  {totalSets(item)} séries
-                  {item.series?.filter(s => s.type === 'dropset').length > 0 &&
-                    ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`
+                <Text style={styles.exercicioDetails} numberOfLines={1}>
+                  {totalSets(item)}x{' '}
+                  {item.series[0]?.isTimeBased 
+                    ? `${item.series[0]?.repeticoes}s` 
+                    : `${item.series[0]?.repeticoes} reps`
+                  }
+                  {item.series.filter(s => s.type === 'dropset').length > 0 &&
+                    ` + ${item.series.filter(s => s.type === 'dropset').length} drop`
                   }
                 </Text>
             </View>
@@ -689,14 +676,15 @@ const handleSaveExercicio = () => {
                               <Text style={styles.setText}>{item.type === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
                               <TextInput
                                 style={styles.setInput}
-                                placeholder="Reps"
+                                placeholder={item.isTimeBased ? "Tempo (s)" : "Reps"}
                                 placeholderTextColor="#888"
-                                value={item.repeticoes}
+                                value={String(item.repeticoes)}
                                 onChangeText={(text) => {
                                   const newSets = [...sets];
                                   newSets[itemIndex].repeticoes = text;
                                   setSets(newSets);
                                 }}
+                                keyboardType={item.isTimeBased ? 'number-pad' : 'default'}
                               />
                               <TextInput
                                 style={styles.setInput}
@@ -706,7 +694,7 @@ const handleSaveExercicio = () => {
                                 value={String(item.peso || '')}
                                 onChangeText={(text) => {
                                   const newSets = [...sets];
-                                  newSets[itemIndex].peso = parseFloat(text) || 0;
+                                  newSets[itemIndex].peso = parseFloat(text.replace(',', '.')) || 0;
                                   setSets(newSets);
                                 }}
                               />
@@ -722,9 +710,14 @@ const handleSaveExercicio = () => {
                               <Animated.View entering={SlideInUp.duration(200)} exiting={SlideOutDown.duration(200)}>
                                 <View style={styles.setMenu}>
                                   {item.type === 'normal' && (
-                                    <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('addDropset', itemIndex)}>
-                                      <Text style={styles.setMenuText}>Adicionar Dropset</Text>
-                                    </TouchableOpacity>
+                                    <>
+                                      <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('toggleTime', itemIndex)}>
+                                        <Text style={styles.setMenuText}>{item.isTimeBased ? 'Usar Reps' : 'Usar Tempo'}</Text>
+                                      </TouchableOpacity>
+                                      <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('addDropset', itemIndex)}>
+                                        <Text style={styles.setMenuText}>Adicionar Dropset</Text>
+                                      </TouchableOpacity>
+                                    </>
                                   )}
                                   <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('copy', itemIndex)}>
                                     <Text style={styles.setMenuText}>Copiar Série</Text>
@@ -758,7 +751,10 @@ const handleSaveExercicio = () => {
                         <>
                           {/* Oculta o botão de adicionar série se for o segundo exercício de um bi-set */}
                           {!(editingExercicioIndex !== null && treino.exercicios?.[editingExercicioIndex]?.isBiSet) && (
-                            <TouchableOpacity style={styles.addSetButton} onPress={() => setSets([...sets, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}>
+                            <TouchableOpacity style={styles.addSetButton} onPress={() => {
+                              const lastSet = sets.length > 0 ? sets[sets.length - 1] : { repeticoes: '8-12', peso: 10, type: 'normal', isTimeBased: false };
+                              setSets([...sets, { id: `set-${Date.now()}`, repeticoes: lastSet.repeticoes, peso: lastSet.peso, type: 'normal', isTimeBased: lastSet.isTimeBased }]);
+                            }}>
                               <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
                             </TouchableOpacity>
                           )}

@@ -14,4 +14,5 @@ export interface Log {
   horarioInicio: any; // Idealmente, um tipo mais específico como Date ou Timestamp
   horarioFim?: any;
   lastInterval?: number | null; // Adicione esta linha
+  cargaAcumulada?: number;
 }

@@ -14,9 +14,17 @@
 
 3. Compilando:
 
+android
+
   ```
   npx react-native build-android --mode=release
   ```
+
+IOS
+  ```
+  eas build --platform ios 
+  ```
+
 
 ## Lembretes:
 

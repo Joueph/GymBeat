@@ -1,23 +1,20 @@
-import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { FontAwesome } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Haptics from 'expo-haptics'; // ADICIONADO Haptics
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'; // ADICIONADO Image
 import DraggableFlatList, { RenderItemParams, } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView, RectButton, Swipeable } from 'react-native-gesture-handler';
+import Animated, { FadeInLeft } from 'react-native-reanimated'; // ADICIONADO FadeInLeft
 import { SafeAreaView } from 'react-native-safe-area-context';
-// import AsyncStorage from '@react-native-async-storage/async-storage'; // Removed for pagination
-import { VideoView as Video, useVideoPlayer } from 'expo-video';
+import { Exercicio, ExercicioModelo, Serie } from '../../models/exercicio';
 import { DiaSemana, Treino } from '../../models/treino';
-import { getExerciciosModelos } from '../../services/exercicioService';
 import { addTreinoToFicha, deleteTreino, getTreinoById, updateTreino } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
-
-// NOTE: The Exercicio model needs to be updated to support per-set data. 
-// The 'series: number', 'repeticoes: string', and 'peso: number' should be replaced with 'series: Serie[]'
-import { DocumentSnapshot } from 'firebase/firestore'; // Import DocumentSnapshot
-import Animated, { SlideInUp, SlideOutDown } from 'react-native-reanimated';
-import { Exercicio, ExercicioModelo, Serie } from '../../models/exercicio';
-
+import { EditarExercicioNoTreinoModal } from './modals/editarExercícioNoTreinoModal';
+import { SelectExerciseModal } from './modals/SelectExerciseModal';
 
 
 // A interface Serie agora inclui um tipo para diferenciar séries normais de dropsets.
@@ -32,33 +29,58 @@ interface SerieEdit extends Serie {
 const DIAS_SEMANA: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
 // const EXERCICIOS_CACHE_KEY = 'exerciciosModelosCache'; // Removed for pagination
 
-// A new component to manage each video player instance, now with WebP support
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
+  const [localUri, setLocalUri] = useState<string | null>(null);
   const isWebP = uri?.toLowerCase().includes('.webp');
 
-  const player = useVideoPlayer(isWebP ? null : uri, (player) => {
+  useEffect(() => {
+    const manageMedia = async () => {
+      if (!uri) return;
+      const fileName = uri.split('/').pop()?.split('?')[0];
+      if (!fileName) return;
+
+      const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
+      // CORRIGIDO: Usando FileSystem.getInfoAsync
+      const fileInfo = await FileSystem.getInfoAsync(localFileUri);
+
+      if (fileInfo.exists) {
+        setLocalUri(localFileUri);
+      } else {
+        try {
+          // CORRIGIDO: Usando FileSystem.downloadAsync
+          await FileSystem.downloadAsync(uri, localFileUri);
+          setLocalUri(localFileUri);
+        } catch (e) {
+          console.error("Erro ao baixar a mídia:", e);
+          setLocalUri(uri); // Fallback para a URL remota em caso de erro
+        }
+      }
+    };
+
+    manageMedia();
+  }, [uri]);
+
+  const player = useVideoPlayer(isWebP ? null : localUri, (player) => {
     player.loop = true;
     player.muted = true;
     player.play();
   });
 
-  // useEffect for player cleanup.
   useEffect(() => {
-    // Cleanup the player when the component unmounts or the URI changes.
     return () => {
-      // Only release the player if it was actually used (i.e., not a WebP image)
-      if (!isWebP) {
+      if (!isWebP && player) {
         player.release();
       }
     };
-  }, [uri, player, isWebP]);
+  }, [localUri, player, isWebP]);
 
-  // If the URI points to a WebP image, render an Image component instead.
+  if (!localUri) {
+    return <View style={[style, { backgroundColor: '#333' }]}><ActivityIndicator color="#fff" /></View>;
+  }
+
   if (isWebP) {
-    // We need to import the Image component from 'react-native' for this to work.
-    // Assuming the import is added at the top of the file.
-    const { Image } = require('react-native');
-    return <Image source={{ uri }} style={style} />;
+    // CORRIGIDO: Usa a importação de 'Image' do topo do ficheiro
+    return <Image source={{ uri: localUri }} style={style} />;
   }
 
   return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
@@ -72,13 +94,15 @@ const LeftActions = ({ onPress }: { onPress: () => void }) => {
   );
 };
 
+// CORREÇÃO: Removida a declaração duplicada de 'RightActions'
 const RightActions = ({ onPress }: { onPress: () => void }) => {
   return (
     <RectButton style={styles.deleteBox} onPress={onPress}>
-      <FontAwesome name="trash-o" size={24} color="white" />
+      <FontAwesome name="trash" size={24} color="white" />
     </RectButton>
   );
 };
+
 
 export default function EditarTreinoScreen() {
   const router = useRouter();
@@ -89,84 +113,37 @@ export default function EditarTreinoScreen() {
   const [treino, setTreino] = useState<Partial<Treino>>({ nome: '', diasSemana: [], intervalo: { min: 1, seg: 0 }, exercicios: [] });
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  
-  // State for exercise models, now with pagination and caching
-  const [exerciciosModelos, setExerciciosModelos] = useState<ExercicioModelo[]>([]);
-  const [lastVisibleDoc, setLastVisibleDoc] = useState<DocumentSnapshot | null>(null); // For Firestore pagination
-  const [loadingMoreExercicios, setLoadingMoreExercicios] = useState(false);
-  const [allExerciciosLoaded, setAllExerciciosLoaded] = useState(false);
-  const EXERCICIOS_PAGE_SIZE = 20; // Define page size
 
-  const [isModalVisible, setModalVisible] = useState(false);
+  const [isSelectExerciseModalVisible, setSelectExerciseModalVisible] = useState(false);
   const [isExercicioModalVisible, setExercicioModalVisible] = useState(false);
-  const [selectedExercicioModelo, setSelectedExercicioModelo] = useState<ExercicioModelo | null>(null);
+  const [exercicioSendoEditado, setExercicioSendoEditado] = useState<Exercicio | null>(null);
   const [editingExercicioIndex, setEditingExercicioIndex] = useState<number | null>(null);
-  // New state to manage the list of sets for an exercise
-  const [sets, setSets] = useState<SerieEdit[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
-  const [currentSearchInput, setCurrentSearchInput] = useState(''); // What the user types
-  const [activeSearchTerm, setActiveSearchTerm] = useState('');     // What is actively being searched for
-  // This useEffect now only loads the Treino being edited
-  useEffect(() => {
-    const fetchTreinoData = async () => {
-      if (!treinoId) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      try {
-        const treinoData = await getTreinoById(treinoId as string);
-        if (treinoData) {
-          setTreino(treinoData);
-        }
-      } catch (error) {
-        Alert.alert("Erro", "Não foi possível carregar os dados do treino.");
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchTreinoData();
-  }, [treinoId]);
 
-  // Effect to handle loading exercises when modal opens or search term changes
-  useEffect(() => {
-    if (isModalVisible) {
-      // Reset pagination state if a new search term is active or if we need to load initially
-      // This ensures that when a search term changes, we start from the first page of results
-      // or when the modal opens for the first time, we load the initial page.
-      setExerciciosModelos([]);
-      setLastVisibleDoc(null);
-      setAllExerciciosLoaded(false);
-      loadMoreExercicios();
+  const fetchTreinoData = useCallback(async () => {
+    if (!treinoId) {
+      setLoading(false);
+      return;
     }
-  }, [activeSearchTerm, isModalVisible]); // Depend on activeSearchTerm and isModalVisible
-
-  const loadMoreExercicios = useCallback(async () => {
-    if (loadingMoreExercicios || allExerciciosLoaded) return;
-
-    setLoadingMoreExercicios(true);
+    setLoading(true);
     try {
-      const { exercicios: newExercicios, lastVisibleDoc: newLastVisibleDoc } = await getExerciciosModelos({
-        lastVisibleDoc: lastVisibleDoc,
-        limit: EXERCICIOS_PAGE_SIZE,
-        searchTerm: activeSearchTerm // Pass the active search term to the service
-      });
-
-      if (newExercicios && newExercicios.length > 0) {
-        setExerciciosModelos(prev => [...prev, ...newExercicios]);
-        setLastVisibleDoc(newLastVisibleDoc);
-      } else {
-        setAllExerciciosLoaded(true); // No more exercises to load
+      const treinoData = await getTreinoById(treinoId as string);
+      if (treinoData) {
+        setTreino(treinoData);
       }
     } catch (error) {
-      console.error("Erro ao carregar mais exercícios:", error);
-      Alert.alert("Erro", "Não foi possível carregar mais exercícios.");
-    } finally { // Dependencies for useCallback
-      setLoadingMoreExercicios(false);
+      Alert.alert("Erro", "Não foi possível carregar os dados do treino.");
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
-  }, [loadingMoreExercicios, allExerciciosLoaded, lastVisibleDoc, activeSearchTerm]);
+  }, [treinoId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchTreinoData();
+        }
+    , [fetchTreinoData])
+  );
 
   const handleDelete = async () => {
     if (!treinoId || typeof treinoId !== 'string' || !fichaId || typeof fichaId !== 'string') return;
@@ -253,60 +230,48 @@ export default function EditarTreinoScreen() {
   };
 
   const openAddExercicioModal = () => {
-    setModalVisible(true);
+    setSelectExerciseModalVisible(true);
     // The useEffect for activeSearchTerm and isModalVisible will handle the initial load
-    setModalVisible(true);
+    setSelectExerciseModalVisible(true);
   };
 
   const openExercicioModal = (modelo: ExercicioModelo) => {
-    setModalVisible(false);
-    setSelectedExercicioModelo(modelo);
+    setSelectExerciseModalVisible(false);
+    const newExercise: Exercicio = {
+      modelo: modelo,
+      modeloId: modelo.id,
+      series: [{ id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal', isTimeBased: false }],
+      isBiSet: false,
+    };
+    setExercicioSendoEditado(newExercise);
     setEditingExercicioIndex(null); // Ensure we are in "add" mode
-    // Reset search and pagination states when moving to add/edit exercise modal
-    setCurrentSearchInput('');
-    setActiveSearchTerm('');
-    setSelectedGroup(null);
-    setExerciciosModelos([]);
-    setLastVisibleDoc(null);
-    // Initialize with one default rep-based set when adding a new exercise
-    setSets([{ id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal', isTimeBased: false }]);
     setExercicioModalVisible(true);
   };
 
-const handleSaveExercicio = () => {
-    if (!selectedExercicioModelo || sets.length === 0 || sets.some(s => !s.repeticoes)) {
+const handleSaveExercicio = (newSeries: SerieEdit[], pesoBarra?: number) => {
+    if (!exercicioSendoEditado || newSeries.length === 0 || newSeries.some(s => !s.repeticoes)) {
       Alert.alert("Erro", "O exercício deve ter pelo menos uma série e todas as séries devem ter repetições definidas.");
       return;
     }
 
-    const novoExercicio: Exercicio = {
-      modelo: selectedExercicioModelo,
-      modeloId: selectedExercicioModelo.id,
-      series: sets.map((s, index) => ({
-        id: s.id || `set-${Date.now()}-${index}`,
-        repeticoes: s.repeticoes || '',
-        peso: s.peso || 0,
-        type: s.type || 'normal',
-        isTimeBased: s.isTimeBased || false,
-      })),
-      // Garante que isBiSet seja sempre um booleano
-      isBiSet: (editingExercicioIndex !== null && treino.exercicios?.[editingExercicioIndex]?.isBiSet) || false,
+    const updatedExercise: Exercicio = {
+      ...exercicioSendoEditado,
+      series: newSeries,
+      pesoBarra: pesoBarra,
     };
 
-    // 1. Criar uma cópia mutável da lista de exercícios
     const updatedExercicios = [...(treino.exercicios || [])];
 
     if (editingExercicioIndex !== null) {
-      // 2. Atualizar o exercício principal na cópia
-      updatedExercicios[editingExercicioIndex] = novoExercicio;
+      updatedExercicios[editingExercicioIndex] = updatedExercise;
 
-      // 3. Verificar se este exercício é a primeira parte de um bi-set
       const nextExercicio = updatedExercicios[editingExercicioIndex + 1];
-      if (nextExercicio && nextExercicio.isBiSet) {
-        const targetSeriesCount = novoExercicio.series.length;
+      const isLeaderOfBiSet = !updatedExercise.isBiSet && nextExercicio?.isBiSet;
+
+      if (isLeaderOfBiSet) {
+        const targetSeriesCount = updatedExercise.series.length;
         let partnerSeries = [...nextExercicio.series];
 
-        // Sincroniza (adiciona ou remove séries) para igualar a contagem
         while (partnerSeries.length < targetSeriesCount) {
           const lastSerie = partnerSeries.length > 0 ? partnerSeries[partnerSeries.length - 1] : { id: `set-sync-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' as const };
           partnerSeries.push({ ...lastSerie, id: `set-sync-${Date.now()}-${partnerSeries.length}`, isTimeBased: lastSerie.isTimeBased });
@@ -314,45 +279,17 @@ const handleSaveExercicio = () => {
         if (partnerSeries.length > targetSeriesCount) {
           partnerSeries = partnerSeries.slice(0, targetSeriesCount);
         }
-
-        // 4. Atualizar o exercício parceiro do bi-set na cópia
         updatedExercicios[editingExercicioIndex + 1] = { ...nextExercicio, series: partnerSeries };
       }
     } else {
-      // Adicionando um novo exercício
-      updatedExercicios.push(novoExercicio);
+      updatedExercicios.push(updatedExercise);
     }
 
-    // 5. Atualizar o estado do treino UMA VEZ com a lista completamente modificada
     setTreino(prev => ({ ...prev, exercicios: updatedExercicios }));
 
-    // Limpar e fechar o modal
     setExercicioModalVisible(false);
-    setSelectedExercicioModelo(null);
+    setExercicioSendoEditado(null);
     setEditingExercicioIndex(null);
-    setSets([]);
-  };
-
-  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
-    const newSets = [...sets];
-    newSets.forEach((set, i) => { if (i !== index) set.showMenu = false; });
-  
-    if (option === 'delete') {
-      newSets.splice(index, 1);
-    } else if (option === 'copy') {
-      newSets.splice(index + 1, 0, { ...newSets[index], id: `set-${Date.now()}`, showMenu: false });
-    } else if (option === 'addDropset') {
-      const parentSet = newSets[index];
-      newSets.splice(index + 1, 0, { id: `set-${Date.now()}`, repeticoes: parentSet.repeticoes, peso: (parentSet.peso ?? 10) * 0.7, type: 'dropset', showMenu: false });
-    } else if (option === 'toggleTime') {
-      const currentSet = newSets[index];
-      currentSet.isTimeBased = !currentSet.isTimeBased;
-      // Define valores padrão ao alternar
-      currentSet.repeticoes = currentSet.isTimeBased ? '30' : '8-12'; 
-    }
-  
-    if (newSets[index]) newSets[index].showMenu = false;
-    setSets(newSets);
   };
   
   const removeExercicio = (index: number) => {
@@ -360,32 +297,8 @@ const handleSaveExercicio = () => {
   };
 
   const openEditExercicioModal = (exercicio: Exercicio, index: number) => {
-    setModalVisible(false); // Close selection modal if open
-    // Reset search and pagination states when moving to add/edit exercise modal
-    setCurrentSearchInput('');
-    setActiveSearchTerm('');
-    setSelectedGroup(null);
-    setExerciciosModelos([]);
-    setLastVisibleDoc(null);
-    setAllExerciciosLoaded(false);
-
-    setSelectedExercicioModelo(exercicio.modelo);
-    // @ts-ignore - Assuming old and new structures might coexist during transition
-    if (exercicio.series && typeof exercicio.series !== 'number') {
-      // New structure
-      setSets(exercicio.series.map(s => ({ ...s, id: s.id || `set-${Date.now()}`, type: s.type || 'normal', isTimeBased: s.isTimeBased || false })));
-    } else {
-      // Old structure: convert to new structure for editing
-      const numberOfSets = (exercicio as any).series || 1;
-      const newSets = Array.from({ length: numberOfSets }, (_, i) => ({
-        id: `set-${Date.now()}-${i}`,
-        repeticoes: (exercicio as any).repeticoes || '8-12',
-        peso: (exercicio as any).peso || 10,
-        type: 'normal' as 'normal' | 'dropset',
-        isTimeBased: false,
-      }));
-      setSets(newSets);
-    }
+    setSelectExerciseModalVisible(false); // Close selection modal if open
+    setExercicioSendoEditado(exercicio);
     setEditingExercicioIndex(index);
     setExercicioModalVisible(true);
   };
@@ -424,7 +337,8 @@ const handleSaveExercicio = () => {
   
     updatedExercicios[index] = currentExercicio;
     setTreino(prev => ({ ...prev, exercicios: updatedExercicios }));
-    require('expo-haptics').impactAsync(require('expo-haptics').ImpactFeedbackStyle.Medium);
+    // CORRIGIDO: Usa a importação de Haptics
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const totalSets = useMemo(() => {
@@ -437,12 +351,6 @@ const handleSaveExercicio = () => {
       return (item as any).series || 0;
     };
   }, []);
-
-  const filteredExercicios = useMemo(() => { // Filtered exercises now only filters by group, as search is handled by the backend
-    return exerciciosModelos.filter(ex => selectedGroup ? ex.grupoMuscular === selectedGroup : true);
-  }, [exerciciosModelos, selectedGroup]);
-
-  const muscleGroups = useMemo(() => [...new Set(exerciciosModelos.map(e => e.grupoMuscular))], [exerciciosModelos]);
 
   if (loading) {
     return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
@@ -465,7 +373,8 @@ const handleSaveExercicio = () => {
           >
             <FontAwesome name="link" size={20} color={isPartOfBiSet ? '#1cb0f6' : '#666'} />
             {isPartOfBiSet && (
-              <Animated.Text entering={require('react-native-reanimated').FadeInLeft.duration(400)} style={styles.biSetLabel}>
+              // CORRIGIDO: Usa a importação de FadeInLeft
+              <Animated.Text entering={FadeInLeft.duration(400)} style={styles.biSetLabel}>
                 Bi-set
               </Animated.Text>
             )}
@@ -556,231 +465,22 @@ const handleSaveExercicio = () => {
           }
         />
 
-        <Modal visible={isModalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)} presentationStyle="pageSheet">
-          <View style={styles.modalContainer}>
-              <Text style={styles.modalTitle}>Selecionar Exercício</Text>
-              <View style={styles.searchContainer}>
-                  <TextInput
-                      style={styles.searchInput}
-                      placeholder="Buscar exercício..."
-                      value={currentSearchInput}
-                      onChangeText={setCurrentSearchInput}
-                      placeholderTextColor="#888"
-                      onSubmitEditing={() => setActiveSearchTerm(currentSearchInput)} // Trigger search on submit
-                  />
-                  {currentSearchInput.length > 0 && (
-                      <TouchableOpacity
-                          style={styles.clearSearchButton}
-                          onPress={() => {
-                              setCurrentSearchInput('');
-                              setActiveSearchTerm('');
-                          }}
-                      >
-                          <FontAwesome name="times-circle" size={20} color="#888" />
-                      </TouchableOpacity>
-                  )}
-                  {currentSearchInput.length > 0 && (
-                      <TouchableOpacity style={styles.searchIconButton} onPress={() => setActiveSearchTerm(currentSearchInput)}>
-                          <FontAwesome name="search" size={20} color="#1cb0f6" />
-                      </TouchableOpacity>
-                  )}
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.groupSelector} contentContainerStyle={{ paddingRight: 15 }}>
-                  <TouchableOpacity style={[styles.groupButton, !selectedGroup && styles.groupSelected]} onPress={() => setSelectedGroup(null)}>
-                      <Text style={styles.groupText}>Todos</Text>
-                  </TouchableOpacity>
-                  {muscleGroups.map((group: string | null) => group && (
-                      <TouchableOpacity key={group} style={[styles.groupButton, selectedGroup === group && styles.groupSelected]} onPress={() => setSelectedGroup(group)}>
-                          <Text style={styles.groupText}>{group}</Text>
-                      </TouchableOpacity>
-                  ))}
-              </ScrollView>
+        <SelectExerciseModal
+          visible={isSelectExerciseModalVisible}
+          onClose={() => setSelectExerciseModalVisible(false)}
+          onSelect={openExercicioModal}
+        />
 
-              <FlatList
-                  data={filteredExercicios}
-                  keyExtractor={item => item.id}
-                  onEndReached={loadMoreExercicios} // Call loadMoreExercicios when scrolling to end
-                  onEndReachedThreshold={0.5} // Adjust as needed
-                  ListFooterComponent={loadingMoreExercicios ? <ActivityIndicator style={{ marginVertical: 20 }} color="#fff" /> : null}
-                  renderItem={({ item }) => {
-                    // ALTERAÇÃO: A URL agora vem diretamente do campo 'imagemUrl' do modelo.
-                    const videoUri = item.imagemUrl;
-                    
-                    // Opcional: manter o log para depuração
-                    console.log("URL do vídeo do modelo:", videoUri); 
-                    
-                    return (
-                        <TouchableOpacity style={styles.modeloCard} onPress={() => openExercicioModal(item)}>
-                            {/* O componente VideoListItem recebe a nova URI sem precisar de outras mudanças */}
-                            <VideoListItem style={styles.modeloVideo} uri={videoUri} />
-                            <Text style={styles.modeloName} numberOfLines={2}>{item.nome}</Text>
-                        </TouchableOpacity>
-                    );
-                  }}
-                  ListEmptyComponent={
-                    loadingMoreExercicios ? // Use loadingMoreExercicios for initial and subsequent loads
-                    <ActivityIndicator style={{ marginTop: 40 }} size="large" color="#fff" /> :
-                    <Text style={styles.emptyListText}>Nenhum exercício encontrado.</Text>
-                  }
-              />
-
-              <TouchableOpacity style={styles.closeButton} onPress={() => {
-                  setModalVisible(false);
-                  // Reset search and pagination states when modal closes
-                  setCurrentSearchInput('');
-                  setActiveSearchTerm('');
-                  setSelectedGroup(null);
-                  setExerciciosModelos([]);
-                  setLastVisibleDoc(null);
-                  setAllExerciciosLoaded(false);
-              }}>
-                  <Text style={styles.closeButtonText}>Fechar</Text>
-              </TouchableOpacity>
-          </View>
-        </Modal>
-        <Modal
-          animationType="slide"
-          presentationStyle="pageSheet"
-          visible={isExercicioModalVisible} // Use the correct state variable
-          onRequestClose={() => setExercicioModalVisible(false)}
-        >
-          <SafeAreaView style={styles.modalSafeArea}>
-                    <View style={styles.modalHeader}>
-                      <Text style={styles.modalHeaderText}>Editando exercício</Text>
-                      <TouchableOpacity onPress={() => {
-                          setExercicioModalVisible(false);
-                          setSelectedExercicioModelo(null);
-                          setEditingExercicioIndex(null);
-                          setSets([]);
-                      }}><FontAwesome name="chevron-down" size={22} color="#fff" /></TouchableOpacity>
-                    </View>
-                    <DraggableFlatList
-                      data={sets}
-                      style={{ width: '100%' }}
-                      contentContainerStyle={styles.modalScrollViewContent}
-                      keyExtractor={(item) => item.id!}
-                      onDragEnd={({ data }) => setSets(data)}
-                      renderItem={({ item, drag, isActive, getIndex }) => {
-                        const itemIndex = getIndex();
-                        if (itemIndex === undefined) return null;
-
-                        // Contagem de séries normais para exibição
-                        const normalSeriesCount = sets.slice(0, itemIndex + 1).filter(s => s.type === 'normal').length;
-
-                        return (
-                          <View style={{ marginLeft: item.type === 'dropset' ? 30 : 0, marginBottom: 10 }}>
-                            <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#1f1f1f'}]}>
-                              <TouchableOpacity onLongPress={drag} style={{ paddingHorizontal: 10 }} disabled={isActive}>
-                                 <FontAwesome5 name={item.type === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" /> 
-                              </TouchableOpacity>
-                              <Text style={styles.setText}>{item.type === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
-                              <TextInput
-                                style={styles.setInput}
-                                placeholder={item.isTimeBased ? "Tempo (s)" : "Reps"}
-                                placeholderTextColor="#888"
-                                value={String(item.repeticoes)}
-                                onChangeText={(text) => {
-                                  const newSets = [...sets];
-                                  newSets[itemIndex].repeticoes = text;
-                                  setSets(newSets);
-                                }}
-                                keyboardType={item.isTimeBased ? 'number-pad' : 'default'}
-                              />
-                              <TextInput
-                                style={styles.setInput}
-                                placeholder="kg"
-                                placeholderTextColor="#888"
-                                keyboardType="numeric"
-                                value={String(item.peso || '')}
-                                onChangeText={(text) => {
-                                  const newSets = [...sets];
-                                  newSets[itemIndex].peso = parseFloat(text.replace(',', '.')) || 0;
-                                  setSets(newSets);
-                                }}
-                              />
-                              <TouchableOpacity style={{ padding: 10 }} onPress={() => {
-                                const newSets = [...sets];
-                                newSets.forEach((s, i) => s.showMenu = i === itemIndex ? !s.showMenu : false);
-                                setSets(newSets);
-                              }}>
-                                  <FontAwesome name="ellipsis-v" size={20} color="#ccc" />
-                              </TouchableOpacity>
-                            </View>
-                            {item.showMenu && (
-                              <Animated.View entering={SlideInUp.duration(200)} exiting={SlideOutDown.duration(200)}>
-                                <View style={styles.setMenu}>
-                                  {item.type === 'normal' && (
-                                    <>
-                                      <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('toggleTime', itemIndex)}>
-                                        <Text style={styles.setMenuText}>{item.isTimeBased ? 'Usar Reps' : 'Usar Tempo'}</Text>
-                                      </TouchableOpacity>
-                                      <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('addDropset', itemIndex)}>
-                                        <Text style={styles.setMenuText}>Adicionar Dropset</Text>
-                                      </TouchableOpacity>
-                                    </>
-                                  )}
-                                  <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('copy', itemIndex)}>
-                                    <Text style={styles.setMenuText}>Copiar Série</Text>
-                                  </TouchableOpacity>
-                                  <TouchableOpacity style={[styles.setMenuButton, { borderBottomWidth: 0 }]} onPress={() => handleSetOption('delete', itemIndex)}>
-                                    <Text style={[styles.setMenuText, { color: '#ff3b30' }]}>Deletar</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </Animated.View>
-                            )}
-                          </View>
-                        )
-                      }}
-                      ListHeaderComponent={
-                        <>
-                          <View style={styles.exerciseInfoCard}>
-                            {selectedExercicioModelo?.imagemUrl && (
-                                <VideoListItem
-                                    uri={selectedExercicioModelo.imagemUrl}
-                                    style={styles.addExercicioModalVideo}
-                                />
-                            )}
-                            <View style={{ flex: 1, marginLeft: 15 }}>
-                              <Text style={styles.modalExerciseName}>{selectedExercicioModelo?.nome}</Text>
-                              <Text style={styles.modalMuscleGroup}>{selectedExercicioModelo?.grupoMuscular}</Text>
-                            </View>
-                          </View>
-                        </>
-                      }
-                      ListFooterComponent={
-                        <>
-                          {/* Oculta o botão de adicionar série se for o segundo exercício de um bi-set */}
-                          {!(editingExercicioIndex !== null && treino.exercicios?.[editingExercicioIndex]?.isBiSet) && (
-                            <TouchableOpacity style={styles.addSetButton} onPress={() => {
-                              const lastSet = sets.length > 0 ? sets[sets.length - 1] : { repeticoes: '8-12', peso: 10, type: 'normal', isTimeBased: false };
-                              setSets([...sets, { id: `set-${Date.now()}`, repeticoes: lastSet.repeticoes, peso: lastSet.peso, type: 'normal', isTimeBased: lastSet.isTimeBased }]);
-                            }}>
-                              <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
-                            </TouchableOpacity>
-                          )}
-
-                          <View style={styles.modalButtons}>
-                              <TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => {
-                                  setExercicioModalVisible(false);
-                                  setSelectedExercicioModelo(null);
-                                  setEditingExercicioIndex(null);
-                                  setSets([]);
-                                  // Se estiver adicionando um novo exercício (não editando), reabra o modal de seleção.
-                                  if (editingExercicioIndex === null) {
-                                      setModalVisible(true);
-                                  }
-                              }}>
-                                  <Text style={[styles.textStyle, {color: '#ff3b30'}]}>Cancelar</Text>
-                              </TouchableOpacity>
-                              <TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExercicio}>
-                                  <Text style={styles.textStyle}>{editingExercicioIndex !== null ? 'Salvar' : 'Adicionar'}</Text>
-                              </TouchableOpacity>
-                          </View>
-                        </>
-                      }
-                    />
-          </SafeAreaView>
-        </Modal>
+        <EditarExercicioNoTreinoModal
+          visible={isExercicioModalVisible}
+          onClose={() => {
+            setExercicioModalVisible(false);
+            setExercicioSendoEditado(null);
+            setEditingExercicioIndex(null);
+          }}
+          exercise={exercicioSendoEditado}
+          onSave={handleSaveExercicio}
+        />
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -860,6 +560,7 @@ const styles = StyleSheet.create({
     width: 80,
     borderRadius: 8,
   },
+  
   editBox: {
     backgroundColor: '#1cb0f6',
     justifyContent: 'center',
@@ -869,50 +570,6 @@ const styles = StyleSheet.create({
   },
 
   // Modal Styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#0d181c',
-    paddingTop: 50,
-    paddingHorizontal: 15,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-    backgroundColor: '#222',
-    borderRadius: 8,
-    paddingRight: 10, // Space for icons
-  },
-  searchInput: {
-    flex: 1,
-    color: '#fff',
-    padding: 12, // Padding inside the text input
-    fontSize: 16,
-  },
-  clearSearchButton: {
-    padding: 5,
-    marginRight: 5,
-  },
-  searchIconButton: {
-    padding: 5,
-  },
-  groupSelector: { marginBottom: 15 },
-  groupButton: { height: 40, paddingHorizontal: 16, backgroundColor: '#222', borderRadius: 20, marginRight: 10, justifyContent: 'center', paddingBottom: 2 },
-  groupSelected: { backgroundColor: '#1cb0f6' },
-  groupText: { color: '#fff', fontWeight: '500', textAlign: 'center' },
-  modeloCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', padding: 10, borderRadius: 8, marginBottom: 10 },
-  modeloVideo: { width: 50, height: 50, borderRadius: 5, marginRight: 15, backgroundColor: '#333' },
-  modeloName: { color: '#fff', fontSize: 16, flex: 1, flexWrap: 'wrap' },
-  emptyListText: { color: '#aaa', textAlign: 'center', marginTop: 40 },
-  closeButton: { backgroundColor: '#ff3b30', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 15, marginBottom: 20 },
-  closeButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 
   // Add Exercicio Modal
   modalHeader: {
@@ -1029,38 +686,5 @@ const styles = StyleSheet.create({
     borderBottomColor: '#2f2f2f',
     height: 65,
   },
-  setText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    flex: 1,
-  },
-  setInput: {
-    backgroundColor: '#2c2c2e',
-    flex: 1,
-    color: '#fff',
-    padding: 8,
-    borderRadius: 5,
-    textAlign: 'center',
-    marginHorizontal: 5,
-  },
-  addSetButton: { padding: 10, marginTop: 10, backgroundColor: '#2c2c2e', borderRadius: 8, width: '100%', alignItems: 'center', flexGrow: 1 },
-  addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },
-  setMenu: {
-    backgroundColor: '#2c2c2e',
-    borderRadius: 8,
-    marginTop: -5,
-    marginBottom: 5,
-    zIndex: -1,
-    paddingTop: 5,
-  },
-  setMenuButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#444',
-  },
-  setMenuText: {
-    color: '#fff',
-    fontSize: 14,
-  },
+
 });

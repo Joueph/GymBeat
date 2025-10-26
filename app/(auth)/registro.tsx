@@ -192,7 +192,7 @@ export default function CadastroScreen() {
                 <TouchableOpacity style={styles.welcomePrimaryButton} onPress={handleNext}>
                   <Text style={styles.welcomePrimaryButtonText}>Vamos começar seu registro</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => router.push("/login")}>
+                <TouchableOpacity onPress={() => router.push("./login")}>
                   <Text style={styles.welcomeSecondaryButtonText}>Já tenho uma conta (Login)</Text>
                 </TouchableOpacity>
               </View>
@@ -318,35 +318,16 @@ export default function CadastroScreen() {
       case 7: // Nome e Resumo
         return(
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
-            {/* --- Seção de Resumo --- */}
             <View style={styles.finalSummaryContainer}>
-              <TouchableOpacity style={styles.summaryPfpContainer} onPress={handlePickImage}>
+              <TouchableOpacity onPress={handlePickImage}>
                 {photoURI ? (
-                  <Image source={{ uri: photoURI }} style={styles.pfpPlaceholderMedium} />
+                  <Image source={{ uri: photoURI }} style={styles.pfp} />
                 ) : (
-                  <View style={styles.pfpPlaceholderMedium}>
-                    <FontAwesome name="camera" size={30} color="#555" />
+                  <View style={styles.pfpPlaceholder}>
+                    <FontAwesome name="camera" size={40} color="#555" />
                   </View>
                 )}
-                <Text style={styles.pfpSubtext}>Toque para adicionar uma foto</Text>
               </TouchableOpacity>
-
-              <View style={styles.summaryInfoRow}>
-                <Text style={styles.summaryInfoText}>{genero?.charAt(0) || 'N/A'}</Text>
-                <View style={styles.summaryDivider} />
-                <Text style={styles.summaryInfoText}>{altura}cm</Text>
-                <View style={styles.summaryDivider} />
-                <Text style={styles.summaryInfoText}>{peso}Kg</Text>
-              </View>
-
-              <View style={styles.summaryGoalContainer}>
-                <Image source={getStreakImage()} style={styles.streakImageTiny} />
-                <View style={styles.summaryDividerVertical} />
-                <View>
-                  <Text style={styles.summaryGoalNumber}>{weeksStreakGoal}</Text>
-                  <Text style={styles.summaryGoalText}>Semanas</Text>
-                </View>
-              </View>
             </View>
 
             {/* --- Campos do Formulário --- */}

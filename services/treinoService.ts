@@ -7,6 +7,16 @@ import { TreinoModelo } from '../models/treinoModelo';
 
 export type DiaSemana = 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab' | 'dom';
 
+// Objeto de fallback para garantir que 'caracteristicas' sempre exista
+const defaultModelo = (id: string): ExercicioModelo => ({
+  id: id || 'unknown',
+  nome: 'Exercício Desconhecido',
+  grupoMuscular: '',
+  imagemUrl: '',
+  caracteristicas: { isPesoBilateral: false, isPesoCorporal: false, usaBarra: false },
+  tipo: ''
+});
+
 /**
  * Helper function to resolve exercise models from DocumentReferences.
  * This is used by both TreinoModelo and user-specific Treino fetching.
@@ -14,30 +24,55 @@ export type DiaSemana = 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab' | 'dom';
 const resolveExercicios = async (exerciciosData: any[]): Promise<Exercicio[]> => {
   return Promise.all(
     (exerciciosData || []).map(async (exData: any) => {
-      // Check if ex.modelo is a DocumentReference (v9+ compatible check)
-      if (exData.modelo && exData.modelo.path && exData.modelo.converter) {
-        const modeloDoc = await getDoc(exData.modelo);
+      // 1. Determina o ID do modelo, seja de uma referência ou de um campo 'modeloId'
+      // exData.modelo?.path checa se é uma DocumentReference
+      const modeloId = exData.modeloId || (exData.modelo?.path ? exData.modelo.id : null);
+
+      if (!modeloId) {
+        console.warn("Exercício sem modeloId ou referência de modelo válida.", exData);
+        // Retorna o objeto antigo (em cache) se for tudo o que temos
+        return {
+          ...exData,
+          modelo: exData.modelo?.nome ? exData.modelo : defaultModelo('unknown'), // Evita usar a DocumentReference aqui
+          modeloId: exData.modelo?.id || 'unknown',
+        } as Exercicio;
+      }
+
+      // 2. Com o ID, busca os dados mais recentes do modelo
+      try {
+        // !!! IMPORTANTE: Confirme se 'exerciciosModelos' é o nome da sua coleção.
+        const modeloRef = doc(db, 'exerciciosModelos', modeloId);
+        const modeloDoc = await getDoc(modeloRef);
+
         if (modeloDoc.exists()) {
-          // Combine a base do exercício do modelo (com series, reps, etc.)
-          // com o modelo de exercício resolvido.
+          // 3. Encontrado! Mescla os dados do treino (exData) com o modelo ATUALIZADO.
+          const modeloData = modeloDoc.data() as ExercicioModelo;
           return {
-            ...exData, // Preserva campos como 'series', 'repeticoes', 'peso' do TreinoModelo
-            modelo: { ...(modeloDoc.data() as ExercicioModelo), id: modeloDoc.id },
-            // Garante que o modeloId esteja presente no nível raiz do exercício copiado.
-            // Isso é crucial para referências futuras.
+            ...exData,
+            modelo: { ...modeloData, id: modeloDoc.id }, // Usa o modelo novo
             modeloId: modeloDoc.id,
           } as Exercicio;
+        } else {
+          // 4. Não encontrado. Usa o objeto antigo (exData.modelo) como fallback, se existir e for um objeto.
+          console.warn(`Modelo de exercício com ID ${modeloId} não encontrado. Usando dados em cache (podem estar desatualizados).`);
+          return {
+            ...exData,
+            modelo: (exData.modelo && !exData.modelo.path) ? exData.modelo : defaultModelo(modeloId),
+            modeloId: modeloId,
+          } as Exercicio;
         }
+      } catch (error) {
+        console.error(`Erro ao buscar modelo de exercício: ${error}`, exData);
+        return {
+          ...exData,
+          modelo: (exData.modelo && !exData.modelo.path) ? exData.modelo : defaultModelo(modeloId),
+          modeloId: modeloId,
+        } as Exercicio;
       }
-      // Fallback if modelo reference is invalid or not found, or if it's already an object
-      return {
-        ...exData,
-        modelo: exData.modelo || { id: exData.modeloId || 'unknown', nome: 'Exercício Desconhecido', grupoMuscular: '', dificuldade: '', equipamento: '', imagemUrl: '', instrucoes: [] },
-        modeloId: exData.modeloId || (exData.modelo?.id ?? 'unknown'),
-      } as Exercicio;
     })
   );
 };
+
 
 /**
  * Fetches workout plan models from Firestore by their IDs.
@@ -150,14 +185,23 @@ export const addTreinoToFicha = async (fichaId: string, treinoData: Omit<Treino,
 export const updateTreino = async (treinoId: string, data: Partial<Omit<Treino, 'id' | 'usuarioId'>>): Promise<void> => {
     const dataToUpdate: { [key: string]: any } = { ...data };
 
-    // Garante que o objeto 'modelo' seja preservado nos exercícios ao salvar.
-    // A estrutura do exercício no Firestore deve conter o objeto 'modelo' completo
-    // para que outras partes do app possam exibir nome, imagem, etc.
+    // Garante que o objeto 'modelo' NÃO seja salvo de volta no documento 'treino',
+    // apenas o 'modeloId' é necessário, pois o 'modelo' será resolvido no carregamento.
     if (dataToUpdate.exercicios) {
-        dataToUpdate.exercicios = dataToUpdate.exercicios.map((ex: Exercicio) => ({
-            ...ex,
-            modeloId: ex.modeloId || ex.modelo?.id, // Garante que modeloId esteja presente
-        }));
+        dataToUpdate.exercicios = dataToUpdate.exercicios.map((ex: Exercicio) => {
+            // Cria uma cópia do exercício para não modificar o objeto original
+            const exCopy: { [key: string]: any } = { ...ex };
+            
+            // Garante que modeloId esteja presente
+            if (!exCopy.modeloId && exCopy.modelo?.id) {
+              exCopy.modeloId = exCopy.modelo.id;
+            }
+
+            // Remove o objeto 'modelo' aninhado antes de salvar
+            delete exCopy.modelo; 
+
+            return exCopy;
+        });
     }
     const treinoRef = doc(db, 'treinos', treinoId);
     await updateDoc(treinoRef, dataToUpdate);

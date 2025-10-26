@@ -13,7 +13,7 @@ import { TreinoModelo } from '../../models/treinoModelo';
 import { Usuario } from '../../models/usuario';
 import { copyFichaModeloToUser, getFichasModelos, setFichaAtiva } from '../../services/fichaService';
 import { getTreinosModelosByIds } from '../../services/treinoService';
-import { getUserProfile } from '../../userService';
+import { getUserProfile, updateUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 
 const DIAS_SEMANA_ORDEM: { [key: string]: number } = {
@@ -207,6 +207,21 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     });
   };
 
+  const handleUpdateStreakGoal = async () => {
+    if (!user || !selectedFicha || !selectedFicha.totalDias) return;
+    try {
+      await updateUserProfile(user.uid, { streakGoal: selectedFicha.totalDias });
+      // Atualiza o perfil localmente para refletir a mudança imediatamente na UI
+      setProfile(prev => prev ? { ...prev, streakGoal: selectedFicha.totalDias } : null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Sucesso", "Sua meta semanal foi atualizada!");
+    } catch (error) {
+      console.error("Erro ao atualizar a meta de treinos:", error);
+      Alert.alert("Erro", "Não foi possível atualizar sua meta de treinos.");
+    }
+  };
+
+
   const renderFichaItem = ({ item, isCarousel }: { item: FichaModelo, isCarousel?: boolean }) => (
     <TouchableOpacity style={isCarousel ? styles.carouselCard : styles.card} onPress={() => handleSelectFicha(item)} activeOpacity={0.8}>
       {isCarousel ? (
@@ -326,6 +341,50 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     );
   };
 
+  const renderGoalDifferenceCard = () => {
+    if (!selectedFicha || !profile || !selectedFicha.totalDias || selectedFicha.totalDias === (profile.streakGoal || 0)) {
+      return null;
+    }
+
+    const userGoal = profile.streakGoal || 0;
+    const workoutGoal = selectedFicha.totalDias;
+
+    if (workoutGoal < userGoal) {
+      // Cenário: Meta do treino é MAIOR que a do usuário
+      return (
+        <View style={[styles.goalDiffCard, styles.goalDiffConstructive]}>
+          <Text style={styles.goalDiffTitle}>Este treino possui uma meta <Text style={{ fontStyle: 'italic' }}>Menor que a sua</Text></Text>
+          <View style={styles.goalDiffImages}>
+            <Image source={getStreakImage(userGoal)} style={styles.goalDiffImage} />
+            <FontAwesome name="long-arrow-right" size={24} color="#fff" />
+            <Image source={getStreakImage(workoutGoal)} style={styles.goalDiffImage} />
+          </View>
+          <Text style={styles.goalDiffInfo}>Você pode aderir à este treino <Text style={{ fontWeight: 'bold' }}>SEM COMPROMETER SUA SEQUÊNCIA</Text>.</Text>
+          <TouchableOpacity style={styles.goalDiffButtonConstructive} onPress={handleUpdateStreakGoal}>
+            <Text style={styles.goalDiffButtonText}>Diminuir meta para {workoutGoal} dias</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    } else {
+      // Cenário: Meta do treino é MENOR que a do usuário
+      return (
+        <View style={[styles.goalDiffCard, styles.goalDiffDestructive]}>
+          <Text style={styles.goalDiffTitle}>Este treino possui uma meta <Text style={{ fontStyle: 'italic' }}>Maior que a sua</Text></Text>
+          <View style={styles.goalDiffImages}>
+            <Image source={getStreakImage(userGoal)} style={styles.goalDiffImage} />
+            <FontAwesome name="long-arrow-right" size={24} color="#fff" />
+            <Image source={getStreakImage(workoutGoal)} style={styles.goalDiffImage} />
+          </View>
+          <Text style={styles.goalDiffInfo}>Para aderir à este treino, sua sequência pode ser comprometida. Recomendamos que você <Text style={{ fontWeight: 'bold' }}>AUMENTE SUA META SEMANAL</Text>.</Text>
+          <TouchableOpacity style={styles.goalDiffButtonDestructive} onPress={handleUpdateStreakGoal}>
+            <Text style={styles.goalDiffButtonText}>Aumentar meta para {workoutGoal} dias</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+  };
+
+
   const isButtonDisabled = isCustomizationAllowed && isCustomizing && customDays.length !== treinos.length;
 
   if (loading) {
@@ -380,6 +439,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
             </View>
             
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalList}>
+              {renderGoalDifferenceCard()}
               {isCustomizationAllowed && (
                 <>
                   {renderCalendar()}
@@ -580,6 +640,62 @@ const styles = StyleSheet.create({
     color: '#aaa',
     marginTop: 4, // Adiciona espaço abaixo do nome do exercício
   },
+    // Goal Difference Card
+  goalDiffCard: {
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  goalDiffDestructive: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+    borderColor: 'rgba(255, 59, 48, 0.5)',
+  },
+  goalDiffConstructive: {
+    backgroundColor: 'rgba(28, 176, 246, 0.15)',
+    borderColor: 'rgba(28, 176, 246, 0.5)',
+  },
+  goalDiffTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  goalDiffImages: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    marginBottom: 15,
+  },
+  goalDiffImage: {
+    width: 50,
+    height: 50,
+    resizeMode: 'contain',
+  },
+  goalDiffInfo: {
+    color: '#ccc',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 15,
+  },
+  goalDiffButtonDestructive: {
+    backgroundColor: '#ff3b30',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  goalDiffButtonConstructive: {
+    backgroundColor: '#1cb0f6',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  goalDiffButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+
   // Estilos do Calendário e Customização
   calendarContainer: {
     flexDirection: 'row',

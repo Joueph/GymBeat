@@ -1,23 +1,32 @@
 import { Exercicio, Serie } from '@/models/exercicio';
+import { calculateLoadForSerie } from '@/utils/volumeUtils';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { VideoView as Video, useVideoPlayer } from 'expo-video';
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { VideoView as Video, VideoPlayer, useVideoPlayer } from 'expo-video';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react'; // Removido FlatList
+import { ActivityIndicator, Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { Log } from '@/models/log';
-import DraggableFlatList, { RenderItemParams as DraggableRenderItemParams } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
-import Animated, { FadeIn, FadeOut, FadeOutUp, SlideInUp, SlideOutDown } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, FadeOutUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Treino } from '../../models/treino';
 import { addLog } from '../../services/logService';
 import { getTreinoById, updateTreino } from '../../services/treinoService';
+import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
-import { WorkoutOverviewModal } from './modalOverview';
+import { EditExerciseModal } from './modals/EditExerciseModal';
+import { OngoingWorkoutListModal } from './modals/listaOngoingWorkout';
+import { WorkoutOverviewModal } from './modals/modalOverview';
 
-// A interface Serie agora inclui um tipo para diferenciar séries normais de dropsets.
+// **INÍCIO DA CORREÇÃO**
+// Adiciona a propriedade 'concluido' à interface Serie localmente
+interface SerieComStatus extends Serie {
+  concluido?: boolean;
+}
+// A interface Serie agora inclui um tipo para diferenciar séries normais de dropsets e um status de conclusão.
 interface SerieEdit extends Omit<Serie, 'id'> {
   peso: number;
   repeticoes: any;
@@ -28,40 +37,64 @@ interface SerieEdit extends Omit<Serie, 'id'> {
 
 // A new component to manage each video player instance, now with WebP support
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
+  const [localUri, setLocalUri] = useState<string | null>(null);
   const isWebP = uri?.toLowerCase().includes('.webp');
 
-  const player = useVideoPlayer(isWebP ? null : uri, (player) => {
+  useEffect(() => {
+    const manageMedia = async () => {
+      if (!uri) return;
+      const fileName = uri.split('/').pop()?.split('?')[0];
+      if (!fileName) return;
+
+      const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
+      const fileInfo = await FileSystem.getInfoAsync(localFileUri);
+
+      if (fileInfo.exists) {
+        setLocalUri(localFileUri);
+      } else {
+        try {
+          await FileSystem.downloadAsync(uri, localFileUri);
+          setLocalUri(localFileUri);
+        } catch (e) {
+          console.error("Erro ao baixar a mídia:", e);
+          setLocalUri(uri); // Fallback para a URL remota em caso de erro
+        }
+      }
+    };
+
+    manageMedia();
+  }, [uri]);
+
+  const player: VideoPlayer | null = useVideoPlayer(isWebP ? null : localUri, (player) => {
     player.loop = true;
     player.muted = true;
     player.play();
   });
 
-  // useEffect for player cleanup.
-  useEffect(() => {
-    // Cleanup the player when the component unmounts or the URI changes.
-    return () => {
-      if (!isWebP) {
-        player.release();
-      }
-    };
-  }, [uri, player, isWebP]);
+  useEffect(() => () => { if (!isWebP) player.release(); }, [localUri, player, isWebP]);
 
   if (isWebP) {
     const { Image } = require('react-native');
-    return <Image source={{ uri }} style={style} />;
+    return <Image source={{ uri: localUri || uri }} style={style} />;
   }
   return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
 }
 
 // Componente para exibir os detalhes de uma série normal.
-const NormalSetDetails = ({ currentSet }: { currentSet: Serie }) => (
+const NormalSetDetails = ({ currentSet, isBodyweight }: { currentSet: Serie, isBodyweight?: boolean }) => (
   <>
     <View style={styles.detailItem}>
       <FontAwesome name={currentSet.isTimeBased ? "clock-o" : "repeat"} size={20} color="#ccc" />
       <Text style={styles.detailValue}>{currentSet.repeticoes}{currentSet.isTimeBased ? 's' : ''}</Text>
       <Text style={styles.detailLabel}>{currentSet.isTimeBased ? "Tempo" : "Repetições"}</Text>
     </View>
-    <View style={styles.detailItem}><FontAwesome name="dashboard" size={20} color="#ccc" /><Text style={styles.detailValue}>{currentSet.peso || 0} kg</Text><Text style={styles.detailLabel}>Peso</Text></View>
+    <View style={styles.detailItem}>
+      <FontAwesome name="dashboard" size={20} color="#ccc" />
+      {isBodyweight ? 
+        <Text style={styles.detailValue}>Corporal</Text> : 
+        <Text style={styles.detailValue}>{currentSet.peso || 0} kg</Text>}
+      <Text style={styles.detailLabel}>Peso</Text>
+    </View>
   </>
 );
 
@@ -105,7 +138,7 @@ const ExerciseDisplayCard = memo(({
                 <Text style={styles.detailValue}>{isCurrent ? `${completedNormalSeriesCount}/${totalNormalSeries}` : totalNormalSeries}</Text>
                 <Text style={styles.detailLabel}>Séries</Text>
               </View>
-              {currentSet && <NormalSetDetails currentSet={currentSet} />}
+              {currentSet && <NormalSetDetails currentSet={currentSet} isBodyweight={exercise.modelo.caracteristicas?.isPesoCorporal} />}
             </View>
           )}
         </View>
@@ -135,7 +168,6 @@ export default function OngoingWorkoutScreen() {
   const [isResting, setIsResting] = useState(false);
   const [restTime, setRestTime] = useState(0);
   const [isEditExerciseModalVisible, setEditExerciseModalVisible] = useState(false);
-  const [editingSeries, setEditingSeries] = useState<SerieEdit[]>([]);
   const [isExerciseListVisible, setExerciseListVisible] = useState(false);
   const [isExerciseDetailModalVisible, setExerciseDetailModalVisible] = useState(false);
   const [activeLogId, setActiveLogId] = useState<string | null>(null);
@@ -145,13 +177,13 @@ export default function OngoingWorkoutScreen() {
   const [restStartTime, setRestStartTime] = useState<number | null>(null);
   const [cargaAcumuladaTotal, setCargaAcumuladaTotal] = useState(0);
   const [cargaSerieAnimacao, setCargaSerieAnimacao] = useState<{ key: number; carga: number } | null>(null);
-  const [exerciciosFeitos, setExerciciosFeitos] = useState<Exercicio[]>([]);
   const [userLogs, setUserLogs] = useState<Log[]>([]);
   const [isOverviewModalVisible, setOverviewModalVisible] = useState(false);
   // Novos estados para o timer do exercício
   const [isDoingExercise, setIsDoingExercise] = useState(false);
   const [exerciseTime, setExerciseTime] = useState(0);
   const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
+  const [userWeight, setUserWeight] = useState<number>(0);
   
   // Novo estado para a animação da carga total no header
   const [animatedLoadValue, setAnimatedLoadValue] = useState<number | null>(null);
@@ -205,11 +237,6 @@ export default function OngoingWorkoutScreen() {
 
   const openEditModalForExercise = (exercise: Exercicio) => {
     setExercicioSendoEditado(exercise);
-    const seriesCopy = JSON.parse(JSON.stringify(exercise.series)).map((s: Serie, index: number) => ({
-      ...s,
-      id: s.id || `set-${Date.now()}-${index}`,
-    }));
-    setEditingSeries(seriesCopy);
     setEditExerciseModalVisible(true);
     setIsBiSetEditing(false);
   };
@@ -242,37 +269,70 @@ export default function OngoingWorkoutScreen() {
           const logSnap = await getDoc(logRef);
           if (logSnap.exists()) {
             const logData = logSnap.data();
+            // **INÍCIO DA CORREÇÃO**
+            // A fonte da verdade para um treino em andamento são os exercícios salvos no log.
+            // Isso garante que o status 'concluido' de cada série seja recuperado corretamente.
+            // A variável 'treinoData' serve como um fallback caso o log não tenha os exercícios.
+            const exerciciosDoLog = logData.exercicios || treinoData.exercicios;
+            setTreino({ ...treinoData, exercicios: exerciciosDoLog });
+            // **FIM DA CORREÇÃO**
+
             setHorarioInicio(toDate(logData.horarioInicio));
             setActiveLogId(logId);
-            const initialExerciciosFeitos = logData.exerciciosFeitos || [];
-            setExerciciosFeitos(initialExerciciosFeitos);
+            
+            // **INÍCIO DA REATORAÇÃO**
+            // Determina o ponto de partida com base nas séries concluídas
             
             let initialLoad = 0;
-            initialExerciciosFeitos.forEach((ex: Exercicio) => {
-              ex.series.forEach((serie: Serie) => {
-                const repsMatch = String(serie.repeticoes).match(/\d+/);
-                const reps = repsMatch ? parseInt(repsMatch[0], 10) : 0;
-                if (!isNaN(reps)) {
+            let proximoExercicioIndex = 0;
+            let proximaSerieIndex = 0;
+            let foundNext = false;
+
+            exerciciosDoLog.forEach((ex: Exercicio, exIndex: number) => {
+              (ex.series as SerieComStatus[]).forEach((serie, sIndex: number) => {
+                if (serie.concluido) {
+                  const repsMatch = String(serie.repeticoes).match(/\d+/);
+                  const reps = repsMatch ? parseInt(repsMatch[0], 10) : 0;
                   initialLoad += (serie.peso || 0) * reps;
+                } else if (!foundNext) {
+                  // A primeira série não concluída que encontramos é o nosso ponto de partida.
+                  proximoExercicioIndex = exIndex;
+                  proximaSerieIndex = sIndex;
+                  foundNext = true;
                 }
-              });
+              })
             });
             setCargaAcumuladaTotal(initialLoad);
-            
-            const proximoIndice = initialExerciciosFeitos.length;
-            if (proximoIndice < treinoData.exercicios.length) {
-              setCurrentExerciseIndex(proximoIndice);
-            }
+
+            // Se todos os exercícios foram concluídos, foundNext será false.
+            // Nesse caso, o estado inicial (índice 0, série 0) é um fallback seguro,
+            // embora o treino deva ser finalizado em seguida.
+            setCurrentExerciseIndex(proximoExercicioIndex);
+            setCompletedSets(proximaSerieIndex);
+          // **FIM DA REATORAÇÃO**
           } else { throw new Error("Log de treino para continuar não encontrado."); }
         } else if (user) {
+          // **INÍCIO DA CORREÇÃO**
+          // Garante que todas as séries sejam inicializadas com 'concluido: false'
+          const exerciciosInicializados = treinoData.exercicios.map(ex => ({
+            ...ex,
+            series: ex.series.map(s => ({ ...s, concluido: false }))
+          }));
+          setTreino({ ...treinoData, exercicios: exerciciosInicializados }); // Atualiza o estado local também
           setHorarioInicio(startTime);
-          const newLogId = await addLog({ usuarioId: user.uid, treino: { ...treinoData, id: treinoId, fichaId: fichaId as string }, exercicios: treinoData.exercicios, exerciciosFeitos: [], horarioInicio: startTime }) ?? null;
+          const newLogId = await addLog({ usuarioId: user.uid, treino: { ...treinoData, id: treinoId, fichaId: fichaId as string }, exercicios: exerciciosInicializados, exerciciosFeitos: [], horarioInicio: startTime }) ?? null;
+          // **FIM DA CORREÇÃO**
           setActiveLogId(newLogId);
         }
         if (user) {
           const { getLogsByUsuarioId } = require('../../services/logService');
           const logs = await getLogsByUsuarioId(user.uid);
           setUserLogs(logs);
+          // Busca o peso do usuário
+          const userProfile = await getUserProfile(user.uid);
+          if (userProfile && userProfile.peso) {
+            setUserWeight(userProfile.peso);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch workout:", error);
@@ -291,8 +351,20 @@ export default function OngoingWorkoutScreen() {
           const elapsedSeconds = Math.floor((Date.now() - restStartTime) / 1000);
           const remainingTime = maxRestTime - elapsedSeconds;
           const newRestTime = Math.max(0, remainingTime);
+
+          // Adiciona feedback tátil para a contagem regressiva
+          if (newRestTime === 3 || newRestTime === 2) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          } else if (newRestTime === 1) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          }
+
           setRestTime(newRestTime);
+
           if (newRestTime <= 0) {
+            // Vibração mais forte ao final do descanso
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
             setIsResting(false);
             setRestStartTime(null);
             setRestTime(maxRestTime);
@@ -325,18 +397,10 @@ export default function OngoingWorkoutScreen() {
   }, [isDoingExercise, exerciseStartTime, currentSet]);
 
   const completeTheSet = async () => {
-    if (!treino || !user || !currentSet) return;
+    if (!treino || !user || !currentSet || !currentExercise) return;
 
     const oldTotalLoad = cargaAcumuladaTotal;
-    let cargaDaSerie = 0;
-    const repsString = String(currentSet.repeticoes);
-    const repsMatch = repsString.match(/\d+/);
-    const reps = repsMatch ? parseInt(repsMatch[0], 10) : 0;
-
-    if (!isNaN(reps) && reps > 0) {
-      cargaDaSerie = (currentSet.peso || 0) * reps;
-    }
-    
+    const { totalLoad: cargaDaSerie } = calculateLoadForSerie(currentSet, currentExercise, userWeight);
     const newTotalLoad = oldTotalLoad + cargaDaSerie;
 
     if (cargaDaSerie > 0) {
@@ -357,20 +421,36 @@ export default function OngoingWorkoutScreen() {
     // Atualiza o estado da carga total
     setCargaAcumuladaTotal(newTotalLoad);
 
-    const currentExercise = treino.exercicios[currentExerciseIndex];
+    // **INÍCIO DA REATORAÇÃO**
+    // Marca a série como concluída no estado do treino
+    const updatedExercicios = [...treino.exercicios];
+    const exercicioAtualIndex = updatedExercicios.findIndex(ex => ex.modeloId === currentExercise.modeloId);
+    if (exercicioAtualIndex !== -1) {
+      const serieAtualIndex = completedSets;
+      if ((updatedExercicios[exercicioAtualIndex].series as SerieComStatus[])[serieAtualIndex]) {
+        (updatedExercicios[exercicioAtualIndex].series as SerieComStatus[])[serieAtualIndex].concluido = true;
+      }
+      // Se for um bi-set, marca a série do parceiro também
+      if (isBiSet && (updatedExercicios[exercicioAtualIndex + 1]?.series as SerieComStatus[])[serieAtualIndex]) {
+        (updatedExercicios[exercicioAtualIndex + 1].series as SerieComStatus[])[serieAtualIndex].concluido = true;
+      }
+      setTreino({ ...treino, exercicios: updatedExercicios });
+    }
+    // **FIM DA REATORAÇÃO**
+
     const newCompletedSets = completedSets + 1;
+    
+    // Salva o progresso atualizado no log imediatamente após marcar a série como concluída
+    if (activeLogId) {
+      try { await addLog({ exercicios: updatedExercicios }, activeLogId); } 
+      catch (error) { console.error("Erro ao salvar progresso da série:", error); }
+    }
 
     if (newCompletedSets >= currentExercise.series.length) {
-      const exercisesToAdd = isBiSet ? [treino.exercicios[currentExerciseIndex], treino.exercicios[currentExerciseIndex + 1]] : [treino.exercicios[currentExerciseIndex]];
-      const newExerciciosFeitos = [...exerciciosFeitos, ...exercisesToAdd];
-      setExerciciosFeitos(newExerciciosFeitos);
-
       if (activeLogId) {
         try {
-          const { getFirestore, doc, updateDoc } = require('firebase/firestore');
-          const db = getFirestore();
-          const logRef = doc(db, 'logs', activeLogId);
-          await updateDoc(logRef, { exercicios: treino.exercicios, exerciciosFeitos: newExerciciosFeitos });
+          // Salva o estado atualizado dos exercícios no log
+          await addLog({ exercicios: updatedExercicios }, activeLogId);
         } catch (error) { console.error("Erro ao salvar progresso do exercício:", error); }
       }
       const jump = isBiSet ? 2 : 1;
@@ -378,17 +458,17 @@ export default function OngoingWorkoutScreen() {
       if (nextIndex < treino.exercicios.length) {
         setCurrentExerciseIndex(nextIndex);
         setCompletedSets(0);
-        const newNextExercise = treino.exercicios[nextIndex + 1];
-        setBiSetToggle(newNextExercise?.isBiSet ?? false);
       } else {
         const horarioFim = new Date();
         try {
           if (activeLogId) {
-            // Salva o log final com os exercícios feitos
-            await addLog({ horarioFim, exerciciosFeitos: newExerciciosFeitos, cargaAcumulada: newTotalLoad, exercicios: treino.exercicios }, activeLogId);
+            // Salva o log final com os exercícios feitos e a carga acumulada total.
+            // Este é o único momento em que `cargaAcumulada` é preenchida,
+            // conforme solicitado.
+            await addLog({ horarioFim, exercicios: updatedExercicios, status: 'concluido', cargaAcumulada: newTotalLoad }, activeLogId);
             
             // Atualiza o treino original com os exercícios modificados durante a sessão
-            await updateTreino(treinoId as string, { exercicios: newExerciciosFeitos });
+            await updateTreino(treinoId as string, { exercicios: updatedExercicios });
 
             router.replace({ pathname: '/treinoCompleto', params: { logId: activeLogId } });
           }
@@ -438,11 +518,7 @@ export default function OngoingWorkoutScreen() {
     }
   };
 
-  const handleSaveExerciseChanges = () => {
-    if (editingSeries.some(s => !s.repeticoes || String(s.repeticoes).trim() === '')) {
-      Alert.alert("Erro", "Todas as séries devem ter repetições definidas.");
-      return;
-    }
+  const handleSaveExerciseChanges = (newSeries: SerieEdit[], pesoBarra?: number) => {
     if (!treino || !exercicioSendoEditado) return;
     const updatedExercicios = [...treino.exercicios];
     const editedExerciseIndex = updatedExercicios.findIndex(ex => ex.modeloId === exercicioSendoEditado.modeloId);
@@ -451,7 +527,11 @@ export default function OngoingWorkoutScreen() {
       setEditExerciseModalVisible(false);
       return;
     }
-    const updatedExercise = { ...exercicioSendoEditado, series: editingSeries };
+    const updatedExercise = {
+      ...exercicioSendoEditado,
+      series: newSeries,
+      pesoBarra: pesoBarra, // Salva o peso da barra
+    };
     updatedExercicios[editedExerciseIndex] = updatedExercise;
     const isLeaderOfBiSet = !updatedExercise.isBiSet && updatedExercicios[editedExerciseIndex + 1]?.isBiSet;
     if (isLeaderOfBiSet) {
@@ -465,39 +545,13 @@ export default function OngoingWorkoutScreen() {
       updatedExercicios[editedExerciseIndex + 1] = partnerExercise;
     }
     setTreino(prevTreino => prevTreino ? { ...prevTreino, exercicios: updatedExercicios } : null);
+    // **INÍCIO DA CORREÇÃO**
+    // Salva as alterações no log do Firestore imediatamente
+    if (activeLogId) {
+      addLog({ exercicios: updatedExercicios }, activeLogId);
+    }
     setEditExerciseModalVisible(false);
-    setEditingSeries([]);
     setExercicioSendoEditado(null);
-  };
-
-  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
-    if (exercicioSendoEditado?.isBiSet) {
-      Alert.alert("Ação não permitida", "Para alterar a estrutura das séries, edite o exercício principal do bi-set.");
-      return;
-    }
-    const newSets = [...editingSeries];
-    newSets.forEach((set, i) => { if (i !== index) set.showMenu = false; });
-    if (option === 'toggleTime') {
-      const currentSet = newSets[index];
-      // @ts-ignore
-      currentSet.isTimeBased = !currentSet.isTimeBased;
-      // @ts-ignore
-      currentSet.repeticoes = currentSet.isTimeBased ? '60' : '8-12';
-      // @ts-ignore
-      if (currentSet.isTimeBased) {
-        // @ts-ignore
-        currentSet.peso = 0;
-      }
-    } else if (option === 'delete') {
-      newSets.splice(index, 1);
-    } else if (option === 'copy') {
-      newSets.splice(index + 1, 0, { ...newSets[index], id: `set-${Date.now()}`, showMenu: false });
-    } else if (option === 'addDropset') {
-      const parentSet = newSets[index];
-      newSets.splice(index + 1, 0, { id: `set-${Date.now()}`, repeticoes: parentSet.repeticoes, peso: (parentSet.peso ?? 10) * 0.7, type: 'dropset', showMenu: false });
-    }
-    if (newSets[index]) newSets[index].showMenu = false;
-    setEditingSeries(newSets);
   };
   
   const formatTime = (seconds: number) => {
@@ -562,23 +616,6 @@ export default function OngoingWorkoutScreen() {
     return { totalNormalSeries: treino.exercicios[currentExerciseIndex + 1].series.filter(s => (s.type || 'normal') === 'normal').length };
   }, [treino, currentExerciseIndex]);
 
-  const renderExerciseProgressItem = ({ item, index }: { item: Exercicio; index: number }) => {
-    const isCompleted = index < currentExerciseIndex;
-    const isCurrent = index === currentExerciseIndex;
-    const totalExercises = treino!.exercicios.length;
-    const TopTrack = () => <View style={{ position: 'absolute', top: 0, bottom: '50%', width: 2, backgroundColor: (isCompleted || isCurrent) ? '#1cb0f6' : '#333', opacity: index === 0 ? 0 : 1, }} />;
-    const BottomTrack = () => <View style={{ position: 'absolute', top: '50%', bottom: 0, width: 2, backgroundColor: isCompleted ? '#1cb0f6' : '#333', opacity: index === totalExercises - 1 ? 0 : 1, }} />;
-    return (
-      <View style={styles.progressListItem}>
-        <View style={styles.timelineContainer}><TopTrack /><BottomTrack /><View style={[styles.timelineDot, isCompleted && styles.completedDot, isCurrent && styles.currentDot,]} /></View>
-        <View style={styles.exerciseContent}><Text style={[styles.modalExerciseName, isCompleted && { textDecorationLine: 'line-through', opacity: 0.7 }]}>{item.modelo.nome}</Text><Text style={styles.modalExerciseDetails}>{item.series.filter(s => (s.type || 'normal') === 'normal').length} séries{item.series.filter(s => s.type === 'dropset').length > 0 && ` + ${item.series.filter(s => s.type === 'dropset').length} dropsets`}</Text></View>
-        <TouchableOpacity style={styles.editListButton} onPress={() => handleEditFromList(item)}>
-          <FontAwesome name="pencil" size={20} color="#888" />
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
   if (loading || !treino) {
     return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
   }
@@ -636,7 +673,7 @@ export default function OngoingWorkoutScreen() {
                   <ExerciseDisplayCard exercise={biSetPartnerExercise} isCurrent={true} completedSets={completedSets} totalNormalSeries={partnerTotalNormalSeries} completedNormalSeriesCount={completedNormalSeriesCount} onPress={() => { isBiSetEditing ? openEditModalForExercise(biSetPartnerExercise) : setExerciseDetailModalVisible(true); }} showDetailsInside={true} isPulsing={isBiSetEditing} /></>
               ) : currentExercise && (
                 <><ExerciseDisplayCard exercise={currentExercise} isCurrent={true} completedSets={completedSets} totalNormalSeries={totalNormalSeries} completedNormalSeriesCount={completedNormalSeriesCount} onPress={() => { setExerciseDetailModalVisible(true); }} showDetailsInside={false} isPulsing={false} />
-                  <View style={styles.detailsContainer}><View style={styles.detailItem}><FontAwesome name="clone" size={20} color="#ccc" /><Text style={styles.detailValue}>{completedNormalSeriesCount}/{totalNormalSeries}</Text><Text style={styles.detailLabel}>Séries</Text></View>{currentSet && <NormalSetDetails currentSet={currentSet} />}</View>
+                  <View style={styles.detailsContainer}><View style={styles.detailItem}><FontAwesome name="clone" size={20} color="#ccc" /><Text style={styles.detailValue}>{completedNormalSeriesCount}/{totalNormalSeries}</Text><Text style={styles.detailLabel}>Séries</Text></View>{currentSet && <NormalSetDetails currentSet={currentSet} isBodyweight={currentExercise.modelo.caracteristicas?.isPesoCorporal} />}</View>
                   {isDropsetSequence && (<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dropsetScrollContainer}>{currentSet && dropsetGroup.map((set, index) => { const isCurrent = set.id === currentSet.id; return (<View key={set.id} style={[styles.dropsetItem, isCurrent && styles.currentDropsetItem]}><Text style={styles.dropsetItemLabel}>{index === 0 ? 'Série' : 'Drop'}</Text><Text style={styles.dropsetItemValue}>{set.repeticoes}</Text><Text style={styles.dropsetItemValue}>{set.peso || 0}kg</Text></View>); })}</ScrollView>)}</>
               )}
             </View>
@@ -652,37 +689,20 @@ export default function OngoingWorkoutScreen() {
             </View>
           </View>
         </View>
-        <Modal visible={isExerciseListVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setExerciseListVisible(false)}>
-          <SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Lista de Exercícios</Text><TouchableOpacity onPress={() => setExerciseListVisible(false)}><FontAwesome name="close" size={24} color="#fff" /></TouchableOpacity></View><FlatList data={treino.exercicios} keyExtractor={(item, index) => `exercicio-lista-${index}`} renderItem={renderExerciseProgressItem} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20 }} /></SafeAreaView>
-        </Modal>
-        <Modal animationType="slide" presentationStyle="pageSheet" visible={isEditExerciseModalVisible} onRequestClose={() => setEditExerciseModalVisible(false)}>
-          <SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Editar Exercício</Text><TouchableOpacity onPress={() => setEditExerciseModalVisible(false)}><FontAwesome name="close" size={24} color="#fff" /></TouchableOpacity></View>{exercicioSendoEditado && (<View style={styles.editingExercisePreview}>{exercicioSendoEditado.modelo.imagemUrl && (<VideoListItem uri={exercicioSendoEditado.modelo.imagemUrl} style={styles.editingExerciseVideo} />)}<View style={{ flex: 1 }}><Text style={styles.editingExerciseName}>{exercicioSendoEditado.modelo.nome}</Text><Text style={styles.editingExerciseMuscleGroup}>{exercicioSendoEditado.modelo.grupoMuscular}</Text></View></View>)}<DraggableFlatList data={editingSeries} style={{ width: '100%' }} contentContainerStyle={styles.modalScrollViewContent} keyExtractor={(item) => item.id!} onDragEnd={({ data }) => { if (!exercicioSendoEditado?.isBiSet) setEditingSeries(data); }}
-            renderItem={({ item, drag, isActive, getIndex }: DraggableRenderItemParams<SerieEdit>) => {
-              const itemIndex = getIndex(); if (itemIndex === undefined) return null;
-              const normalSeriesCount = editingSeries.slice(0, itemIndex + 1).filter(s => (s.type || 'normal') === 'normal').length;
-              const isBiSetFollower = exercicioSendoEditado?.isBiSet ?? false;
-              // @ts-ignore
-              const isTimeBased = item.isTimeBased;
-              return (
-                <View style={{ marginLeft: item.type === 'dropset' ? 30 : 0, marginBottom: 10 }}>
-                  <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#1f1f1f' }]}>
-                    <TouchableOpacity onLongPress={!isBiSetFollower ? drag : undefined} style={{ paddingHorizontal: 10, opacity: isBiSetFollower ? 0.3 : 1 }} disabled={isActive || isBiSetFollower}><FontAwesome5 name={(item.type || 'normal') === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" /></TouchableOpacity>
-                    <Text style={styles.setText}>{(item.type || 'normal') === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
-                    <TextInput style={styles.setInput} placeholder={isTimeBased ? "Tempo (s)" : "Reps"} placeholderTextColor="#888" value={String(item.repeticoes)} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].repeticoes = text; setEditingSeries(newSets); }} keyboardType={isTimeBased ? 'number-pad' : 'default'} />
-                    <TextInput style={styles.setInput} placeholder="kg" placeholderTextColor="#888" keyboardType="numeric" value={String(item.peso || '')} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = parseFloat(text) || 0; setEditingSeries(newSets); }} />
-                    <TouchableOpacity style={{ padding: 10 }} onPress={() => { const newSets = [...editingSeries]; newSets.forEach((s, i) => s.showMenu = i === itemIndex ? !s.showMenu : false); setEditingSeries(newSets); }}><FontAwesome name="ellipsis-v" size={20} color="#ccc" /></TouchableOpacity>
-                  </View>
-                  {item.showMenu && (<Animated.View entering={SlideInUp.duration(200)} exiting={SlideOutDown.duration(200)}><View style={styles.setMenu}>
-                    {(item.type || 'normal') === 'normal' && (<><TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('toggleTime', itemIndex)}><Text style={styles.setMenuText}>{isTimeBased ? 'Usar Reps' : 'Usar Tempo'}</Text></TouchableOpacity><TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('addDropset', itemIndex)}><Text style={styles.setMenuText}>Adicionar Dropset</Text></TouchableOpacity></>)}
-                    <TouchableOpacity style={styles.setMenuButton} onPress={() => handleSetOption('copy', itemIndex)}><Text style={styles.setMenuText}>Copiar Série</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.setMenuButton, { borderBottomWidth: 0 }]} onPress={() => handleSetOption('delete', itemIndex)}><Text style={[styles.setMenuText, { color: '#ff3b30' }]}>Deletar</Text></TouchableOpacity>
-                  </View></Animated.View>)}
-                </View>
-              )
-            }}
-            ListFooterComponent={<>{!exercicioSendoEditado?.isBiSet && (<TouchableOpacity style={styles.addSetButton} onPress={() => setEditingSeries([...editingSeries, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}><Text style={styles.addSetButtonText}>+ Adicionar Série</Text></TouchableOpacity>)}<View style={styles.modalButtons}><TouchableOpacity style={[styles.button, styles.buttonClose]} onPress={() => setEditExerciseModalVisible(false)}><Text style={[styles.textStyle, { color: '#ff3b30' }]}>Cancelar</Text></TouchableOpacity><TouchableOpacity style={[styles.button, styles.buttonAdd]} onPress={handleSaveExerciseChanges}><Text style={styles.textStyle}>Salvar</Text></TouchableOpacity></View></>}
-          /></SafeAreaView>
-        </Modal>
+        <OngoingWorkoutListModal
+            visible={isExerciseListVisible}
+            onClose={() => setExerciseListVisible(false)}
+            treino={treino}
+            currentExerciseIndex={currentExerciseIndex}
+            onEditExercise={handleEditFromList}
+        />
+
+        <EditExerciseModal
+          visible={isEditExerciseModalVisible}
+          onClose={() => setEditExerciseModalVisible(false)}
+          exercise={exercicioSendoEditado}
+          onSave={handleSaveExerciseChanges}
+        />
         <Modal visible={isExerciseDetailModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setExerciseDetailModalVisible(false)}>
           <SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Detalhes do Exercício</Text><TouchableOpacity onPress={() => setExerciseDetailModalVisible(false)}><FontAwesome name="close" size={24} color="#fff" /></TouchableOpacity></View><View style={styles.detailModalContentWrapper}><ScrollView><View>{currentExercise?.modelo.imagemUrl && <VideoListItem uri={currentExercise.modelo.imagemUrl} style={styles.detailModalVideo} />}<Text style={styles.detailModalExerciseName}>{currentExercise?.modelo.nome}</Text></View><View style={styles.detailModalSeriesContainer}>{(() => { let normalSeriesCounter = 0; return currentExercise?.series.map((item, index) => { const isDropset = item.type === 'dropset'; if (!isDropset) normalSeriesCounter++; return (<View key={item.id || `serie-detail-${index}`} style={[styles.detailModalSetRow, isDropset && { marginLeft: 20 }]}><View style={styles.detailModalSetTitleContainer}>{isDropset && <FontAwesome5 name="arrow-down" size={14} color="#ccc" style={{ marginRight: 8 }} />}<Text style={styles.detailModalSetText}>{isDropset ? 'Dropset' : `Série ${normalSeriesCounter}`}</Text></View>{isDropset && <Text style={styles.dropsetTag}>DROPSET</Text>}<View style={styles.detailModalSetInfoContainer}><Text style={styles.detailModalSetInfo}>{item.repeticoes}</Text><Text style={styles.detailModalSetInfo}>{item.peso || 0} kg</Text></View></View>); }); })()}</View></ScrollView></View></SafeAreaView>
         </Modal>
@@ -691,10 +711,11 @@ export default function OngoingWorkoutScreen() {
           visible={isOverviewModalVisible}
           onClose={() => setOverviewModalVisible(false)}
           treino={treino}
-          exerciciosFeitos={exerciciosFeitos}
           currentExerciseIndex={currentExerciseIndex}
           cargaAcumuladaTotal={cargaAcumuladaTotal}
           userLogs={userLogs}
+          horarioInicio={horarioInicio}
+          userWeight={userWeight}
         />}
 
       </SafeAreaView>
@@ -767,7 +788,7 @@ const styles = StyleSheet.create({
     mainActionButton: { backgroundColor: '#1cb0f6', width: 120, height: 120, borderRadius: 60, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#1cb0f6', shadowOpacity: 0.4, shadowRadius: 8 },
     mainActionButtonText: { color: '#0d181c', fontWeight: 'bold', marginTop: 5, fontSize: 12 },
     modalSafeArea: { flex: 1, backgroundColor: '#141414' },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' , marginBottom: 20 },
     modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
     progressListItem: { flexDirection: 'row', alignItems: 'center', minHeight: 80 },
     timelineContainer: { width: 30, alignItems: 'center', alignSelf: 'stretch' },
@@ -787,18 +808,6 @@ const styles = StyleSheet.create({
     buttonClose: { backgroundColor: "transparent" },
     buttonAdd: { backgroundColor: "#1cb0f6" },
     textStyle: { color: "white", fontWeight: "bold", textAlign: "center" },
-    setRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 5, borderRadius: 8, borderBottomWidth: 1, borderBottomColor: '#2f2f2f', height: 65 },
-    setText: { color: '#fff', fontWeight: 'bold', flex: 1 },
-    setInput: { backgroundColor: '#2c2c2e', flex: 1, color: '#fff', padding: 8, borderRadius: 5, textAlign: 'center', marginHorizontal: 5 },
-    addSetButton: { padding: 10, marginTop: 10, backgroundColor: '#2c2c2e', borderRadius: 8, width: '100%', alignItems: 'center' },
-    addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },
-    setMenu: { backgroundColor: '#2c2c2e', borderRadius: 8, marginTop: -5, marginBottom: 5, zIndex: -1, paddingTop: 5 },
-    setMenuButton: { paddingVertical: 12, paddingHorizontal: 15, borderBottomWidth: 1, borderBottomColor: '#444' },
-    setMenuText: { color: '#fff', fontSize: 14, },
-    editingExercisePreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1f1f1f', borderRadius: 12, padding: 10, marginHorizontal: 20, marginBottom: 20, borderWidth: 1, borderColor: '#ffffff1a', },
-    editingExerciseVideo: { width: 60, height: 60, borderRadius: 8, marginRight: 15 },
-    editingExerciseName: { color: '#fff', fontSize: 16, fontWeight: 'bold', },
-    editingExerciseMuscleGroup: { color: '#ccc', fontSize: 14, marginTop: 4 },
     detailModalContentWrapper: { flex: 1, padding: 5 },
     detailModalVideo: { width: '100%', aspectRatio: 1, borderRadius: 15, backgroundColor: '#000', marginBottom: 10 },
     detailModalExerciseName: { color: '#fff', fontSize: 24, fontWeight: 'bold', textAlign: 'center', paddingVertical: 10 },

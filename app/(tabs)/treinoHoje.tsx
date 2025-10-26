@@ -1,13 +1,13 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'; // Adicionei a importação do ScrollView
+import { ActivityIndicator, Alert, FlatList, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 // GestureHandlerRootView não é mais necessário aqui se a FlatList de fichas foi removida
 // mas é uma boa prática mantê-lo no topo da árvore de componentes
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
-
-import { WorkoutReviewModal } from '../(treino)/modalReviewTreinos';
-import { Exercicio } from '../../models/exercicio';
+ 
+import { WorkoutReviewModal } from '../(treino)/modals/modalReviewTreinos';
+import { Serie } from '../../models/exercicio';
 import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
@@ -20,6 +20,12 @@ import { useAuth } from '../authprovider';
 const DIAS_SEMANA_ORDEM: { [key: string]: number } = {
   'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6
 };
+
+// **INÍCIO DA CORREÇÃO**
+// Adiciona a propriedade 'concluido' à interface Serie localmente
+interface SerieComStatus extends Serie {
+  concluido?: boolean;
+}
 
 const DIAS_SEMANA_MAP: { [key: number]: string } = {
   0: 'dom', 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sab'
@@ -49,60 +55,81 @@ const parseReps = (reps: any): number => {
   return 0;
 };
 
-const calculateVolume = (exercicios: Exercicio[]): number => {
-  return exercicios.reduce((totalVolume, exercicio) => {
-    const exercicioVolume = exercicio.series.reduce((serieVolume, serie) => {
-      const reps = parseReps(serie.repeticoes);
-      const peso = serie.peso || 0;
-      return serieVolume + (reps * peso);
-    }, 0);
-    return totalVolume + exercicioVolume;
+const calculateVolume = (log: Log): number => {
+  // Prioriza o uso da carga acumulada salva no log, se existir.
+  if (log.cargaAcumulada && typeof log.cargaAcumulada === 'number' && log.cargaAcumulada > 0) {
+    return log.cargaAcumulada;
+  }
+
+  // Fallback: recalcula o volume se o campo não existir (para logs antigos).
+  return (log.exercicios || []).reduce((totalVolume, exercicio) => {
+      const exercicioVolume = (exercicio.series as SerieComStatus[])
+          .filter(s => s.concluido)
+          .reduce((serieVolume, serie) => {
+              const reps = serie.isTimeBased ? 1 : parseReps(serie.repeticoes);
+              const peso = serie.peso || 0;
+              return serieVolume + (reps * peso);
+          }, 0);
+      return totalVolume + exercicioVolume;
   }, 0);
 };
 
 // Componente LogItem permanece o mesmo
 const LogItem = ({ log, onPress }: { log: Log; onPress: (log: Log) => void }) => {
+  // **INÍCIO DA CORREÇÃO**
+  // Implementação do JSX para o componente LogItem
+  const volumeTotal = calculateVolume(log);
+  const dataFim = toDate(log.horarioFim);
+  const isCanceled = log.status === 'cancelado';
 
-  // Se o treino foi cancelado, exibe um card simplificado.
-  if (log.status === 'cancelado') {
-    const logDate = toDate(log.horarioInicio) || new Date();
-    return (
-      <View style={styles.logCard}>
-        <View style={styles.logHeader}>
-          <View>
-            <Text style={styles.logTitle}>{log.treino.nome}</Text>
-            <Text style={styles.logDate}>{logDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })} - <Text style={{ color: '#ff3b30' }}>Cancelado</Text></Text>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  const logDate = toDate(log.horarioFim) || new Date();
-  const startTime = toDate(log.horarioInicio);
-  const endTime = toDate(log.horarioFim);
   let durationText = '';
-  if (startTime && endTime) {
-    const durationMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
-    durationText = ` • ${durationMinutes} min`;
+  if (dataFim) {
+    const startTime = toDate(log.horarioInicio);
+    const durationMinutes = Math.round((dataFim.getTime() - (startTime?.getTime() || 0)) / 60000);
+    if (durationMinutes > 0) {
+        durationText = ` • ${durationMinutes} min`;
+    }
   }
-
-  const volumeTotal = calculateVolume(log.exerciciosFeitos);
 
   return (
-    <View style={styles.logCard}>
-      <TouchableOpacity onPress={() => onPress(log)} style={styles.logHeader}>
+    <TouchableOpacity style={[styles.logCard, isCanceled && { opacity: 0.5 }]} onPress={() => !isCanceled && onPress(log)} disabled={isCanceled}>
+      <View style={styles.logHeader}>
         <View>
           <Text style={styles.logTitle}>{log.treino.nome}</Text>
-          <Text style={styles.logDate}>
-            {logDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}
-            {durationText} • {volumeTotal.toLocaleString('pt-BR')} kg
-          </Text>
+          {dataFim && <Text style={styles.logDate}>{dataFim.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'short' })}{durationText}</Text>}
         </View>
-        <FontAwesome name={"bar-chart"} size={16} color="#ccc" />
-      </TouchableOpacity>
-    </View>
+        {isCanceled ? (<Text style={{ color: '#ff3b30', fontWeight: 'bold' }}>Cancelado</Text>) : (<Text style={styles.logExercicioInfo}>{volumeTotal.toLocaleString('pt-BR')} kg</Text>)}
+      </View>
+    </TouchableOpacity>
   );
+  // **FIM DA CORREÇÃO**
+};
+
+const HistoricWorkoutCard = ({ log, onPress }: { log: Log; onPress: (log: Log) => void }) => {
+    const volumeTotal = calculateVolume(log);
+    const dataFim = toDate(log.horarioFim);
+    let durationText = 'N/A';
+
+    if (dataFim) {
+        const startTime = toDate(log.horarioInicio);
+        const diffMs = dataFim.getTime() - (startTime?.getTime() || 0);
+        if (diffMs > 0) {
+            const totalMinutes = Math.floor(diffMs / 60000);
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = totalMinutes % 60;
+            durationText = hours > 0 ? `${hours}h ${minutes}min` : `${minutes} min`;
+        }
+    }
+
+    return (
+        <View style={styles.historicWorkoutCard}>
+            <Text style={styles.historicWorkoutTitle} numberOfLines={2}>{log.treino.nome}</Text>
+            <Text style={styles.historicWorkoutInfo}>{durationText} • {volumeTotal.toLocaleString('pt-BR')} kg</Text>
+            <TouchableOpacity style={styles.historicWorkoutButton} onPress={() => onPress(log)}>
+                <Text style={styles.historicWorkoutButtonText}>Ver log</Text>
+            </TouchableOpacity>
+        </View>
+    );
 };
 
 // Componente principal da tela
@@ -119,7 +146,6 @@ export default function MeusTreinosScreen() {
   const [activeLog, setActiveLog] = useState<Log | null>(null);
   const [treinosConcluidos, setTreinosConcluidos] = useState(0);
   const [isManageModalVisible, setManageModalVisible] = useState(false);
-  const [showCanceled, setShowCanceled] = useState(false);
   const [isReviewModalVisible, setReviewModalVisible] = useState(false);
   const [treinoConcluidoHoje, setTreinoConcluidoHoje] = useState<Log | null>(null);
   const [selectedLogForReview, setSelectedLogForReview] = useState<Log | null>(null);
@@ -247,12 +273,23 @@ export default function MeusTreinosScreen() {
     setReviewModalVisible(true);
   };
 
-  const filteredLogs = useMemo(() => {
-    if (showCanceled) {
-      return logs;
-    }
-    return logs.filter(log => log.status !== 'cancelado');
-  }, [logs, showCanceled]);
+  const historicTrainings = useMemo(() => {
+    const completedLogs = logs.filter(log => log.status !== 'cancelado' && log.horarioFim);
+
+    const logsByTreinoId = completedLogs.reduce((acc, log) => {
+        const treinoId = log.treino.id;
+        if (!acc[treinoId] || (toDate(log.horarioFim)?.getTime() || 0) > (toDate(acc[treinoId].horarioFim)?.getTime() || 0)) {
+            acc[treinoId] = log;
+        }
+        return acc;
+    }, {} as Record<string, Log>);
+
+    return Object.values(logsByTreinoId).sort((a, b) => 
+        (toDate(b.horarioFim)?.getTime() || 0) - (toDate(a.horarioFim)?.getTime() || 0)
+    );
+  }, [logs]);
+
+
 
   const totalTreinosPlano = fichaAtiva?.treinos.length || 0;
 
@@ -430,33 +467,25 @@ export default function MeusTreinosScreen() {
           <Text style={styles.emptySubText}>Crie um novo plano de treino para começar.</Text>
         </View>
       )}
-      <View style={styles.historyHeader}>
-        <Text style={styles.sectionTitle}>Histórico de Sessões</Text>
-        <View style={styles.switchContainer}>
-          <Text style={styles.switchLabel}>Incluir canceladas</Text>
-          <Switch
-            trackColor={{ false: "#3e3e3e", true: "#00A6FF" }}
-            thumbColor={showCanceled ? "#f4f3f4" : "#f4f3f4"}
-            onValueChange={setShowCanceled}
-            value={showCanceled}
-          />
+      {historicTrainings.length > 0 && (
+        <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Histórico de Sessões</Text>
+            <FlatList
+                data={historicTrainings}
+                renderItem={({ item }) => <HistoricWorkoutCard log={item} onPress={handleOpenReview} />}
+                keyExtractor={(item) => item.id}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 5 }}
+            />
         </View>
-      </View>
+      )}
     </>
   );
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <FlatList
-        data={filteredLogs}
-        renderItem={({ item }) => <LogItem log={item} onPress={handleOpenReview} />}
-        keyExtractor={(item) => item.id}
-        style={styles.container}
-        ListHeaderComponent={ListHeader}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}><Text style={styles.emptyText}>Você ainda não completou nenhum treino.</Text><Text style={styles.emptySubText}>Seu histórico aparecerá aqui.</Text></View>
-        }
-      />
+      <ScrollView style={styles.container}><ListHeader /></ScrollView>
 
       <Modal
         visible={isManageModalVisible}
@@ -487,7 +516,7 @@ export default function MeusTreinosScreen() {
         <WorkoutReviewModal
           visible={isReviewModalVisible}
           onClose={() => setReviewModalVisible(false)}
-          log={selectedLogForReview} allUserLogs={[]}        />
+          initialLog={selectedLogForReview} allUserLogs={logs}        />
       )}
     </GestureHandlerRootView>
   );
@@ -658,6 +687,38 @@ const styles = StyleSheet.create({
     nextWorkoutInfo: {
         color: '#aaa',
         fontSize: 12,
+    },
+    // Historic Workout Card
+    historicWorkoutCard: {
+        backgroundColor: '#1C1C1E',
+        borderRadius: 12,
+        padding: 15,
+        width: 250,
+        height: 150,
+        marginRight: 10,
+        justifyContent: 'space-between',
+        borderWidth: 1,
+        borderColor: '#ffffff1a',
+    },
+    historicWorkoutTitle: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: 'bold',
+    },
+    historicWorkoutInfo: {
+        color: '#aaa',
+        fontSize: 14,
+    },
+    historicWorkoutButton: {
+        backgroundColor: '#2c2c2e',
+        borderRadius: 8,
+        paddingVertical: 10,
+        alignItems: 'center',
+    },
+    historicWorkoutButtonText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 14,
     },
     // Active Plan Section
     activePlanContainer: {

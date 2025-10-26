@@ -5,7 +5,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
-import { WorkoutReviewModal } from '../(treino)/modalReviewTreinos';
+import { WorkoutReviewModal } from '../(treino)/modals/modalReviewTreinos';
 import { db } from '../../firebaseconfig';
 import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
@@ -605,7 +605,7 @@ export default function HomeScreen() {
         <WorkoutReviewModal
           visible={isReviewModalVisible}
           onClose={() => setReviewModalVisible(false)}
-          log={treinoConcluidoHoje} allUserLogs={[]}        />
+          initialLog={treinoConcluidoHoje} allUserLogs={logs}        />
       )}
     </>
   );

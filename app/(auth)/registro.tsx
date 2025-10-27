@@ -553,14 +553,14 @@ case 4: // NOVO STEP: Problemas para treinar (Multi-select)
       case 5: // NOVO STEP: Feature Streaks (Condicional - Onboarding 9.png)
         return (
           <View style={styles.stepContentWrapper}>
-            <LottieView source={require('../../assets/images/onboarding/Animations/Case(NãoVejoResultados}{MeSintoIntimidado}2.json')} autoPlay loop={false} style={styles.featureImage} />
+            <LottieView source={require('../../assets/images/onboarding/Animations/CaseNãoVejoResultadosMeSintoIntimidado2.json')} autoPlay loop={false} style={styles.featureImage} />
           </View>
         );
 
       case 6: // NOVO STEP: Feature Gráficos (Condicional - Onboarding 10.png)
         return (
           <View style={styles.stepContentWrapper}>
-            <LottieView source={require('../../assets/images/onboarding/Animations/Case{FaltaDeMotivacao}{faltaDeConstância}.json')} autoPlay loop={false} style={styles.featureImage} />
+            <LottieView source={require('../../assets/images/onboarding/Animations/CaseFaltaDeMotivacaofaltaDeConstância.json')} autoPlay loop={false} style={styles.featureImage} />
           </View>
         );
         

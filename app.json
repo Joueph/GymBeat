@@ -1,3 +1,13 @@
 {
-  "expo": {}
+  "expo": {
+    "name": "GymBeat",
+    "slug": "GymBeat",
+    "owner": "joueph",
+    "ios": {
+      "bundleIdentifier": "br.com.gymbeat"
+    },
+    "android": {
+      "package": "com.gymbeat"
+    }
+  }
 }

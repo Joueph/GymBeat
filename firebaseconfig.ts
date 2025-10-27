@@ -15,7 +15,7 @@ const firebaseConfig = {
 };
 
 // Inicializa o Firebase App
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // Inicializa os serviços do Firebase com persistência para Auth
 export const auth = initializeAuth(app, {

@@ -27,6 +27,7 @@ export default {
       predictiveBackGestureEnabled: false,
       package: "br.com.gymbeat",
       versionCode: 11,
+      googleServicesFile: "./google-services.json"
     },
     web: {
       output: "static",

@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "GymBeat",
     slug: "GymBeat",
-    version: "1.0.11",
+    version: "1.1.0",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: "gymbeat",
@@ -25,8 +25,9 @@ export default {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
-      package: "br.com.gymbeat",
+      package: "com.gymbeat",
       versionCode: 11,
+      googleServicesFile: "./google-services.json"
     },
     web: {
       output: "static",
@@ -54,6 +55,7 @@ export default {
         },
       ],
       "expo-video",
+      "expo-audio",
       "expo-web-browser",
       [
         "@react-native-firebase/app",

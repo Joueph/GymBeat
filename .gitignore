@@ -20,9 +20,7 @@ expo-env.d.ts
 
 serviceAccountKey.json
 
-GoogleService-Info
-GoogleService-Info.plist
-GoogleService-Info.plist
+
 
 # Metro
 .metro-health-check*

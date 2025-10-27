@@ -278,8 +278,8 @@ export default function TreinoCompletoScreen() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 80 }} // Space for the button
             />
-            <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('/')}>
-// ... (código existente de continueButton)
+            <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('./')}>
+
               <Text style={styles.continueButtonText}>Fechar</Text>
             </TouchableOpacity>
         </SafeAreaView>

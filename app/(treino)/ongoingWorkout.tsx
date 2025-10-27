@@ -470,7 +470,7 @@ export default function OngoingWorkoutScreen() {
             // Atualiza o treino original com os exercícios modificados durante a sessão
             await updateTreino(treinoId as string, { exercicios: updatedExercicios });
 
-            router.replace({ pathname: '/treinoCompleto', params: { logId: activeLogId } });
+            router.replace({ pathname: './treinoCompleto', params: { logId: activeLogId } });
           }
         } catch (error) {
           console.error("Failed to save workout log:", error);

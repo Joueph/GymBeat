@@ -150,7 +150,7 @@ export default function CriarFichaScreen() {
         onLongPress={drag}
         disabled={isActive}
         style={[styles.treinoCard, { opacity: isActive ? 0.5 : 1 }]}
-        onPress={() => router.push(`/(treino)/editarTreino?fichaId=${ficha.id}&treinoId=${item.id}`)}
+        onPress={() => router.push({ pathname: '/(treino)/editarTreino', params: { fichaId: ficha.id, treinoId: item.id } })}
     >
         <Text style={styles.treinoName}>{item.nome}</Text>
         <Text style={styles.treinoInfo}>{item.exercicios.length} exercícios</Text>
@@ -181,7 +181,7 @@ export default function CriarFichaScreen() {
           }
           ListFooterComponent={
             <>
-              <TouchableOpacity style={styles.addButton} onPress={() => router.push(`/(treino)/editarTreino?fichaId=${ficha.id}`)}>
+              <TouchableOpacity style={styles.addButton} onPress={() => router.push({ pathname: '/(treino)/editarTreino', params: { fichaId: ficha.id } })}>
                 <Text style={styles.addButtonText}>+ Adicionar Novo Treino</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.saveButton} onPress={handleSaveChanges}>

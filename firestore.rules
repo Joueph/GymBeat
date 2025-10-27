@@ -46,6 +46,17 @@ match /users/{userId} {
 }
 
 // =================================================================
+// Regras para a Coleção de Estatísticas de Onboarding
+// =================================================================
+match /estatisticasOnboarding/{userId} {
+  // Permite que um usuário autenticado (anônimo ou permanente) crie, leia e atualize seu próprio documento.
+  // A função isOwner(userId) verifica se request.auth.uid === userId.
+  allow create, read, update: if isOwner(userId);
+  // Impede que o cliente delete o documento.
+  allow delete: if false;
+}
+
+// =================================================================
 // Regras para Coleções de Dados do Usuário (fichas, treinos)
 // =================================================================
 

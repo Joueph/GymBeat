@@ -1,17 +1,21 @@
 // app/(auth)/registro.tsx
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, Ionicons } from '@expo/vector-icons'; // Importar Ionicons
+import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import React, { useState } from 'react';
+import { User } from 'firebase/auth';
+import LottieView from 'lottie-react-native';
+import React, { useCallback, useRef, useState } from 'react';
+
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
+  FlatList,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
-  Platform,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,36 +23,83 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import Animated, { Easing, FadeInUp, SlideInLeft, SlideInRight, SlideOutLeft, SlideOutRight } from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { NumberSlider } from "../../components/NumberSlider";
+import Animated, { FadeInUp, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { NumberSlider } from '../../components/NumberSlider';
+import { OnboardingOption } from '../../components/Onboarding/onboardingOptions'; // Importar o novo componente
 import { auth } from "../../firebaseconfig";
-import { uploadImageAndGetURL } from '../../services/storageService'; // Assumimos que esta função existe
-import { createUserProfileDocument } from "../../userService"; // Assumimos que esta função aceita os novos campos
+import { EstatisticasOnboarding } from '../../models/EstatisticasOnboarding'; // Importar o Model
+import {
+  atualizarPassoOnboarding,
+  converterContaAnonima,
+  finalizarOnboarding,
+  iniciarOnboarding
+} from '../../services/onboardingService'; // Importar o Service
+import { uploadImageAndGetURL } from '../../services/storageService';
+import { createUserProfileDocument } from "../../userService";
 
+const AnimatedImage = Animated.createAnimatedComponent(Image);
 
+/**
+ * Componente para cada item do carrossel de metas de treino.
+ * Inclui animação de escala e opacidade ao ser selecionado.
+ */
+const StreakGoalItem = ({
+  day,
+  isSelected,
+  onPress,
+  imageSrc,
+  itemWidth,
+  spacing
+}: {
+  day: number;
+  isSelected: boolean;
+  onPress: () => void;
+  imageSrc: any;
+  itemWidth: number;
+  spacing: number;
+}) => {
+  const progress = useSharedValue(isSelected ? 1 : 0);
 
-const ProgressBar = ({ progress }: { progress: number }) => (
-  <View style={styles.progressBarContainer}>
-    <View style={[styles.progressBar, { width: `${progress}%` }]} />
-  </View>
-);
+  React.useEffect(() => {
+    progress.value = withTiming(isSelected ? 1 : 0, { duration: 300 });
+  }, [isSelected]);
 
-export default function CadastroScreen() {
+  const animatedStyle = useAnimatedStyle(() => {
+    const scale = progress.value * 0.3 + 0.8; // Anima de 0.8 para 1.1
+    const opacity = progress.value * 0.5 + 0.5; // Anima de 0.5 para 1.0
+    return { transform: [{ scale }], opacity };
+  });
+
+  return (
+    <TouchableOpacity style={styles.streakImageButton} onPress={onPress}>
+      <AnimatedImage source={imageSrc} style={[styles.streakImageSlider, { width: itemWidth, marginHorizontal: spacing / 2 }, animatedStyle]} />
+    </TouchableOpacity>
+  );
+};
+
+export default function CadastroScreen() { 
   const router = useRouter();
-  const TOTAL_FORM_STEPS = 8; // genero, altura, peso, nivel, streakGoal, weeksStreakGoal, nome, credenciais
-
-  const [step, setStep] = useState(0); // 0: Welcome, 1-5: Form steps
+  const TOTAL_FORM_STEPS = 25; // Agora são 25
+  
+  const [onboardingStep, setOnboardingStep] = useState(0); // 0: Welcome, 1-25: Form steps
 
   const [animationDirection, setAnimationDirection] = useState<'forward' | 'backward'>('forward');
 
-  // Dados do usuário
+  // -------- NOVOS ESTADOS --------
+  // Estado unificado para os dados do onboarding
+  const [onboardingData, setOnboardingData] = useState<Partial<EstatisticasOnboarding>>({ problemasParaTreinar: [] });
+  // -------------------------------
+
+  // Dados do usuário (antigos - vamos migrar o que for do onboarding para 'onboardingData')
   const [nome, setNome] = useState("");
-  const [altura, setAltura] = useState("175");
-  const [peso, setPeso] = useState("75");
+  const [altura, setAltura] = useState(175);
+  const [peso, setPeso] = useState(75);
   const [genero, setGenero] = useState<'Masculino' | 'Feminino' | 'Outro' | null>(null);
   const [nivel, setNivel] = useState<'Iniciante' | 'Intermediário' | 'Avançado' | null>(null);
   const [streakGoal, setStreakGoal] = useState<number>(3); // Meta de treinos por semana
+  const [diaNascimento, setDiaNascimento] = useState(15);
+  const [mesNascimento, setMesNascimento] = useState(6); // 0-indexed for Date, but 1-indexed for display
+  const [anoNascimento, setAnoNascimento] = useState(2000);
   const [weeksStreakGoal, setWeeksStreakGoal] = useState<number>(4); // Meta de semanas seguidas
   const [photoURI, setPhotoURI] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -57,35 +108,198 @@ export default function CadastroScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
 
+  // --- Refs para o carrossel de metas ---
+  const flatListRef = useRef<FlatList>(null);
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
+
+  // CORREÇÃO: Mover o hook `useCallback` para o nível superior do componente.
+  // Chamar hooks dentro de condições (como o switch case) viola as regras do React.
+  const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
+    const visibleItem = viewableItems.find((i: any) => i.isViewable);
+    if (visibleItem && typeof visibleItem.item.id === 'number') {
+      if (streakGoal !== visibleItem.item.id) {
+        setStreakGoal(visibleItem.item.id);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    }
+  }, [streakGoal]);
+
   // This validation is now only for the email/password form
   const isCredentialsValid = nome.trim().length > 0 && email.trim().length > 5 && email.includes('@') && senha.length >= 6 && senha === confirmarSenha;
 
   const isStepComplete = () => {
-    switch (step) {
-      case 1: return genero !== null;
-      case 2: return altura.trim().length > 0;
-      case 3: return peso.trim().length > 0;
-      case 4: return nivel !== null;
-      case 5: return streakGoal >= 2 && streakGoal <= 7;
-      case 6: return weeksStreakGoal > 0;
-      case 7: return nome.trim().length > 0;
-      default: return false;
+    // Vamos atualizar isso a cada passo
+    switch (onboardingStep) {
+      case 1: return !!onboardingData.ondeOuviuGymBeat;
+      case 2: return onboardingData.tentouOutrosApps !== undefined && onboardingData.tentouOutrosApps !== null;
+      case 3: return !!onboardingData.objetivoPrincipal;
+      case 4: return !!onboardingData.problemasParaTreinar && onboardingData.problemasParaTreinar.length > 0;
+      case 5: return true; // Tela informativa
+      case 6: return true; // Tela informativa
+      // --- NOVOS STEPS ---
+      case 7: return true; // Tela informativa "Muito bem!"
+      case 8: return !!onboardingData.localTreino; // "Onde treina?"
+      case 9: return onboardingData.possuiEquipamentosCasa !== undefined; // "Halteres?" (só aparece se localTreino === 'Em casa')
+      case 10: return nivel !== null; // "Nível" (antigo case 7)
+      // --- STEPS REORDENADOS ---
+      case 11: return streakGoal >= 2 && streakGoal <= 7; // Meta de treinos (CORRETO)
+      case 12: return weeksStreakGoal > 0; // Meta de semanas (CORRETO)
+      case 13: return genero !== null; // Gênero (CORRETO)
+      case 14: return diaNascimento > 0 && mesNascimento > 0 && anoNascimento > 1920; // Data de Nascimento
+      case 15: return altura > 0; // Altura
+      case 16: return peso > 0; // Peso
+      case 17: return nome.trim().length > 0; // Nome
+      case 18: return isCredentialsValid; // Credenciais
+      // Adicionar os próximos cases (até 25) aqui
+      default: return true;
     }
   };
 
-  const handleNext = () => {
-    if (step <= TOTAL_FORM_STEPS) {
+  const handleIniciarOnboarding = async () => {
+    try {
+      await iniciarOnboarding(); // Cria o documento no Firestore
+    } catch (error) {
+      console.error("Erro ao iniciar onboarding:", error);
+      // Não bloquear o usuário, mas logar o erro
+    }
+    setAnimationDirection('forward');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setOnboardingStep(s => s + 1);
+  };
+
+
+// ... (linha de adjacência)
+  const handleNext = async () => {
+    // Salva os dados do passo atual no Firestore ANTES de avançar
+    try {
+      if (onboardingStep === 1) {
+        await atualizarPassoOnboarding({ ondeOuviuGymBeat: onboardingData.ondeOuviuGymBeat });
+      } else if (onboardingStep === 2) {
+        await atualizarPassoOnboarding({ tentouOutrosApps: onboardingData.tentouOutrosApps });
+      } else if (onboardingStep === 3) {
+        await atualizarPassoOnboarding({ objetivoPrincipal: onboardingData.objetivoPrincipal });
+      }
+      // --- NOVOS STEPS ---
+      else if (onboardingStep === 4) {
+        await atualizarPassoOnboarding({ problemasParaTreinar: onboardingData.problemasParaTreinar });
+      }
+      // Não precisamos salvar nada para 5 e 6 (telas informativas)
+      // --- FIM NOVOS STEPS ---
+      // Não precisamos salvar nada para 5, 6 e 7 (telas informativas)
+      // --- NOVOS STEPS ---
+      else if (onboardingStep === 8) {
+        await atualizarPassoOnboarding({ localTreino: onboardingData.localTreino || null });
+      } else if (onboardingStep === 9) {
+        await atualizarPassoOnboarding({ possuiEquipamentosCasa: onboardingData.possuiEquipamentosCasa });
+      }
+      // A lógica de salvar os dados restantes (nível, metas, dados pessoais)
+      // será feita no próprio handleCadastro, antes de finalizar, para garantir
+      // que tudo seja salvo.
+
+    } catch (error) {
+      console.error("Erro ao salvar passo do onboarding:", error);
+      // Não bloquear o usuário, mas logar o erro
+    }
+
+    if (onboardingStep < TOTAL_FORM_STEPS) {
       setAnimationDirection('forward');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       Keyboard.dismiss(); // Esconde o teclado ao avançar
-      setStep(s => s + 1);
-    }
-  };
 
+      // --- LÓGICA CONDICIONAL ---
+      const problemas = onboardingData.problemasParaTreinar || [];
+
+      if (onboardingStep === 4) {
+        // Lógica de pulo:
+        // Se 'Falta de constância' foi selecionado, o próximo passo é 5
+        if (problemas.includes('Falta de constância')) {
+          setOnboardingStep(5);
+          return;
+        }
+        // Se não, checa se 'Não vejo resultados' foi selecionado, o próximo é 6
+        if (problemas.includes('Não vejo resultados')) {
+          setOnboardingStep(6);
+          return;
+        }
+        // Se nenhum dos dois, pula para o passo 7 (Gênero)
+        setOnboardingStep(7);
+        return;
+      }
+
+      if (onboardingStep === 5) {
+        // Vindo do passo 5, checa se o 6 também é necessário
+        if (problemas.includes('Não vejo resultados')) {
+          setOnboardingStep(6);
+          return;
+        }
+        // Se não, pula para o 7
+        setOnboardingStep(7);
+        return;
+      }
+
+      if (onboardingStep === 8) {
+        // Se 'Na academia', pula o case 9 (Halteres) e vai para o 10 (Nível)
+        if (onboardingData.localTreino === 'Na academia') {
+          setOnboardingStep(10);
+        } else {
+          setOnboardingStep(9);
+        }
+        return;
+      }
+      // Se vindo do 6, ou qualquer outro passo, avança normalmente
+      setOnboardingStep(s => s + 1);
+
+    } else if (onboardingStep === TOTAL_FORM_STEPS) {
+      // Lógica de finalização (ex: handleCadastro)
+      // handleCadastro(); // Vamos implementar isso no último step
+    }
+  };  
+  
+// ... (linha de adjacência)
   const handleBack = () => {
-    if (step > 0) {
+    if (onboardingStep > 0) { // Permite voltar até o step 0 (vídeo)
       setAnimationDirection('backward');
-      setStep(s => s - 1);
+
+      // --- LÓGICA CONDICIONAL AO VOLTAR ---
+      const problemas = onboardingData.problemasParaTreinar || [];
+
+      if (onboardingStep === 7) {
+        // Se estamos indo do 7 (Gênero) para trás, temos que ver para onde voltar
+        if (problemas.includes('Não vejo resultados')) {
+          setOnboardingStep(6); // Volta para o 6
+          return;
+        }
+        if (problemas.includes('Falta de constância')) {
+          setOnboardingStep(5); // Volta para o 5
+          return;
+        }
+        setOnboardingStep(4); // Volta para o 4
+        return;
+      }
+
+      if (onboardingStep === 6) {
+        // Se estamos indo do 6 para trás
+        if (problemas.includes('Falta de constância')) {
+          setOnboardingStep(5); // Volta para o 5
+          return;
+        }
+        setOnboardingStep(4); // Volta para o 4
+        return;
+      }
+      // --- NOVA LÓGICA CONDICIONAL AO VOLTAR (LOCAL TREINO) ---
+      if (onboardingStep === 10) { // Vindo do "Nível"
+        // Se treina 'Na academia', pulou o 9, então volta para o 8
+        if (onboardingData.localTreino === 'Na academia') {
+          setOnboardingStep(8);
+          return;
+        }
+        // Se treina 'Em casa', volta para o 9 (Halteres)
+        setOnboardingStep(9);
+        return;
+      }
+      // --- FIM NOVA LÓGICA CONDICIONAL ---
+
+      setOnboardingStep(s => s - 1);
     }
   };
 
@@ -110,7 +324,26 @@ export default function CadastroScreen() {
     }
   };
 
-  const handleCadastro = async () => {
+  // NOVA FUNÇÃO para toggle de multi-seleção
+  const handleToggleProblema = (problemaKey: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setOnboardingData(prev => {
+      const currentProblemas = prev.problemasParaTreinar || [];
+      const isSelected = currentProblemas.includes(problemaKey);
+
+      let newProblemas: string[] = [];
+      if (isSelected) {
+        // Remover
+        newProblemas = currentProblemas.filter((p: string) => p !== problemaKey);
+      } else {
+        // Adicionar
+        newProblemas = [...currentProblemas, problemaKey];
+      }
+      return { ...prev, problemasParaTreinar: newProblemas };
+    });
+  };
+
+  const handleCadastro = async (): Promise<void> => {
     if (!email.trim() || !senha.trim()) {
       Alert.alert("Erro", "E-mail e senha são obrigatórios.");
       return;
@@ -121,21 +354,39 @@ export default function CadastroScreen() {
     }
     try {
       setIsLoading(true);
-      const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
-      const user = userCredential.user;
+      // 1. Converte a conta anônima para uma conta permanente
+      await converterContaAnonima(email, senha);
+      const user: User | null = auth.currentUser;
+
+      if (!user) {
+        throw new Error("A conversão da conta falhou. Nenhum usuário encontrado.");
+      }
 
       let photoURL: string | undefined = undefined;
       if (photoURI) {
-        photoURL = await uploadImageAndGetURL(photoURI, user.uid);
+        photoURL = await uploadImageAndGetURL(photoURI, user.uid); // Upload da foto
       }
 
-      const alturaNum = Number(altura);
-      const pesoNum = Number(peso);
-
+      // 2. Salva os últimos dados coletados no documento de estatísticas
+      const alturaNum = altura;
+      const pesoNum = peso;
       const finalNome = nome.trim() || user.email?.split('@')[0] || '';
+      await atualizarPassoOnboarding({
+        nomePreferido: finalNome,
+        alturaCm: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : null,
+        pesoKg: !isNaN(pesoNum) && pesoNum > 0 ? pesoNum : null,
+        genero: genero || null,
+        nivelExperiencia: nivel || null,
+        compromissoSemanal: streakGoal,
+        metaSemanas: weeksStreakGoal,
+        dataNascimento: new Date(anoNascimento, mesNascimento - 1, diaNascimento).toISOString(),
+        adicionouFotoPerfil: !!photoURI,
+      });
 
-      // Cria o documento de perfil no Firestore com todos os dados coletados.
-      // A função `createUserProfileDocument` precisará ser adaptada para aceitar estes campos.
+      // 3. Finaliza o onboarding (salva o horário de registro)
+      await finalizarOnboarding();
+
+      // 4. Cria o perfil principal do usuário
       await createUserProfileDocument(user, {
         nome: finalNome,
         isPro: false,
@@ -147,10 +398,8 @@ export default function CadastroScreen() {
         weeksStreakGoal: weeksStreakGoal,
         photoURL: photoURL || '',
       });
-
       setIsLoading(false);
-      Alert.alert("Sucesso!", "Conta criada com sucesso!");
-      // O AuthProvider e o _layout irão redirecionar o usuário para a tela principal.
+
     } catch (error: any) {
       setIsLoading(false);
       Alert.alert("Erro no Cadastro", error.message);
@@ -158,8 +407,8 @@ export default function CadastroScreen() {
   };
 
 
-  const getStreakImage = () => {
-    switch (streakGoal) {
+  const getStreakImage = (num: number) => {
+    switch (num) {
       case 2: return require('../../assets/images/Streak-types/Vector_2_dias.png');
       case 3: return require('../../assets/images/Streak-types/Vector_3_dias.png');
       case 4: return require('../../assets/images/Streak-types/Vector_4_dias.png');
@@ -174,23 +423,26 @@ export default function CadastroScreen() {
 
   // Renderiza o conteúdo da etapa atual
   const renderStepContent = () => {
-    switch (step) {
+    switch (onboardingStep) {
       case 0: // Tela de Boas-vindas
         return (
-          <View style={styles.welcomeContainer}>
-            <SafeAreaView style={styles.welcomeHeader}>
-              <Image source={require('../../assets/images/Frame 40.png')} style={styles.headerImage} />
-            </SafeAreaView>
-
-            <Image
-              source={require('../../assets/images/onboarding/Before-start.png')}
-              style={styles.welcomeImage}
+          <>
+            <Video
+              source={require('../../assets/images/onboarding/intro-video.mp4')}
+              rate={1.0}
+              isMuted={true}
+              isLooping={true}
+              shouldPlay={true}
+              resizeMode={ResizeMode.COVER}
+              style={styles.welcomeVideo}
             />
+          <View style={styles.welcomeContainer}>
             <View style={styles.welcomeBottomContent}>
               <Text style={styles.title}>Faça com que a academia se torne um vício</Text>
               <View style={styles.welcomeButtonContainer}>
-                <TouchableOpacity style={styles.welcomePrimaryButton} onPress={handleNext}>
-                  <Text style={styles.welcomePrimaryButtonText}>Vamos começar seu registro</Text>
+                {/* Chama a nova função aqui */}
+                <TouchableOpacity style={styles.welcomePrimaryButton} onPress={handleIniciarOnboarding}>
+                  <Text style={styles.welcomePrimaryButtonText}>Vamos lá!</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => router.push("./login")}>
                   <Text style={styles.welcomeSecondaryButtonText}>Já tenho uma conta (Login)</Text>
@@ -198,124 +450,372 @@ export default function CadastroScreen() {
               </View>
             </View>
           </View>
+          </>
         );
 
-      case 1: // Gênero
+      case 1: // NOVO STEP: Onde ouviu falar?
+        const ondeOuviuOptions = [
+          { key: 'App store', text: 'App store', icon: 'logo-apple-appstore' },
+          { key: 'X (antigo twitter)', text: 'X (antigo twitter)', icon: 'logo-twitter' },
+          { key: 'Instagram', text: 'Instagram', icon: 'logo-instagram' },
+          { key: 'Google', text: 'Google', icon: 'logo-google' },
+          { key: 'Indicação', text: 'Indicação', icon: 'people-outline' },
+        ] as const;
+
         return (
           <View style={styles.optionContainerVertical}>
-            <TouchableOpacity style={[styles.genderButton, genero === 'Masculino' && styles.optionSelected]} onPress={() => setGenero('Masculino')}>
-              <FontAwesome name="mars" size={24} color="#fff" />
-              <Text style={styles.optionText}>Masculino</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.genderButton, genero === 'Feminino' && styles.optionSelected]} onPress={() => setGenero('Feminino')}>
-              <FontAwesome name="venus" size={24} color="#fff" />
-              <Text style={styles.optionText}>Feminino</Text>
-            </TouchableOpacity>
+            {ondeOuviuOptions.map((opt, index) => (
+              <OnboardingOption
+                key={opt.key}
+                text={opt.text}
+                // Usando Ionicons conforme o componente
+                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                isSelected={onboardingData.ondeOuviuGymBeat === opt.key}
+                onPress={() => setOnboardingData(prev => ({ ...prev, ondeOuviuGymBeat: opt.key }))}
+                // Animação de entrada
+                entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
+              />
+            ))}
           </View>
         );
-      case 2: // Altura
+
+      case 2: // NOVO STEP: Já tentou outros apps?
+        // CORREÇÃO: Usar strings 'Sim'/'Não' como 'key' para bater com o tipo do model
+        const simNaoOptions = [
+          { key: 'Sim', text: 'Sim', icon: 'thumbs-up-outline' },
+          { key: 'Não', text: 'Não', icon: 'thumbs-down-outline' },
+        ] as const;
+
+        return (
+          <View style={styles.optionContainerVertical}>
+            {simNaoOptions.map((opt, index) => (
+              <OnboardingOption
+                key={opt.text}
+                text={opt.text}
+                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                isSelected={onboardingData.tentouOutrosApps === opt.key}
+                onPress={() => setOnboardingData(prev => ({ ...prev, tentouOutrosApps: opt.key }))}
+                entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
+              />
+            ))}
+          </View>
+        );
+
+      case 3: // NOVO STEP: Objetivo Principal
+        const objetivoOptions = [
+          { key: 'Emagrecer', text: 'Emagrecer', icon: 'flame-outline' },
+          { key: 'Crescer', text: 'Crescer', icon: 'barbell-outline' },
+          { key: 'Manter', text: 'Manter', icon: 'checkmark-circle-outline' },
+          { key: 'Não sei ao certo', text: 'Não sei ao certo', icon: 'help-circle-outline' },
+        ] as const;
+
+        return (
+          <View style={styles.optionContainerVertical}>
+            {objetivoOptions.map((opt, index) => (
+              <OnboardingOption
+                key={opt.key}
+                text={opt.text}
+                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                isSelected={onboardingData.objetivoPrincipal === opt.key}
+                onPress={() => setOnboardingData(prev => ({ ...prev, objetivoPrincipal: opt.key }))}
+                entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
+              />
+            ))}
+          </View>
+        );
+
+
+case 4: // NOVO STEP: Problemas para treinar (Multi-select)
+        const problemasOptions = [
+          { key: 'Falta de motivação', text: 'Falta de motivação', icon: 'battery-dead-outline' },
+          { key: 'Falta de constância', text: 'Falta de constância', icon: 'refresh-outline' },
+          { key: 'Horários bagunçados', text: 'Horários bagunçados', icon: 'time-outline' },
+          { key: 'Não vejo resultados', text: 'Não vejo resultados', icon: 'trending-down-outline' },
+          { key: 'Me sinto intimidado', text: 'Me sinto intimidado', icon: 'eye-off-outline' },
+        ] as const;
+
+        return (
+          <View style={styles.optionContainerVertical}>
+            {problemasOptions.map((opt, index) => (
+              <OnboardingOption
+                key={opt.key}
+                text={opt.text}
+                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                isSelected={(onboardingData.problemasParaTreinar || []).includes(opt.key)}
+                onPress={() => handleToggleProblema(opt.key)} // Usa a nova função
+                entering={FadeInUp.duration(400).delay(index * 100)}
+              />
+            ))}
+            <Text style={[styles.optionDescription, {marginTop: 10}]}>Pode escolher mais de um</Text>
+          </View>
+        );
+
+      case 5: // NOVO STEP: Feature Streaks (Condicional - Onboarding 9.png)
+        return (
+          <View style={styles.stepContentWrapper}>
+            <LottieView source={require('../../assets/images/onboarding/Animations/Case(NãoVejoResultados}{MeSintoIntimidado}2.json')} autoPlay loop={false} style={styles.featureImage} />
+          </View>
+        );
+
+      case 6: // NOVO STEP: Feature Gráficos (Condicional - Onboarding 10.png)
+        return (
+          <View style={styles.stepContentWrapper}>
+            <LottieView source={require('../../assets/images/onboarding/Animations/Case{FaltaDeMotivacao}{faltaDeConstância}.json')} autoPlay loop={false} style={styles.featureImage} />
+          </View>
+        );
+        
+case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
+        return (
+          <View style={styles.stepContentWrapper}>
+            <Text style={[styles.mainTitle, { textAlign: 'center', fontSize: 36, marginBottom: 15 }]}>Muito bem!</Text>
+            <Text style={styles.featureSubtitle}>Agora faremos algumas perguntas para ajustar sua experiência no app e torna-la o mais otimizada possível para que você alcance seus objetivos</Text>
+          </View>
+        );
+
+      case 8: // NOVO STEP: "Onde você costuma treinar?" (Onboarding 12.png)
+        const localOptions = [
+          { key: 'Em casa', text: 'Em casa', icon: 'home-outline' },
+          { key: 'Na academia', text: 'Na academia', icon: 'barbell-outline' }, // Usei barbell, ajuste se tiver ícone melhor
+        ] as const;
+
+        return (
+          <View style={styles.optionContainerVertical}>
+            {localOptions.map((opt, index) => (
+              <OnboardingOption
+                key={opt.key}
+                text={opt.text}
+                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                isSelected={onboardingData.localTreino === opt.key}
+                onPress={() => setOnboardingData(prev => ({ ...prev, localTreino: opt.key }))}
+                entering={FadeInUp.duration(400).delay(index * 100)}
+              />
+            ))}
+          </View>
+        );
+
+      case 9: // NOVO STEP: "Halteres?" (Onboarding 13.png)
+        const halteresOptions = [
+          { key: 'Sim', text: 'Sim', icon: 'thumbs-up-outline' },
+          { key: 'Não', text: 'Não', icon: 'thumbs-down-outline' },
+        ] as const;
+
+        return (
+          <View style={styles.optionContainerVertical}>
+            {halteresOptions.map((opt, index) => (
+              <OnboardingOption
+                key={opt.key}
+                text={opt.text}
+                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />} 
+                isSelected={onboardingData.possuiEquipamentosCasa === (opt.key === 'Sim')}
+                onPress={() => setOnboardingData(prev => ({ ...prev, possuiEquipamentosCasa: opt.key === 'Sim' }))}
+                entering={FadeInUp.duration(400).delay(index * 100)} 
+              />
+            ))}
+          </View>
+        );
+        
+      case 10: // Nível (Antigo step 7)
+        const nivelOptions = [
+          { key: 'Iniciante', text: 'Iniciante', icon: 'body-outline' },
+          { key: 'Intermediário', text: 'Intermediário', icon: 'barbell-outline' },
+          { key: 'Avançado', text: 'Avançado', icon: 'ribbon-outline' },
+        ] as const;
+
+        return (
+          <View style={styles.optionContainerVertical}>
+            {nivelOptions.map((opt, index) => (
+              <OnboardingOption
+                key={opt.key}
+                text={opt.text}
+                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                isSelected={nivel === opt.key}
+                onPress={() => setNivel(opt.key)}
+                entering={FadeInUp.duration(400).delay(index * 100)}
+              />
+            ))}
+          </View>
+        );
+
+      case 13: // Gênero (CORRETO)
+        const generoOptions = [
+          { key: 'Masculino', text: 'Masculino', icon: 'male-outline' },
+          { key: 'Feminino', text: 'Feminino', icon: 'female-outline' },
+          { key: 'Outro', text: 'Outro', icon: 'male-female-outline' },
+        ] as const;
+
+        return (
+          <View style={styles.optionContainerVertical}>
+            {generoOptions.map((opt, index) => (
+              <OnboardingOption
+                key={opt.key}
+                text={opt.text}
+                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                isSelected={genero === opt.key}
+                onPress={() => setGenero(opt.key)}
+                entering={FadeInUp.duration(400).delay(index * 100)}
+              />
+            ))}
+          </View>
+        );
+
+case 15: // Altura
         return (
           <View style={styles.stepContentWrapper}>
             <NumberSlider
-              min={140}
-              max={210}
-              value={Number(altura) || 175}
-              onChange={(val) => setAltura(val.toString())}
+              min={120}
+              max={220}
+              value={altura}
+              onChange={(val) => setAltura(val)}
+              initialValue={175}
               vertical
             />
             <Text style={styles.sliderUnitText}>cm</Text>
           </View>
         );
-
-      case 3: // Peso
+        
+      case 16: // Peso
         return (
-          <View style={styles.stepContentWrapper}>
+          <View style={[styles.stepContentWrapper, { justifyContent: 'center' }]}>
             <NumberSlider
-              min={40}
-              max={175}
-              value={Number(peso) || 75}
-              onChange={(val) => setPeso(val.toString())}
+              min={30}
+              max={200}
+              value={peso}
+              onChange={(val) => setPeso(val)}
+              step={1}
+              initialValue={75}
+              vertical={false} // Slider horizontal
             />
-             {/* O valor já é mostrado no slider, basta exibir a unidade */}
             <Text style={styles.sliderUnitTextHorizontal}>kg</Text>
           </View>
-  );
-      case 4: // Nível
-        const niveis = [
-          { label: 'Iniciante', description: 'Treino faz menos de 1 ano e meio' },
-          { label: 'Intermediário', description: 'Treino de 1 ano e meio a 3 anos' },
-          { label: 'Avançado', description: 'Já treino a mais de 3 anos' },
-        ] as const;
-
-        return (
-          <View style={styles.optionContainerVertical}>
-            {niveis.map(n => (
-              <TouchableOpacity key={n.label} style={[styles.optionButton, nivel === n.label && styles.optionSelected]} onPress={() => setNivel(n.label)}>
-                <Text style={styles.optionText}>{n.label}</Text>
-                <Text style={styles.optionDescription}>{n.description}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         );
-      case 5: // Meta de Treinos Semanal
+
+      case 11: // Meta de Treinos Semanal (CORRETO)
+        const { width: screenWidth } = Dimensions.get('window');
+        const ITEM_WIDTH = 100; // Largura da imagem
+        const SPACING = 15; // Espaçamento entre as imagens
+        const ITEM_FULL_WIDTH = ITEM_WIDTH + SPACING;
+        const PADDING_HORIZONTAL = (screenWidth - ITEM_FULL_WIDTH) / 2;
+
+        // Adiciona espaçadores para centralizar o primeiro e último item
+        const streakDaysWithSpacers = [
+          { id: 'spacer-left' },
+          ...[2, 3, 4, 5, 6, 7].map(d => ({ id: d })),
+          { id: 'spacer-right' }
+        ];
+
+        const handlePressItem = (day: number, index: number) => {
+          setStreakGoal(day);
+          flatListRef.current?.scrollToIndex({ index, animated: true });
+        };
+
+        const streakDays = [2, 3, 4, 5, 6, 7];
         return (
           <>
-            <Animated.Image
-              key={streakGoal} // Chave para forçar a re-renderização e a animação
-              source={getStreakImage()}
-              style={styles.streakImage}
-              entering={FadeInUp.duration(400)} // Animação de entrada
+            <View style={styles.summaryContainer}>
+              <Text style={styles.summaryText}>
+                Me comprometo ir à academia ao menos
+              </Text>
+              <Text style={styles.summaryHighlightBig}>
+                {streakGoal} vezes por semana
+              </Text>
+            </View>
+
+            <FlatList
+              ref={flatListRef}
+              data={streakDaysWithSpacers}
+              keyExtractor={(item) => String(item.id)}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={ITEM_FULL_WIDTH}
+              decelerationRate="fast"
+              contentContainerStyle={{ paddingHorizontal: PADDING_HORIZONTAL }}
+              onViewableItemsChanged={onViewableItemsChanged}
+              viewabilityConfig={viewabilityConfig}
+              style={styles.streakScrollContainer}
+              renderItem={({ item, index }) => {
+                if (typeof item.id !== 'number') {
+                  // Os espaçadores não são mais necessários com o paddingHorizontal
+                  return null; // Correctly returns null for spacers
+                }
+                const day = item.id;
+                // CORREÇÃO: O return estava faltando aqui, fazendo com que nada fosse renderizado.
+                return (
+                  <StreakGoalItem
+                    day={day}
+                    isSelected={streakGoal === day}
+                    onPress={() => handlePressItem(day, index)}
+                    imageSrc={getStreakImage(day)}
+                    itemWidth={ITEM_WIDTH}
+                    spacing={SPACING}
+                  />
+                );
+              }}
             />
-            <View style={styles.optionContainerHorizontal}>
-              {[2, 3, 4, 5, 6, 7].map(d => (
+          </>
+        );
+
+      case 12: // Meta de Semanas Seguidas (CORRETO)
+        const weekGoals = [1, 2, 4, 8, 16, 32];
+        const barHeights = { 1: 30, 2: 50, 4: 70, 8: 90, 16: 110, 32: 130 }; // Alturas em pixels
+        const weekColors = {
+          1: '#008000', // Verde Escuro
+          2: '#90EE90', // Verde
+          4: '#DAF7A6', // Verde Claro
+          8: '#FFD580', // Laranja claro (Salmão)
+          16: '#FF5733', // Laranja
+          32: '#FF0000', // Vermelho
+        };
+
+        const getMonths = (weeks: number) => {
+          if (weeks < 4) return '';
+          const months = Math.floor(weeks / 4);
+          if (months === 1) return `ou {1} mês`;
+          return `ou {${months}} meses`;
+        };
+
+        return (
+          <>
+            <View style={styles.barChartContainer}>
+              {weekGoals.map(w => (
                 <TouchableOpacity
-                  key={d}
-                  style={[styles.streakGoalButton, streakGoal === d && styles.optionSelected]}
+                  key={w}
+                  style={styles.barButton}
                   onPress={() => {
-                    setStreakGoal(d);
+                    setWeeksStreakGoal(w);
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
                 >
-                  <Text style={styles.optionText}>{d}</Text>
+                  <View
+                    style={[
+                      styles.bar,
+                      {
+                        height: barHeights[w as keyof typeof barHeights],
+                        backgroundColor: weeksStreakGoal === w
+                          ? weekColors[w as keyof typeof weekColors]
+                          : '#173F5F'
+                      }
+                    ]}
+                  />
+                  <Text style={[styles.barLabel, weeksStreakGoal === w && {color: '#fff'}]}>{w}</Text>
                 </TouchableOpacity>
               ))}
             </View>
-          </>
 
-        );
-      case 6: // Meta de Semanas Seguidas
-        return (
-          <>
-            <View style={styles.centralDisplayContainer}>
-              <Image
-                source={getStreakImage()}
-                style={styles.streakImageSmall}
-              />
-              <View>
-                <Animated.Text
-                  key={`weeks-text-${weeksStreakGoal}`} // Chave para forçar a animação na mudança
-                  style={styles.centralDisplayNumber}
-                  entering={FadeInUp.duration(50).springify()} // Animação mais rápida
-                >
-                  {weeksStreakGoal}
-                </Animated.Text>
-                <Text style={styles.centralDisplayText}>Semanas</Text>
-              </View>
-            </View>
-            <View style={styles.optionContainerHorizontal}>
-              {[4, 8, 12, 24].map(w => (
-                <TouchableOpacity
-                  key={w}
-                  style={[styles.streakGoalButton, weeksStreakGoal === w && styles.optionSelected]}
-                  onPress={() => { setWeeksStreakGoal(w); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                >
-                  <Text style={styles.optionText}>{w}</Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.summaryContainer}>
+              <Text style={styles.summaryText}>
+                Me comprometo ir à academia ao menos <Text style={styles.summaryHighlight}>{streakGoal}</Text> vezes por semana durante
+              </Text>
+              <Text style={styles.summaryHighlightBig}>
+                {weeksStreakGoal} {weeksStreakGoal === 1 ? 'semana' : 'semanas'}
+              </Text>
+              <Text style={styles.summarySubText}>
+                {getMonths(weeksStreakGoal)}
+              </Text>
             </View>
           </>
         );
-      case 7: // Nome e Resumo
+        
+      case 17: // Nome e Foto
         return(
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <View style={styles.finalSummaryContainer}>
@@ -334,7 +834,7 @@ export default function CadastroScreen() {
             <TextInput placeholder="Como podemos te chamar?" value={nome} onChangeText={setNome} style={styles.input} placeholderTextColor="#ccc" />
           </ScrollView>
         );
-      case 8: // Credenciais
+      case 18: // Credenciais
         return (
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#ccc" />
@@ -348,519 +848,673 @@ export default function CadastroScreen() {
               {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.finalButtonText}>Finalizar Cadastro</Text>}
             </TouchableOpacity>
 
-            <Text style={styles.loginRedirectText}>Já tem uma conta? <Text style={styles.loginRedirectLink} onPress={() => router.push('/login')}>Faça Login</Text></Text>
           </ScrollView>
+        );
+
+      case 14: // Data de Nascimento
+        const meses = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+        return (
+          <View style={[styles.stepContentWrapper, { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 }]}>
+            {/* Dia */}
+            <View style={styles.dataSliderColumn}>
+              <NumberSlider
+                min={1}
+                max={31}
+                value={diaNascimento}
+                onChange={(val) => setDiaNascimento(val)}
+                initialValue={15}
+                vertical
+              />
+            </View>
+            {/* Mês */}
+            <View style={styles.dataSliderColumn}>
+              <NumberSlider
+                min={1}
+                max={12}
+                value={mesNascimento}
+                onChange={(val) => setMesNascimento(val)}
+                initialValue={6}
+                vertical
+                displayValues={meses}
+              />
+            </View>
+            {/* Ano */}
+            <View style={styles.dataSliderColumn}>
+              <NumberSlider
+                min={new Date().getFullYear() - 80}
+                max={new Date().getFullYear()}
+                value={anoNascimento}
+                onChange={(val) => setAnoNascimento(val)}
+                initialValue={2000}
+                vertical
+              />
+            </View>
+          </View>
         );
       default: return null;
     }
   };
 
-  const getStepTitle = () => {
-    switch (step) {
-      case 1: return "Qual seu gênero?";
-      case 2: return "Qual sua altura?";
-      case 3: return "E o seu peso?";
-      case 4: return "Qual seu nível na academia?";
-      case 5: return "Qual sua meta treinos por semana";
-      case 6: return "Qual sua meta de semanas em sequência?";
-      case 7: return "Para finalizar, seu nome";
-      case 8: return "Crie sua conta";
-      default: return "";
+  const getStepSubtitle = () => {
+    switch (onboardingStep) {
+      case 5: return "Um sistema de constância que te incentiva à ir na academia e manter constância!";
+      case 6: return "+500 exercícios animados para você treinar como um atleta profissional!";
+      default: return null;
     }
   };
 
-  const progress = step > 0 ? (step / TOTAL_FORM_STEPS) * 100 : 0;
+  const ProgressBar = ({ progress }: { progress: number }) => (
+    <View style={styles.progressBarContainer}>
+      <View style={[styles.progressBar, { width: `${progress}%` }]} />
+    </View>
+  );
 
-  if (isLoading) {
-    return <View style={styles.container}><ActivityIndicator size="large" color="#fff" /></View>;
+// ... (linha de adjacência)
+// ... (linha de adjacência)
+const getStepTitle = () => {
+    switch (onboardingStep) {
+      case 1: return "Onde você ouviu falar da GymBeat?";
+      case 2: return "Você já tentou outros apps de treino antes?";
+      case 3: return "Qual seu objetivo principal";
+      case 4: return "O que você considera que seja seu maior problema para treinar?";
+      case 5: return "Vamos ajudar você a superar este(s) obstáculos!";
+      case 6: return "Vamos ajudar você a superar estes obstáculos!";
+      // --- NOVOS TÍTULOS ---
+      case 7: return ""; // Tela "Muito bem!" não tem título principal, o texto já é grande
+      case 8: return "Onde você costuma treinar?";
+      case 9: return "Você possui halteres e pesos livres em casa?";
+      case 10: // Título condicional
+        return `Como você se considera em relação à ${onboardingData.localTreino === 'Em casa' ? 'Exercícios físicos' : 'academia'}?`;
+      // --- TÍTULOS RE-NUMERADOS ---
+      case 11: return "Qual sua meta treinos por semana"; // (CORRETO)
+      case 12: return "Qual sua meta de semanas em sequência?"; // (CORRETO)
+      case 13: return "Qual seu gênero?"; // (CORRETO)
+      case 14: return "Qual sua data de nascimento?";
+      case 15: return "Qual sua altura?";
+      case 16: return "E o seu peso?";
+      case 17: return "Para finalizar, seu nome";
+      case 18: return "Crie sua conta";
+      // Adicionar títulos para os steps 18-25
+      default: return "";
+    }
+}
+    
+const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
+  const title = getStepTitle();
+  const subtitle = getStepSubtitle();
+  const stepComplete = isStepComplete();
+
+  // A tela de "Boas-vindas" (step 0) tem seu próprio layout de vídeo
+  if (onboardingStep === 0) {
+    return (
+      <View style={styles.container}>
+        {renderStepContent()}
+      </View>
+    );
   }
 
-  if (step === 0) {
-    // A tela de boas-vindas não usa SafeAreaView para a imagem cobrir a tela toda.
-    return <View style={styles.welcomeScreenContainer}>{renderStepContent()}</View>;
-  }
-
-  // Os passos do formulário usam SafeAreaView para evitar sobreposição com a UI do sistema.
+  // Layout para todos os outros passos do formulário (1-17+)
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <View style={styles.stepContainer}>
-        {/* --- Top Section --- */}
-        <View>
+      <View style={styles.stepContainer}>
+        
+        {/* Cabeçalho com Progresso e Voltar */}
+        <View style={styles.topNavContainer}>
+          <TouchableOpacity style={styles.navButton} onPress={handleBack}>
+            {/* O botão de voltar aparece em todos os steps > 0 */}
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          
           <ProgressBar progress={progress} />
-          <View style={styles.topNavContainer}>
-            <View style={{width: 50}} />
-            <Text style={styles.stepTitle}>{getStepTitle()}</Text>
-            {step < TOTAL_FORM_STEPS && (
-              <TouchableOpacity onPress={handleNext} style={styles.skipButtonContainer}>
-                <Text style={styles.skipButtonText}>Pular</Text>
-              </TouchableOpacity>
-            )}
-            {step >= TOTAL_FORM_STEPS && <View style={{width: 50}} />}
-          </View>
+          
+          {/* View vazia para manter a barra de progresso centralizada */}
+          <View style={styles.navButton} /> 
         </View>
 
-        {/* --- Middle Section (Content) --- */}
+        {/* Container Principal do Conteúdo (sem ScrollView) */}
         <View style={styles.contentContainer}>
-          <Animated.View
-            key={step}
-            style={{ width: '100%', alignItems: 'center' }}
-            entering={
-              (animationDirection === 'forward'
-                ? SlideInRight
-                : SlideInLeft
-              )
-                .duration(300)
-                .easing(Easing.out(Easing.quad))
-            }
-            exiting={
-              (animationDirection === 'forward'
-                ? SlideOutLeft.duration(300).easing(Easing.out(Easing.quad))
-                : SlideOutRight.duration(300).easing(Easing.out(Easing.quad))
-              )
-            }
-          >
-            {renderStepContent()}
-          </Animated.View>
+          {/* Título e Subtítulo */}
+          {title && <Text style={styles.mainTitle}>{title}</Text>}
+          {subtitle && <Text style={styles.featureSubtitle}>{subtitle}</Text>}
 
+          {/* Renderiza o conteúdo da etapa atual (opções, inputs, etc.) */}
+          {renderStepContent()}
         </View>
 
-        {/* --- Summary Text (Conditional) --- */}
-        {step === 6 && (
-            <View style={styles.summaryContainer}>
-                <Text style={styles.summaryText}>
-                    Minha meta é ir para a academia <Text style={styles.summaryHighlight}>{streakGoal}</Text> vezes por semana durante <Text style={styles.summaryHighlight}>{weeksStreakGoal}</Text> semanas.
-                </Text>
-            </View>
-        )}
-
-        {/* --- Bottom Section (Navigation) --- */}
-        {step < TOTAL_FORM_STEPS && (
+        {/* Rodapé com Botão "Avançar" */}
+        {/* Oculta o botão no step 0 (tela de welcome) 
+          e no step 17 (tela de credenciais), pois ele tem seu próprio botão "Finalizar Cadastro"
+        */} 
+        {onboardingStep > 0 && onboardingStep !== 18 && (
           <View style={styles.footer}>
-            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-              <Text style={styles.backButtonText}>Voltar</Text>
-            </TouchableOpacity>
-            {step < TOTAL_FORM_STEPS && (
-              <TouchableOpacity style={[styles.nextButton, !isStepComplete() && styles.nextButtonDisabled]} onPress={handleNext} disabled={!isStepComplete()}>
-                <Text style={styles.nextButtonText}> 
-                  {step === 6 ? "Eu vou conseguir" : "Próximo"}
+            <TouchableOpacity
+              style={[styles.nextButton, !stepComplete && styles.nextButtonDisabled]}
+              onPress={handleNext}
+              disabled={!stepComplete}
+            >
+              <Text style={styles.nextButtonText}> 
+                  {onboardingStep === TOTAL_FORM_STEPS ? "Finalizar Cadastro" : ([5, 6, 7].includes(onboardingStep) ? "Eu vou conseguir" : "Próximo")}
                 </Text>
-              </TouchableOpacity>
-            )}
+            </TouchableOpacity>
           </View>
         )}
-        </View>
-      </KeyboardAvoidingView>
+
+      </View>
     </SafeAreaView>
   );
-}
 
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", backgroundColor: "#030405" },
-  welcomeScreenContainer: { flex: 1, backgroundColor: "#030405" },
-  welcomeContainer: { flex: 1, justifyContent: 'flex-end', alignItems: 'center',},
-  welcomeBottomContent: {
-    width: '100%',
-    backgroundColor: '#030405d4',
-    padding: 30,
-    paddingTop: 15,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    gap: 15,
-    borderTopWidth: 1,
-    borderTopColor: '#ffffff1a',
-    paddingBottom: 60,
-  },
-  welcomeHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-    zIndex: 1, // Garante que o logo fique sobre a imagem de fundo
-    height: 60,
-    width: '100%',
-  },
-  welcomeImage: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
-  },
-  welcomeButtonContainer: { width: '100%', alignItems: 'center', gap: 30, marginTop: 20 },
-  welcomePrimaryButton: {
-    backgroundColor: '#1cb0f6',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    width: '100%',
-    alignItems: 'center',
-  },
-  welcomePrimaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  welcomeSecondaryButtonText: {
-    color: '#fffffffd',
-    fontSize: 16,
-  },
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#030405",
-  },
-  stepContainer: {
-    flex: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#ffffff1a',
-  },
-  backButton: {
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-  },
-  backButtonText: {
-    color: '#888',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  skipButtonText: {
-    color: '#888',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  formHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-    marginTop: 10,
-    marginBottom: 15,
-  },
-  headerButton: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-  },
-  headerImage: {
-    width: 100, height: 110, resizeMode: 'contain'
-  },
-  title: {
-    fontSize: 45,
-    fontWeight: '300',
-    textAlign: "left",
-    color: "#fff",
-  },
-  subtitle: { fontSize: 16, color: '#ccc', textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 },
-  stepTitle: { flex: 1, fontSize: 24, fontWeight: "bold", textAlign: "center", color: "#fff" },
-  input: {
-    backgroundColor: "#141414",
-    color: "#fff",
-    borderRadius: 8,
-    padding: 20,
-    marginBottom: 15,
-    fontSize: 16,
-    borderWidth: 1,
-    borderTopColor: "#ffffff3a",
-    borderLeftColor: "#ffffff3a",
-    borderRightColor: "#ffffff1a",
-    borderBottomColor: "#ffffff1a",
-
-    height: 64,
-    width: '100%',
-  },  
-  nextButton: {
-    backgroundColor: '#1cb0f6',
-    paddingVertical: 20,
-    paddingHorizontal: 40,
-    borderRadius: 8,
-  },
-  nextButtonDisabled: {
-    backgroundColor: '#555',
-  },
-  nextButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  progressBarContainer: { height: 8, width: '100%', backgroundColor: '#173F5F', borderRadius: 4, marginTop: 10, marginBottom: 10 },
-  progressBar: { height: '100%', backgroundColor: '#1cb0f6', borderRadius: 4 },
-  label: { fontSize: 16, color: "#ccc", marginBottom: 10, textAlign: 'center', width: '100%' },
-  sliderValueText: {
-    color: "#fff",
-    textAlign: "center",
-    fontSize: 28,
-  },
-  // NOVO ESTILO para o wrapper do conteúdo de cada etapa
-  stepContentWrapper: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  sliderContainer: { // Este estilo pode ser removido se não for usado em outro lugar
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  sliderUnitText: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-    position: 'absolute', // Posiciona ao lado do número central
-    left: '65%', // Ajuste conforme necessário
-  },
-
-  sliderUnitTextHorizontal: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginTop: 10, // Espaçamento abaixo do slider horizontal
-  },
-  optionContainerVertical: { flexDirection: 'column', alignItems: 'stretch', marginBottom: 20, gap: 10 },
-  optionContainerHorizontal: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 15, paddingHorizontal: 10 },
-  optionButton: { paddingVertical: 15, paddingHorizontal: 20, backgroundColor: '#173F5F', borderRadius: 8, borderWidth: 1, borderColor: '#ffffff1a', marginVertical: 5, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 15, minHeight: 80 },
-  genderButton: {
-    backgroundColor: '#173F5F',
-    borderWidth: 1,
-    borderColor: '#ffffff1a',
-    marginVertical: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 15,
-    width: 120,
-    height: 120,
-    borderRadius: 1000, // Make it a circle
-    borderTopColor: "#ffffff3a",
-    borderLeftColor: "#ffffff3a",
-    borderRightColor: "#ffffff1a",
-    borderBottomColor: "#ffffff1a",
-  },
-  optionSelected: { backgroundColor: '#1cb0f6', borderColor: '#fff' },
-  streakGoalButton: {
-    backgroundColor: '#173F5F',
-    borderWidth: 1,
-    borderColor: '#ffffff1a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderTopColor: "#ffffff3a",
-    borderLeftColor: "#ffffff3a",
-    borderRightColor: "#ffffff1a",
-    borderBottomColor: "#ffffff1a",
-  },
-  weekGoalButton: {
-    backgroundColor: '#173F5F',
-    borderWidth: 1,
-    borderColor: '#ffffff1a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-    padding: 10,
-  },
-  weekGoalNumber: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 28,
-  },
-  weekGoalText: {
-    color: '#ccc',
-    fontSize: 14,
-    marginTop: 4,
-  },
-  optionText: { color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: 18 },
-  optionDescription: { color: '#ccc', fontSize: 14, textAlign: 'center', marginTop: 5 },
-  pfpContainer: { alignItems: 'center', marginBottom: 10 },
-  pfp: { width: 150, height: 150, borderRadius: 75, borderWidth: 2, borderColor: '#1cb0f6' },
-  pfpPlaceholder: { width: 150, height: 150, borderRadius: 75, backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#ffffff1a' },
-  pfpPlaceholderMedium: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#ffffff1a'
-  },
-  streakImageTiny: {
-    width: 50,
-    height: 50,
-    resizeMode: 'contain',
-  },
-  pfpPlaceholderText: { fontSize: 60, color: '#ccc', fontWeight: '200' },
-  pfpSubtext: { textAlign: 'center', color: '#aaa', fontSize: 12 },
-  streakImage: {
-    width: 150,
-    height: 150,
-    resizeMode: 'contain',
-    marginBottom: 30,
-  },
-  streakImageSmall: {
-    width: 100,
-    height: 100,
-    resizeMode: 'contain',
-  },
-  centralDisplayContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20,
-    marginBottom: 40,
-    padding: 20,
-    backgroundColor: '#173F5F20',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#ffffff1a',
-  },
-  centralDisplayNumber: {
-    color: '#fff',
-    fontSize: 48,
-    fontWeight: 'bold',
-  },
-  centralDisplayText: {
-    color: '#ccc',
-    fontSize: 18,
-  },
-  finalSummaryContainer: {
-    alignItems: 'center',
-    marginBottom: 25,
-    gap: 15,
-    width: '100%',
-  },
-  summaryPfpContainer: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  summaryInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 15,
-    backgroundColor: '#173F5F20',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    width: '100%',
-    borderColor: '#ffffff1a',
-  },
-  summaryInfoText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  summaryDivider: {
-    width: 1,
-    height: '60%',
-    backgroundColor: '#ffffff3a',
-  },
-  summaryDividerVertical: {
-    width: 1,
-    height: '60%',
-    backgroundColor: '#ffffff3a',
-  },
-  summaryGoalContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20,
-    backgroundColor: '#173F5F20',
-    padding: 15,
-    borderRadius: 12,
-    borderWidth: 1,
-    width: '100%',
-    borderColor: '#ffffff1a',
-  },
-  summaryGoalNumber: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  summaryGoalText: {
-    color: '#ccc',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  finalButton: {
-    marginTop: 15,
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  finalButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  finalBackButton: {
-    marginTop: 15,
-    padding: 15,
-    alignItems: 'center',
-  },
-  finalBackButtonText: {
-    color: '#888',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  loginRedirectText: {
-    marginTop: 25,
-    color: '#aaa',
-    fontSize: 14,
-  },
-  loginRedirectLink: {
-    color: '#1cb0f6',
-    fontWeight: 'bold',
-    textDecorationLine: 'underline',
-  },
-  summaryContainer: {
-    paddingVertical: 15,
-    paddingHorizontal: 10,
-    alignItems: 'center',
-  },
-  summaryText: {
-    color: '#ccc',
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  summaryHighlight: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  topNavContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: 15,
-  },
-  skipButtonContainer: {
-    width: 50,
-    alignItems: 'flex-end',
-  },
-    // NOVO ESTILO para o container do conteúdo principal
-  contentContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+};
   
+  const styles = StyleSheet.create({
+    container: { flex: 1, justifyContent: "center", backgroundColor: "#01090c" },
+    welcomeScreenContainer: { flex: 1, backgroundColor: "#030405", justifyContent: 'flex-end' },
+    welcomeContainer: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
+    welcomeBottomContent: {
+      width: '100%',
+      padding: 30,
+      backgroundColor: '#030405fa',
+      paddingTop: 15,
+      borderTopLeftRadius: 30,
+      borderTopRightRadius: 30,
+      gap: 5,
+      borderTopWidth: 1,
+      borderTopColor: '#ffffff1a',
+      paddingBottom: 60,
+    },
+    welcomeHeader: {
+      alignItems: 'center',
+      height: 60,
+      width: '100%',
+      marginBottom: 15,
+    },
+    welcomeVideo: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: '65%', // Ocupa 65% da parte superior da tela
+    },
+    welcomeButtonContainer: { width: '100%', alignItems: 'center', gap: 30, marginTop: 20 },
+    welcomePrimaryButton: {
+      backgroundColor: '#1cb0f6',
+      paddingVertical: 15,
+      paddingHorizontal: 20,
+      borderRadius: 8,
+      width: '100%',
+      alignItems: 'center',
+    },
+    welcomePrimaryButtonText: {
+      color: '#fff',
+      fontSize: 25,
+      fontWeight: 'bold',
+    },
+    welcomeSecondaryButtonText: {
+      color: '#fffffffd',
+      fontSize: 16,
+    },
+    safeArea: {
+      flex: 1,
+      backgroundColor: "#030405",
+    },
+    stepContainer: {
+      flex: 1,
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingBottom: 20,
+      backgroundColor: "#01090c",
+      // Removido borderRadius: 12,
+    },
+    footer: {
+      // Removido: flexDirection: 'row',
+      // Removido: justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 10,
+      // Removido: borderTopWidth: 1,
+      // Removido: borderTopColor: '#ffffff1a',
+    },
+    // Removido: backButton e backButtonText
+    // Removido: skipButtonText
+    
+    formHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      width: '100%',
+      marginTop: 10,
+      marginBottom: 15,
+    },
+    headerButton: {
+      width: 44,
+      height: 44,
+      justifyContent: 'center',
+      alignItems: 'flex-start',
+    },
+    headerImage: {
+      width: 100, height: 110, resizeMode: 'contain'
+    },
+    title: {
+      fontSize: 45,
+      fontWeight: '600',
+      textAlign: "left",
+      color: "#fff",
+      letterSpacing: 1,
+      lineHeight: 40,
+    },
+    subtitle: { fontSize: 16, color: '#ccc', textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 },
+    // Removido: stepTitle
+    // NOVO: Título principal da tela
+    mainTitle: {
+      fontSize: 28, // Um pouco menor que o da Welcome
+      fontWeight: '600',
+      textAlign: "left",
+      color: "#fff",
+      width: '100%', // Ocupa a largura
+      marginBottom: 25, // Espaço antes das opções
+    },
+    input: {
+      backgroundColor: "#141414",
+      color: "#fff",
+      borderRadius: 8,
+      padding: 20,
+      marginBottom: 15,
+      fontSize: 16,
+      borderWidth: 1,
+      borderTopColor: "#ffffff3a",
+      borderLeftColor: "#ffffff3a",
+      borderRightColor: "#ffffff1a",
+      borderBottomColor: "#ffffff1a",
+  
+      height: 64,
+      width: '100%',
+    },  
+    nextButton: {
+      backgroundColor: '#1cb0f6',
+      paddingVertical: 20,
+      // Removido: paddingHorizontal: 40,
+      borderRadius: 12, // Mais arredondado
+      width: '100%', // Ocupa 100%
+      alignItems: 'center', // Centraliza o texto
+    },
+    nextButtonDisabled: {
+      backgroundColor: '#555',
+    },
+    nextButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    progressBarContainer: { 
+      height: 6, // Mais fino
+      flex: 1, // Ocupa o espaço central
+      backgroundColor: '#173F5F', 
+      borderRadius: 3, 
+      marginHorizontal: 15, // Espaçamento dos botões
+    },
+    progressBar: { 
+      height: '100%', 
+      backgroundColor: '#1cb0f6', 
+      borderRadius: 3 
+    },
+    label: { fontSize: 16, color: "#ccc", marginBottom: 10, textAlign: 'center', width: '100%' },
+    sliderValueText: {
+      color: "#fff",
+      textAlign: "center",
+      fontSize: 28,
+    },
+    // NOVO ESTILO para o wrapper do conteúdo de cada etapa
+    stepContentWrapper: {
+      width: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexGrow: 1,
+    },
+  
+    sliderContainer: { // Este estilo pode ser removido se não for usado em outro lugar
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+  
+    sliderUnitText: {
+      color: '#fff',
+      fontSize: 24,
+      fontWeight: 'bold',
+      position: 'absolute', // Posiciona ao lado do número central
+      left: '65%', // Ajuste conforme necessário
+    },
+  
+    sliderUnitTextHorizontal: {
+      color: '#fff',
+      fontSize: 24,
+      fontWeight: 'bold',
+      marginTop: 10, // Espaçamento abaixo do slider horizontal
+    },
+    optionContainerVertical: { 
+      flexDirection: 'column', 
+      alignItems: 'stretch', 
+      // Removido: marginBottom: 20, 
+      gap: 12, // Espaçamento entre os botões
+      width: '100%', // Ocupa 100%
+    },
+    optionContainerHorizontal: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 15, paddingHorizontal: 10 },
+    optionButton: { paddingVertical: 15, paddingHorizontal: 20, backgroundColor: '#173F5F', borderRadius: 8, borderWidth: 1, borderColor: '#ffffff1a', marginVertical: 5, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 15, minHeight: 80 },
+    genderButton: {
+      backgroundColor: '#173F5F',
+      borderWidth: 1,
+      borderColor: '#ffffff1a',
+      marginVertical: 5,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 15,
+      width: 120,
+      height: 120,
+      borderRadius: 1000, // Make it a circle
+      borderTopColor: "#ffffff3a",
+      borderLeftColor: "#ffffff3a",
+      borderRightColor: "#ffffff1a",
+      borderBottomColor: "#ffffff1a",
+    },
+    optionSelected: { backgroundColor: '#1cb0f6', borderColor: '#fff' },
+    streakGoalButton: {
+      backgroundColor: '#173F5F',
+      borderWidth: 1,
+      borderColor: '#ffffff1a',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      borderTopColor: "#ffffff3a",
+      borderLeftColor: "#ffffff3a",
+      borderRightColor: "#ffffff1a",
+      borderBottomColor: "#ffffff1a",
+    },
+    weekGoalButton: {
+      backgroundColor: '#173F5F',
+      borderWidth: 1,
+      borderColor: '#ffffff1a',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 100,
+      height: 100,
+      borderRadius: 12,
+      padding: 10,
+    },
+    weekGoalNumber: {
+      color: '#fff',
+      fontWeight: 'bold',
+      fontSize: 28,
+    },
+    weekGoalText: {
+      color: '#ccc',
+      fontSize: 14,
+      marginTop: 4,
+    },
+    optionText: { color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: 18 },
+    optionDescription: { color: '#ccc', fontSize: 14, textAlign: 'center', marginTop: 5 },
+    pfpContainer: { alignItems: 'center', marginBottom: 10 },
+    pfp: { width: 150, height: 150, borderRadius: 75, borderWidth: 2, borderColor: '#1cb0f6' },
+    pfpPlaceholder: { width: 150, height: 150, borderRadius: 75, backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#ffffff1a' },
+    pfpPlaceholderMedium: {
+      width: 100,
+      height: 100,
+      borderRadius: 50,
+      backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#ffffff1a'
+    },
+    streakImageTiny: {
+      width: 50,
+      height: 50,
+      resizeMode: 'contain',
+    },
+    pfpPlaceholderText: { fontSize: 60, color: '#ccc', fontWeight: '200' },
+    pfpSubtext: { textAlign: 'center', color: '#aaa', fontSize: 12 },
+    streakImage: {
+      width: 150,
+      height: 150,
+      resizeMode: 'contain',
+      marginBottom: 30,
+    },
+    streakImageSmall: {
+      width: 100,
+      height: 100,
+      resizeMode: 'contain',
+    },
+    centralDisplayContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 20,
+      marginBottom: 40,
+      padding: 20,
+      backgroundColor: '#173F5F20',
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: '#ffffff1a',
+    },
+    centralDisplayNumber: {
+      color: '#fff',
+      fontSize: 48,
+      fontWeight: 'bold',
+    },
+    centralDisplayText: {
+      color: '#ccc',
+      fontSize: 18,
+    },
+    finalSummaryContainer: {
+      alignItems: 'center',
+      marginBottom: 25,
+      gap: 15,
+      width: '100%',
+    },
+    summaryPfpContainer: {
+      alignItems: 'center',
+      gap: 8,
+    },
+    summaryInfoRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 15,
+      backgroundColor: '#173F5F20',
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      borderRadius: 12,
+      borderWidth: 1,
+      width: '100%',
+      borderColor: '#ffffff1a',
+    },
+    summaryInfoText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    summaryDivider: {
+      width: 1,
+      height: '60%',
+      backgroundColor: '#ffffff3a',
+    },
+    summaryDividerVertical: {
+      width: 1,
+      height: '60%',
+      backgroundColor: '#ffffff3a',
+    },
+    summaryGoalContainer: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 20,
+      backgroundColor: '#173F5F20',
+      padding: 15,
+      borderRadius: 12,
+      borderWidth: 1,
+      width: '100%',
+      borderColor: '#ffffff1a',
+    },
+    summaryGoalNumber: {
+      color: '#fff',
+      fontSize: 24,
+      fontWeight: 'bold',
+      textAlign: 'center',
+    },
+    summaryGoalText: {
+      color: '#ccc',
+      fontSize: 14,
+      textAlign: 'center',
+    },
+    finalButton: {
+      marginTop: 15,
+      padding: 15,
+      borderRadius: 8,
+      alignItems: 'center',
+    },
+    finalButtonText: {
+      color: '#fff',
+      fontSize: 18,
+      fontWeight: 'bold',
+    },
+    finalBackButton: {
+      marginTop: 15,
+      padding: 15,
+      alignItems: 'center',
+    },
+    finalBackButtonText: {
+      color: '#888',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    loginRedirectText: {
+      marginTop: 25,
+      color: '#aaa',
+      fontSize: 14,
+    },
+    loginRedirectLink: {
+      color: '#1cb0f6',
+      fontWeight: 'bold',
+      textDecorationLine: 'underline',
+    },
+    summaryContainer: {
+      paddingVertical: 15,
+      paddingHorizontal: 10,
+      alignItems: 'center',
+    },
+    summaryText: {
+      color: '#ccc',
+      fontSize: 16,
+      textAlign: 'center',
+      lineHeight: 24,
+    },
+    summaryHighlight: {
+      color: '#fff',
+      fontWeight: 'bold',
+    },
+    topNavContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginVertical: 15,
+    },
+    // NOVO: Botão de navegação (seta de voltar e view vazia)
+    navButton: {
+      width: 44, // Largura de toque
+      height: 44, // Altura de toque
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    // skipButtonContainer: { // Removido
+    //   width: 50,
+    //   alignItems: 'flex-end',
+    // },
+      // NOVO ESTILO para o container do conteúdo principal
+    contentContainer: {
+      flex: 1,
+      justifyContent: 'flex-start', // Alinha conteúdo no topo
+      alignItems: 'center',
+      // paddingTop: 15, // Removido
+      marginTop: 15, // Adicionado para criar espaço
+    },
+    
+    // --- ADICIONAR ESTES ESTILOS ---
+      featureImage: {
+        width: '100%',
+        height: '80%', // Ajuste a altura conforme necessário
+        resizeMode: 'contain',
+        marginBottom: 20, // Reduzido para aproximar do subtítulo
+      },
+      featureSubtitle: {
+        fontSize: 18,
+        color: '#ccc',
+        textAlign: 'center',
+        lineHeight: 25,
+        paddingHorizontal: 15,
+      },
 
-});
+      summaryHighlightBig: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 28, // Maior
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  summarySubText: {
+    color: '#aaa',
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  streakScrollContainer: {
+    width: '100%',
+    flexGrow: 0, // Impede que o scroll ocupe todo o espaço
+    marginTop: 20,
+  },
+  streakScrollContent: {
+    // Este estilo não é mais necessário com a FlatList
+  },
+  streakImageButton: {
+    // O TouchableOpacity agora é apenas um wrapper
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  streakImageSlider: {
+    height: 100,
+    resizeMode: 'contain',
+    opacity: 0.5, // Inativo
+    transform: [{ scale: 0.8 }], // Menor
+  },
+  streakImageSliderSelected: {
+    opacity: 1,
+    transform: [{ scale: 1.1 }], // Maior
+  },
+  barChartContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-around',
+    height: 180, // Altura fixa para o container do gráfico
+    width: '100%',
+    paddingHorizontal: 10,
+    marginBottom: 20,
+  },
+  barButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  bar: {
+    width: 30, // Largura da barra
+    borderRadius: 6,
+    marginBottom: 10,
+  },
+  barLabel: {
+    color: '#888', // Cor inativa
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  dataSliderColumn: {
+    height: '80%',
+    // CORREÇÃO: A largura de 60% para cada uma das 3 colunas extrapolava a tela.
+    width: '30%',
+  }
+  // Estilo para a unidade 'cm' ao lado do NumberSlider
+
+      // --- FIM DOS NOVOS ESTILOS ---
+  })

@@ -296,7 +296,7 @@ export default function MeusTreinosScreen() {
   const renderProximoTreino = ({ item }: { item: Treino }) => (
     <TouchableOpacity
       style={styles.nextWorkoutCard}
-      onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva?.id}&treinoId=${item.id}`)}
+      onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: fichaAtiva?.id, treinoId: item.id } })}
     >
       <Text style={styles.nextWorkoutDay}>{item.diasSemana[0]?.toUpperCase()}</Text>
       <Text style={styles.nextWorkoutTitle} numberOfLines={2}>{item.nome}</Text>
@@ -365,14 +365,14 @@ export default function MeusTreinosScreen() {
             {activeLog ? (
               // Card para "Continuar Treino"
               <TouchableOpacity
-                style={styles.heroCard} 
-                onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}&logId=${activeLog.id}`)}
+                style={styles.heroCard}
+                onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino.fichaId, treinoId: activeLog.treino.id, logId: activeLog.id } })}
               >
                 <View style={styles.heroTextContainer}>
                     <Text style={styles.heroTitle}>{activeLog.treino.nome}</Text>
                     <Text style={styles.heroInfo}>Treino em andamento...</Text>
                 </View>
-                <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}&logId=${activeLog.id}`)}>
+                <TouchableOpacity style={styles.startButton} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino.fichaId, treinoId: activeLog.treino.id, logId: activeLog.id } })}>
                   <FontAwesome name="play" size={16} color="#030405" />
                   <Text style={styles.startButtonText}>Continuar Treino</Text>
                 </TouchableOpacity>
@@ -398,13 +398,13 @@ export default function MeusTreinosScreen() {
               // Card para "Iniciar Treino"
               <TouchableOpacity
                 style={styles.heroCard}
-                onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva.id}&treinoId=${treinoDeHoje.id}`)}
+                onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: fichaAtiva.id, treinoId: treinoDeHoje.id } })}
               >
                 <View style={styles.heroTextContainer}>
                     <Text style={styles.heroTitle}>{treinoDeHoje.nome}</Text>
                     <Text style={styles.heroInfo}>{treinoDeHoje.exercicios.length} Exercícios • ~{treinoDeHoje.exercicios.length * 6} min</Text>
                 </View>
-                <TouchableOpacity style={styles.startButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${fichaAtiva?.id}&treinoId=${treinoDeHoje.id}`)}>
+                <TouchableOpacity style={styles.startButton} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: fichaAtiva?.id, treinoId: treinoDeHoje.id } })}>
                   <FontAwesome name="play" size={16} color="#030405" />
                   <Text style={styles.startButtonText}>Iniciar Treino</Text>
                 </TouchableOpacity>

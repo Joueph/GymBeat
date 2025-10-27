@@ -1,6 +1,6 @@
 // components/NumberSlider.tsx
 import * as Haptics from "expo-haptics";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { FlatList, LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent, StyleSheet, Text, View } from "react-native";
 
 interface NumberSliderProps {
@@ -10,6 +10,8 @@ interface NumberSliderProps {
   onChange: (val: number) => void;
   vertical?: boolean;
   step?: number;
+  initialValue?: number;
+  displayValues?: string[];
 }
 
 export const NumberSlider: React.FC<NumberSliderProps> = ({
@@ -19,7 +21,10 @@ export const NumberSlider: React.FC<NumberSliderProps> = ({
   onChange,
   vertical = false,
   step = 1,
+  initialValue,
+  displayValues,
 }) => {
+  const flatListRef = useRef<FlatList>(null);
   const itemSize = 60; // Tamanho de cada item do slider
 
   // Estado para armazenar a dimensão (largura ou altura) da FlatList
@@ -46,16 +51,16 @@ export const NumberSlider: React.FC<NumberSliderProps> = ({
       const offset = vertical ? e.nativeEvent.contentOffset.y : e.nativeEvent.contentOffset.x;
       const index = Math.round(offset / itemSize);
       const newValue = data[index];
-
+  
       if (newValue !== value && newValue !== undefined) {
-        Haptics.selectionAsync();
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onChange(newValue);
       }
     },
     [data, onChange, value, vertical, itemSize]
   );
 
-  const initialIndex = data.indexOf(value);
+  const initialIndex = initialValue !== undefined ? data.indexOf(initialValue) : data.indexOf(value);
   const getItemLayout = (_: any, index: number) => ({ length: itemSize, offset: itemSize * index, index });
 
   return (
@@ -66,6 +71,7 @@ export const NumberSlider: React.FC<NumberSliderProps> = ({
       ]}
     >
       <FlatList
+        ref={flatListRef}
         data={data}
         onLayout={handleLayout} // Adicionado para obter as dimensões
         keyExtractor={(item) => item.toString()}
@@ -84,25 +90,31 @@ export const NumberSlider: React.FC<NumberSliderProps> = ({
           paddingHorizontal: !vertical ? contentContainerPadding : 0,
         }}
         renderItem={({ item }) => {
+          const isSelected = item === value;
           const distance = Math.abs(item - value);
-          const isSelected = distance === 0;
-          const opacity = isSelected ? 1 : Math.max(0.3, 1 - distance / 10);
-          const color = isSelected ? "#1cb0f6" : `rgba(255, 255, 255, ${opacity.toFixed(2)})`;
+          // AJUSTE: Fontes menores
+          const fontSize = isSelected ? 36 : 20;
+          const opacity = isSelected ? 1 : Math.max(0.2, 1 - (distance / (vertical ? 5 : 3)));
+          const scale = isSelected ? 1 : Math.max(0.6, 1 - (distance / (vertical ? 10 : 5)));
+          const color = isSelected ? "#fff" : `rgba(255, 255, 255, ${opacity})`;
+          const displayItem = displayValues ? displayValues[item - 1] : String(item);
 
           return (
-            <View
-              style={[
-                styles.item,
-                vertical ? { height: itemSize } : { width: itemSize },
-              ]}
-            >
-              <Text style={[styles.text, { color }]}>
-                {item}
+            <View style={[ styles.item, vertical ? { height: itemSize } : { width: itemSize } ]}>
+              <Text style={[styles.text, { color, fontSize, transform: [{ scale }] }]}>
+                {displayItem}
               </Text>
             </View>
           );
         }}
       />
+      {/* AJUSTE: Linhas separadoras para sliders verticais */}
+      {vertical && (
+        <>
+          <View style={[styles.separator, { top: '50%', marginTop: -(itemSize / 2) - 1 }]} />
+          <View style={[styles.separator, { top: '50%', marginTop: (itemSize / 2) }]} />
+        </>
+      )}
     </View>
   );
 };
@@ -112,14 +124,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  verticalContainer: { height: 400 }, // Aumentado para melhor visualização
-  horizontalContainer: { width: "100%", height: 100 },
+  verticalContainer: { height: 300 }, // Altura reduzida para um visual mais compacto
+  horizontalContainer: { width: "100%", height: 100, paddingHorizontal: 10 }, // Adicionado padding para evitar cortes
   item: {
     alignItems: "center",
     justifyContent: "center",
   },
   text: {
-    fontSize: 28,
+    // fontSize: 28, // Agora é dinâmico
     fontWeight: "bold",
+    textAlign: 'center',
+  },
+  separator: {
+    position: 'absolute',
+    left: '10%',
+    right: '10%',
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
 });

@@ -377,12 +377,12 @@ export default function HomeScreen() {
       case 'active':
         if (activeLog) {
           return (
-            <TouchableOpacity style={styles.heroCard} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}&logId=${activeLog.id}`)}>
+            <TouchableOpacity style={styles.heroCard} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino.fichaId, treinoId: activeLog.treino.id, logId: activeLog.id } })}>
               <View style={styles.heroTextContainer}>
                 <Text style={styles.heroTitle}>{activeLog.treino.nome}</Text>
                 <Text style={styles.heroInfo}>Treino em andamento...</Text>
               </View>
-              <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeLog.treino.fichaId}&treinoId=${activeLog.treino.id}&logId=${activeLog.id}`)}>
+              <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino.fichaId, treinoId: activeLog.treino.id, logId: activeLog.id } })}>
                 <FontAwesome name="play" size={16} color="#030405" />
                 <Text style={styles.heroStartButtonText}>Continuar Treino</Text>
               </TouchableOpacity>
@@ -396,7 +396,7 @@ export default function HomeScreen() {
           const muscleGroups = getMuscleGroups(treinoDeHoje);
           const exerciseCount = treinoDeHoje.exercicios.length;
           return (
-            <TouchableOpacity style={styles.heroCard} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${treinoDeHoje.id}`)}>
+            <TouchableOpacity style={styles.heroCard} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: treinoDeHoje.id } })}>
               <View style={styles.heroTextContainer}>
                 <Text style={styles.heroTitle}>{treinoDeHoje.nome}</Text>
                 <Text style={styles.heroInfo}>
@@ -404,7 +404,7 @@ export default function HomeScreen() {
                   {avgDuration && ` • ~${avgDuration} min`}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${treinoDeHoje.id}`)}>
+              <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: treinoDeHoje.id } })}>
                 <FontAwesome name="play" size={16} color="#030405" />
                 <Text style={styles.heroStartButtonText}>Iniciar Treino</Text>
               </TouchableOpacity>
@@ -416,12 +416,12 @@ export default function HomeScreen() {
       case 'missed':
         if (treinoPerdido && activeFicha) {
           return (
-            <TouchableOpacity style={[styles.heroCard, styles.missedWorkoutCard]} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${treinoPerdido.id}`)}>
+            <TouchableOpacity style={[styles.heroCard, styles.missedWorkoutCard]} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: treinoPerdido.id } })}>
               <View style={styles.heroTextContainer}>
                 <Text style={styles.heroTitle}>{treinoPerdido.nome}</Text>
                 <Text style={styles.heroInfo}>Você perdeu este treino. Que tal fazê-lo agora?</Text>
               </View>
-              <TouchableOpacity style={[styles.heroStartButton, styles.missedWorkoutButton]} onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${treinoPerdido.id}`)}>
+              <TouchableOpacity style={[styles.heroStartButton, styles.missedWorkoutButton]} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: treinoPerdido.id } })}>
                 <FontAwesome name="repeat" size={16} color="#030405" />
                 <Text style={styles.heroStartButtonText}>Recuperar Treino</Text>
               </TouchableOpacity>
@@ -517,7 +517,7 @@ export default function HomeScreen() {
                     </View>
                     <TouchableOpacity 
                         style={[styles.startButton, isWorkoutActive && styles.disabledButton]}
-                        onPress={() => router.push(`/(treino)/ongoingWorkout?fichaId=${activeFicha.id}&treinoId=${item.treino!.id}`)}
+                        onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: item.treino!.id } })}
                         disabled={isWorkoutActive}
                     >
                         <Text style={styles.startButtonText}>Começar</Text>
@@ -593,7 +593,7 @@ export default function HomeScreen() {
 
             <TouchableOpacity style={[styles.modalButton, {  borderBlockColor: '#58CC02' }]} onPress={() => {
               setModalVisible(false);
-              router.push('/(tabs)/workouts');
+              router.push('./workouts');
             }}>
               <Text style={{ color: '#fff', fontWeight: 'bold' }}>Ver Modelos</Text>
             </TouchableOpacity>

@@ -14,14 +14,11 @@ export interface Usuario {
   genero?: 'Masculino' | 'Feminino' | 'Outro';
   nivel?: 'Iniciante' | 'Intermediário' | 'Avançado';
   fichas?: Ficha[];
-  /**
-   * ALTERADO: 'amizades' agora é um mapa (objeto) de IDs de usuário para um valor booleano.
-   * - true: Amizade confirmada por ambos.
-   * - false: Pedido de amizade recebido e pendente de aceitação.
-   * Se um usuário A envia um pedido para B:
-   * - No documento de A: amizades: { [B.id]: true }
-   * - No documento de B: amizades: { [A.id]: false }
-   */
+// --- ADICIONE ESTES CAMPOS ---
+  objetivoPrincipal?: string | null;
+  localTreino?: string | null;
+  possuiEquipamentosCasa?: boolean | null;
+  problemasParaTreinar?: string[];
   amizades?: { [key: string]: boolean };
   solicitacoesRecebidas?: string[]; // Mantido para uma transição segura, mas a nova lógica usa o mapa 'amizades'.
   projetos?: string[]; // IDs dos projetos que o usuário participa

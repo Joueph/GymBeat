@@ -1,12 +1,13 @@
 // app/(auth)/registro.tsx
 import { FontAwesome, Ionicons } from '@expo/vector-icons'; // Importar Ionicons
+import { useNetInfo } from '@react-native-community/netinfo';
 import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { User } from 'firebase/auth';
-import LottieView from 'lottie-react-native';
-import React, { useCallback, useRef, useState } from 'react';
+import { createUserWithEmailAndPassword, signInAnonymously, User } from 'firebase/auth';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+
 
 import {
   ActivityIndicator,
@@ -15,6 +16,7 @@ import {
   FlatList,
   Image,
   Keyboard,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -38,6 +40,27 @@ import { uploadImageAndGetURL } from '../../services/storageService';
 import { createUserProfileDocument } from "../../userService";
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
+
+/**
+ * Componente da Barra de Progresso com animação.
+ * Movido para fora do componente principal para persistir o estado da animação.
+ */
+const ProgressBar = ({ progress }: { progress: number }) => {
+  // Inicializa o valor compartilhado com o progresso inicial.
+  // Usar useRef garante que o valor não seja recriado em cada renderização.
+  const animatedWidth = useRef(useSharedValue(progress)).current;
+
+  // Observa mudanças na prop 'progress' e anima o valor da largura.
+  useEffect(() => {
+    // Anima a mudança do valor ATUAL para o novo valor de progresso.
+    animatedWidth.value = withTiming(progress, { duration: 400 });
+  }, [progress, animatedWidth]);
+
+  // Cria um estilo animado que será aplicado à barra de progresso.
+  const animatedStyle = useAnimatedStyle(() => ({ width: `${animatedWidth.value}%` }));
+
+  return <View style={styles.progressBarContainer}><Animated.View style={[styles.progressBar, animatedStyle]} /></View>;
+};
 
 /**
  * Componente para cada item do carrossel de metas de treino.
@@ -79,6 +102,7 @@ const StreakGoalItem = ({
 
 export default function CadastroScreen() { 
   const router = useRouter();
+  const netInfo = useNetInfo(); // Hook para verificar a conexão
   const TOTAL_FORM_STEPS = 25; // Agora são 25
   
   const [onboardingStep, setOnboardingStep] = useState(0); // 0: Welcome, 1-25: Form steps
@@ -157,11 +181,25 @@ export default function CadastroScreen() {
 
   const handleIniciarOnboarding = async () => {
     try {
-      await iniciarOnboarding(); // Cria o documento no Firestore
+      // ETAPA 1 (CRÍTICA): Garantir que o usuário esteja autenticado (anonimamente)
+      // Isso PRECISA ser 'await' pois o passo 2 depende do UID.
+      if (!auth.currentUser) {
+        await signInAnonymously(auth);
+      }
     } catch (error) {
-      console.error("Erro ao iniciar onboarding:", error);
-      // Não bloquear o usuário, mas logar o erro
+      // Se o LOGIN falhar (ex: sem rede), não podemos continuar.
+      console.error("Erro CRÍTICO ao fazer login anônimo:", error);
+      Alert.alert("Erro de Conexão", "Não foi possível iniciar. Verifique sua conexão e tente novamente.");
+      return; // Impede o avanço
     }
+    
+    // ETAPA 2 (BACKGROUND): Iniciar a criação do documento no Firestore.
+    // Removemos o 'await' e adicionamos .catch() para rodar em background.
+    iniciarOnboarding()
+      .catch(error => console.error("Erro (background) ao iniciar onboarding:", error));
+    
+    // ETAPA 3 (IMEDIATA): Navegar para o próximo passo.
+    // Isso agora acontece imediatamente após o login, sem esperar o Firestore.
     setAnimationDirection('forward');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setOnboardingStep(s => s + 1);
@@ -169,38 +207,43 @@ export default function CadastroScreen() {
 
 
 // ... (linha de adjacência)
-  const handleNext = async () => {
-    // Salva os dados do passo atual no Firestore ANTES de avançar
-    try {
-      if (onboardingStep === 1) {
-        await atualizarPassoOnboarding({ ondeOuviuGymBeat: onboardingData.ondeOuviuGymBeat });
-      } else if (onboardingStep === 2) {
-        await atualizarPassoOnboarding({ tentouOutrosApps: onboardingData.tentouOutrosApps });
-      } else if (onboardingStep === 3) {
-        await atualizarPassoOnboarding({ objetivoPrincipal: onboardingData.objetivoPrincipal });
-      }
-      // --- NOVOS STEPS ---
-      else if (onboardingStep === 4) {
-        await atualizarPassoOnboarding({ problemasParaTreinar: onboardingData.problemasParaTreinar });
-      }
-      // Não precisamos salvar nada para 5 e 6 (telas informativas)
-      // --- FIM NOVOS STEPS ---
-      // Não precisamos salvar nada para 5, 6 e 7 (telas informativas)
-      // --- NOVOS STEPS ---
-      else if (onboardingStep === 8) {
-        await atualizarPassoOnboarding({ localTreino: onboardingData.localTreino || null });
-      } else if (onboardingStep === 9) {
-        await atualizarPassoOnboarding({ possuiEquipamentosCasa: onboardingData.possuiEquipamentosCasa });
-      }
-      // A lógica de salvar os dados restantes (nível, metas, dados pessoais)
-      // será feita no próprio handleCadastro, antes de finalizar, para garantir
-      // que tudo seja salvo.
-
-    } catch (error) {
-      console.error("Erro ao salvar passo do onboarding:", error);
-      // Não bloquear o usuário, mas logar o erro
+  const handleNext = () => { // Removido o 'async'
+    // Salva os dados do passo atual no Firestore EM BACKGROUND
+    
+    // Não usamos mais try/catch para não bloquear a UI.
+    // Usamos .catch() para capturar erros de rede em background.
+    if (onboardingStep === 1) {
+      atualizarPassoOnboarding({ ondeOuviuGymBeat: onboardingData.ondeOuviuGymBeat })
+        .catch(error => console.error("Erro (background) ao salvar passo 1:", error));
+    } else if (onboardingStep === 2) {
+      atualizarPassoOnboarding({ tentouOutrosApps: onboardingData.tentouOutrosApps })
+        .catch(error => console.error("Erro (background) ao salvar passo 2:", error));
+    } else if (onboardingStep === 3) {
+      atualizarPassoOnboarding({ objetivoPrincipal: onboardingData.objetivoPrincipal })
+        .catch(error => console.error("Erro (background) ao salvar passo 3:", error));
     }
+    // --- NOVOS STEPS ---
+    else if (onboardingStep === 4) {
+      atualizarPassoOnboarding({ problemasParaTreinar: onboardingData.problemasParaTreinar })
+        .catch(error => console.error("Erro (background) ao salvar passo 4:", error));
+    }
+    // Não precisamos salvar nada para 5 e 6 (telas informativas)
+    // --- FIM NOVOS STEPS ---
+    // Não precisamos salvar nada para 5, 6 e 7 (telas informativas)
+    // --- NOVOS STEPS ---
+    else if (onboardingStep === 8) {
+      atualizarPassoOnboarding({ localTreino: onboardingData.localTreino || null })
+        .catch(error => console.error("Erro (background) ao salvar passo 8:", error));
+    } else if (onboardingStep === 9) {
+      atualizarPassoOnboarding({ possuiEquipamentosCasa: onboardingData.possuiEquipamentosCasa })
+        .catch(error => console.error("Erro (background) ao salvar passo 9:", error));
+    }
+    // A lógica de salvar os dados restantes (nível, metas, dados pessoais)
+    // será feita no próprio handleCadastro, antes de finalizar, para garantir
+    // que tudo seja salvo.
 
+
+    // Esta lógica agora executa IMEDIATAMENTE, sem esperar o salvamento
     if (onboardingStep < TOTAL_FORM_STEPS) {
       setAnimationDirection('forward');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -354,23 +397,32 @@ export default function CadastroScreen() {
     }
     try {
       setIsLoading(true);
-      // 1. Converte a conta anônima para uma conta permanente
-      await converterContaAnonima(email, senha);
-      const user: User | null = auth.currentUser;
+      let currentUser: User | null = auth.currentUser;
 
-      if (!user) {
+      if (!currentUser || !currentUser.isAnonymous) {
+        // Cenário: Nenhum usuário anônimo ou o usuário atual não é anônimo.
+        // Procede com o registro direto por e-mail/senha.
+        // Isso lida com casos em que a sessão anônima pode ter expirado ou sido perdida.
+        const userCredential = await createUserWithEmailAndPassword(auth, email, senha);
+        currentUser = userCredential.user;
+      } else {
+        // Cenário: Um usuário anônimo está presente. Converte-o para e-mail/senha.
+        await converterContaAnonima(email, senha);
+        currentUser = auth.currentUser; // Atualiza o usuário após a conversão
+      }
+      if (!currentUser) {
         throw new Error("A conversão da conta falhou. Nenhum usuário encontrado.");
       }
 
       let photoURL: string | undefined = undefined;
       if (photoURI) {
-        photoURL = await uploadImageAndGetURL(photoURI, user.uid); // Upload da foto
+        photoURL = await uploadImageAndGetURL(photoURI, currentUser.uid); // Upload da foto
       }
 
       // 2. Salva os últimos dados coletados no documento de estatísticas
       const alturaNum = altura;
       const pesoNum = peso;
-      const finalNome = nome.trim() || user.email?.split('@')[0] || '';
+      const finalNome = nome.trim() || currentUser.email?.split('@')[0] || '';
       await atualizarPassoOnboarding({
         nomePreferido: finalNome,
         alturaCm: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : null,
@@ -387,7 +439,7 @@ export default function CadastroScreen() {
       await finalizarOnboarding();
 
       // 4. Cria o perfil principal do usuário
-      await createUserProfileDocument(user, {
+      await createUserProfileDocument(currentUser, {
         nome: finalNome,
         isPro: false,
         altura: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : undefined,
@@ -397,6 +449,12 @@ export default function CadastroScreen() {
         streakGoal: streakGoal,
         weeksStreakGoal: weeksStreakGoal,
         photoURL: photoURL || '',
+        
+        // --- COPIANDO DADOS DE PERSONALIZAÇÃO ---
+        objetivoPrincipal: onboardingData.objetivoPrincipal || null,
+        localTreino: onboardingData.localTreino || null,
+        possuiEquipamentosCasa: onboardingData.possuiEquipamentosCasa === undefined ? null : onboardingData.possuiEquipamentosCasa,
+        problemasParaTreinar: onboardingData.problemasParaTreinar || [],
       });
       setIsLoading(false);
 
@@ -440,10 +498,22 @@ export default function CadastroScreen() {
             <View style={styles.welcomeBottomContent}>
               <Text style={styles.title}>Faça com que a academia se torne um vício</Text>
               <View style={styles.welcomeButtonContainer}>
-                {/* Chama a nova função aqui */}
-                <TouchableOpacity style={styles.welcomePrimaryButton} onPress={handleIniciarOnboarding}>
-                  <Text style={styles.welcomePrimaryButtonText}>Vamos lá!</Text>
-                </TouchableOpacity>
+                
+                {/* Lógica de Conexão:
+                    Mostra o botão "Vamos lá!" se 'isConnected' for true ou null (carregando).
+                    Mostra a mensagem "Offline" se 'isConnected' for explicitamente false.
+                */}
+                {netInfo.isConnected === false ? (
+                  <View style={styles.offlineContainer}>
+                    <Ionicons name="cloud-offline-outline" size={24} color="#999" />
+                    <Text style={styles.offlineText}>Conecte-se à internet para prosseguir</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity style={styles.welcomePrimaryButton} onPress={handleIniciarOnboarding}>
+                    <Text style={styles.welcomePrimaryButtonText}>Vamos lá!</Text>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity onPress={() => router.push("./login")}>
                   <Text style={styles.welcomeSecondaryButtonText}>Já tenho uma conta (Login)</Text>
                 </TouchableOpacity>
@@ -454,74 +524,88 @@ export default function CadastroScreen() {
         );
 
       case 1: // NOVO STEP: Onde ouviu falar?
+        const appStoreOption = Platform.select({
+          ios: { key: 'App Store', text: 'App Store', icon: 'logo-apple-appstore' },
+          android: { key: 'Google Play', text: 'Google Play', icon: 'logo-google-playstore' },
+          default: { key: 'App Store', text: 'App Store', icon: 'logo-apple-appstore' },
+        });
+
         const ondeOuviuOptions = [
-          { key: 'App store', text: 'App store', icon: 'logo-apple-appstore' },
+          appStoreOption,
+          { key: 'Reddit', text: 'Reddit', icon: 'logo-reddit' },
           { key: 'X (antigo twitter)', text: 'X (antigo twitter)', icon: 'logo-twitter' },
           { key: 'Instagram', text: 'Instagram', icon: 'logo-instagram' },
           { key: 'Google', text: 'Google', icon: 'logo-google' },
           { key: 'Indicação', text: 'Indicação', icon: 'people-outline' },
-        ] as const;
+          { key: 'Outro', text: 'Outro', icon: 'help-circle-outline' },
+        ];
 
         return (
-          <View style={styles.optionContainerVertical}>
-            {ondeOuviuOptions.map((opt, index) => (
-              <OnboardingOption
-                key={opt.key}
-                text={opt.text}
-                // Usando Ionicons conforme o componente
-                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
-                isSelected={onboardingData.ondeOuviuGymBeat === opt.key}
-                onPress={() => setOnboardingData(prev => ({ ...prev, ondeOuviuGymBeat: opt.key }))}
-                // Animação de entrada
-                entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
-              />
-            ))}
-          </View>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {ondeOuviuOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  // Usando Ionicons conforme o componente
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                  isSelected={onboardingData.ondeOuviuGymBeat === opt.key}
+                  onPress={() => setOnboardingData(prev => ({ ...prev, ondeOuviuGymBeat: opt.key }))}
+                  // Animação de entrada
+                  entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
+                />
+              ))}
+            </View>
+          </ScrollView>
         );
 
       case 2: // NOVO STEP: Já tentou outros apps?
-        // CORREÇÃO: Usar strings 'Sim'/'Não' como 'key' para bater com o tipo do model
+
         const simNaoOptions = [
           { key: 'Sim', text: 'Sim', icon: 'thumbs-up-outline' },
           { key: 'Não', text: 'Não', icon: 'thumbs-down-outline' },
         ] as const;
 
         return (
-          <View style={styles.optionContainerVertical}>
-            {simNaoOptions.map((opt, index) => (
-              <OnboardingOption
-                key={opt.text}
-                text={opt.text}
-                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
-                isSelected={onboardingData.tentouOutrosApps === opt.key}
-                onPress={() => setOnboardingData(prev => ({ ...prev, tentouOutrosApps: opt.key }))}
-                entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
-              />
-            ))}
-          </View>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {simNaoOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.text}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                  isSelected={onboardingData.tentouOutrosApps === opt.key}
+                  onPress={() => setOnboardingData(prev => ({ ...prev, tentouOutrosApps: opt.key }))}
+                  entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
+                />
+              ))}
+            </View>
+          </ScrollView>
         );
 
       case 3: // NOVO STEP: Objetivo Principal
         const objetivoOptions = [
           { key: 'Emagrecer', text: 'Emagrecer', icon: 'flame-outline' },
           { key: 'Crescer', text: 'Crescer', icon: 'barbell-outline' },
-          { key: 'Manter', text: 'Manter', icon: 'checkmark-circle-outline' },
-          { key: 'Não sei ao certo', text: 'Não sei ao certo', icon: 'help-circle-outline' },
+          { key: 'Manter', text: 'Manter', icon: 'checkmark-circle-outline' }, // Mantido como estava, se a intenção era mudar este, me avise.
+          { key: 'Manter a saúde', text: 'Me manter saudável', icon: 'leaf-outline' },
         ] as const;
 
         return (
-          <View style={styles.optionContainerVertical}>
-            {objetivoOptions.map((opt, index) => (
-              <OnboardingOption
-                key={opt.key}
-                text={opt.text}
-                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
-                isSelected={onboardingData.objetivoPrincipal === opt.key}
-                onPress={() => setOnboardingData(prev => ({ ...prev, objetivoPrincipal: opt.key }))}
-                entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
-              />
-            ))}
-          </View>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {objetivoOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                  isSelected={onboardingData.objetivoPrincipal === opt.key}
+                  onPress={() => setOnboardingData(prev => ({ ...prev, objetivoPrincipal: opt.key }))}
+                  entering={FadeInUp.duration(400).delay(index * 100)} // 100ms de delay
+                />
+              ))}
+            </View>
+          </ScrollView>
         );
 
 
@@ -535,33 +619,47 @@ case 4: // NOVO STEP: Problemas para treinar (Multi-select)
         ] as const;
 
         return (
-          <View style={styles.optionContainerVertical}>
-            {problemasOptions.map((opt, index) => (
-              <OnboardingOption
-                key={opt.key}
-                text={opt.text}
-                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
-                isSelected={(onboardingData.problemasParaTreinar || []).includes(opt.key)}
-                onPress={() => handleToggleProblema(opt.key)} // Usa a nova função
-                entering={FadeInUp.duration(400).delay(index * 100)}
-              />
-            ))}
-            <Text style={[styles.optionDescription, {marginTop: 10}]}>Pode escolher mais de um</Text>
-          </View>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {problemasOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                  isSelected={(onboardingData.problemasParaTreinar || []).includes(opt.key)}
+                  onPress={() => handleToggleProblema(opt.key)} // Usa a nova função
+                  entering={FadeInUp.duration(400).delay(index * 100)}
+                />
+              ))}
+              <Text style={[styles.optionDescription, {marginTop: 10}]}>Pode escolher mais de um</Text>
+            </View>
+          </ScrollView>
         );
 
       case 5: // NOVO STEP: Feature Streaks (Condicional - Onboarding 9.png)
         return (
-          <View style={styles.stepContentWrapper}>
-            <LottieView source={require('../../assets/images/onboarding/Animations/CaseNãoVejoResultadosMeSintoIntimidado2.json')} autoPlay loop={false} style={styles.featureImage} />
-          </View>
+            <Video
+              source={require('../../assets/images/onboarding/Animations/CaseNãoVejoResultadosMeSintoIntimidado2.mp4')}
+              rate={1.0}
+              isMuted={true}
+              isLooping={false}
+              shouldPlay={true}
+              resizeMode={ResizeMode.CONTAIN}
+              style={styles.featureImage}
+            />
         );
 
       case 6: // NOVO STEP: Feature Gráficos (Condicional - Onboarding 10.png)
         return (
-          <View style={styles.stepContentWrapper}>
-            <LottieView source={require('../../assets/images/onboarding/Animations/CaseFaltaDeMotivacaofaltaDeConstância.json')} autoPlay loop={false} style={styles.featureImage} />
-          </View>
+            <Video
+              source={require('../../assets/images/onboarding/Animations/CaseFaltaDeMotivacaofaltaDeConstância.mp4')}
+              rate={1.0}
+              isMuted={true}
+              isLooping={false}
+              shouldPlay={true}
+              resizeMode={ResizeMode.CONTAIN}
+              style={styles.featureImage}
+            />
         );
         
 case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
@@ -579,18 +677,20 @@ case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
         ] as const;
 
         return (
-          <View style={styles.optionContainerVertical}>
-            {localOptions.map((opt, index) => (
-              <OnboardingOption
-                key={opt.key}
-                text={opt.text}
-                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
-                isSelected={onboardingData.localTreino === opt.key}
-                onPress={() => setOnboardingData(prev => ({ ...prev, localTreino: opt.key }))}
-                entering={FadeInUp.duration(400).delay(index * 100)}
-              />
-            ))}
-          </View>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {localOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                  isSelected={onboardingData.localTreino === opt.key}
+                  onPress={() => setOnboardingData(prev => ({ ...prev, localTreino: opt.key }))}
+                  entering={FadeInUp.duration(400).delay(index * 100)}
+                />
+              ))}
+            </View>
+          </ScrollView>
         );
 
       case 9: // NOVO STEP: "Halteres?" (Onboarding 13.png)
@@ -600,18 +700,20 @@ case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
         ] as const;
 
         return (
-          <View style={styles.optionContainerVertical}>
-            {halteresOptions.map((opt, index) => (
-              <OnboardingOption
-                key={opt.key}
-                text={opt.text}
-                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />} 
-                isSelected={onboardingData.possuiEquipamentosCasa === (opt.key === 'Sim')}
-                onPress={() => setOnboardingData(prev => ({ ...prev, possuiEquipamentosCasa: opt.key === 'Sim' }))}
-                entering={FadeInUp.duration(400).delay(index * 100)} 
-              />
-            ))}
-          </View>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {halteresOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />} 
+                  isSelected={onboardingData.possuiEquipamentosCasa === (opt.key === 'Sim')}
+                  onPress={() => setOnboardingData(prev => ({ ...prev, possuiEquipamentosCasa: opt.key === 'Sim' }))}
+                  entering={FadeInUp.duration(400).delay(index * 100)} 
+                />
+              ))}
+            </View>
+          </ScrollView>
         );
         
       case 10: // Nível (Antigo step 7)
@@ -622,18 +724,20 @@ case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
         ] as const;
 
         return (
-          <View style={styles.optionContainerVertical}>
-            {nivelOptions.map((opt, index) => (
-              <OnboardingOption
-                key={opt.key}
-                text={opt.text}
-                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
-                isSelected={nivel === opt.key}
-                onPress={() => setNivel(opt.key)}
-                entering={FadeInUp.duration(400).delay(index * 100)}
-              />
-            ))}
-          </View>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {nivelOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                  isSelected={nivel === opt.key}
+                  onPress={() => setNivel(opt.key)}
+                  entering={FadeInUp.duration(400).delay(index * 100)}
+                />
+              ))}
+            </View>
+          </ScrollView>
         );
 
       case 13: // Gênero (CORRETO)
@@ -644,18 +748,20 @@ case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
         ] as const;
 
         return (
-          <View style={styles.optionContainerVertical}>
-            {generoOptions.map((opt, index) => (
-              <OnboardingOption
-                key={opt.key}
-                text={opt.text}
-                icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
-                isSelected={genero === opt.key}
-                onPress={() => setGenero(opt.key)}
-                entering={FadeInUp.duration(400).delay(index * 100)}
-              />
-            ))}
-          </View>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {generoOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
+                  isSelected={genero === opt.key}
+                  onPress={() => setGenero(opt.key)}
+                  entering={FadeInUp.duration(400).delay(index * 100)}
+                />
+              ))}
+            </View>
+          </ScrollView>
         );
 
 case 15: // Altura
@@ -864,6 +970,7 @@ case 15: // Altura
                 onChange={(val) => setDiaNascimento(val)}
                 initialValue={15}
                 vertical
+                fontSizeConfig={{ selected: 28, unselected: 16 }}
               />
             </View>
             {/* Mês */}
@@ -876,6 +983,7 @@ case 15: // Altura
                 initialValue={6}
                 vertical
                 displayValues={meses}
+                fontSizeConfig={{ selected: 28, unselected: 16 }}
               />
             </View>
             {/* Ano */}
@@ -887,6 +995,7 @@ case 15: // Altura
                 onChange={(val) => setAnoNascimento(val)}
                 initialValue={2000}
                 vertical
+                fontSizeConfig={{ selected: 28, unselected: 16 }}
               />
             </View>
           </View>
@@ -902,12 +1011,6 @@ case 15: // Altura
       default: return null;
     }
   };
-
-  const ProgressBar = ({ progress }: { progress: number }) => (
-    <View style={styles.progressBarContainer}>
-      <View style={[styles.progressBar, { width: `${progress}%` }]} />
-    </View>
-  );
 
 // ... (linha de adjacência)
 // ... (linha de adjacência)
@@ -939,7 +1042,7 @@ const getStepTitle = () => {
     }
 }
     
-const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
+const progress = (onboardingStep / 18) * 100;
   const title = getStepTitle();
   const subtitle = getStepSubtitle();
   const stepComplete = isStepComplete();
@@ -962,13 +1065,12 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
         <View style={styles.topNavContainer}>
           <TouchableOpacity style={styles.navButton} onPress={handleBack}>
             {/* O botão de voltar aparece em todos os steps > 0 */}
-            <Ionicons name="arrow-back" size={24} color="#fff" />
+            <Ionicons name="arrow-back" size={18} color="#fff" />
           </TouchableOpacity>
           
           <ProgressBar progress={progress} />
           
           {/* View vazia para manter a barra de progresso centralizada */}
-          <View style={styles.navButton} /> 
         </View>
 
         {/* Container Principal do Conteúdo (sem ScrollView) */}
@@ -1145,13 +1247,15 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
     },
     progressBarContainer: { 
       height: 6, // Mais fino
-      flex: 1, // Ocupa o espaço central
+      flex: 1,
       backgroundColor: '#173F5F', 
       borderRadius: 3, 
-      marginHorizontal: 15, // Espaçamento dos botões
+      marginHorizontal: 0, // Espaçamento dos botões
+      flexDirection: 'row',
     },
     progressBar: { 
       height: '100%', 
+      width: '100%',
       backgroundColor: '#1cb0f6', 
       borderRadius: 3 
     },
@@ -1412,6 +1516,7 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
       justifyContent: 'space-between',
       alignItems: 'center',
       marginVertical: 15,
+      width: '100%',
     },
     // NOVO: Botão de navegação (seta de voltar e view vazia)
     navButton: {
@@ -1508,7 +1613,22 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
     fontSize: 16,
     fontWeight: 'bold',
   },
-
+  offlineContainer: {
+    backgroundColor: '#1C1C1E', // Um cinza escuro
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  offlineText: {
+    color: '#999',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   dataSliderColumn: {
     height: '80%',
     // CORREÇÃO: A largura de 60% para cada uma das 3 colunas extrapolava a tela.

@@ -12,6 +12,7 @@ interface NumberSliderProps {
   step?: number;
   initialValue?: number;
   displayValues?: string[];
+  fontSizeConfig?: { selected: number; unselected: number };
 }
 
 export const NumberSlider: React.FC<NumberSliderProps> = ({
@@ -23,6 +24,7 @@ export const NumberSlider: React.FC<NumberSliderProps> = ({
   step = 1,
   initialValue,
   displayValues,
+  fontSizeConfig = { selected: 36, unselected: 20 }, // Valores padrão
 }) => {
   const flatListRef = useRef<FlatList>(null);
   const itemSize = 60; // Tamanho de cada item do slider
@@ -93,7 +95,7 @@ export const NumberSlider: React.FC<NumberSliderProps> = ({
           const isSelected = item === value;
           const distance = Math.abs(item - value);
           // AJUSTE: Fontes menores
-          const fontSize = isSelected ? 36 : 20;
+          const fontSize = isSelected ? fontSizeConfig.selected : fontSizeConfig.unselected;
           const opacity = isSelected ? 1 : Math.max(0.2, 1 - (distance / (vertical ? 5 : 3)));
           const scale = isSelected ? 1 : Math.max(0.6, 1 - (distance / (vertical ? 10 : 5)));
           const color = isSelected ? "#fff" : `rgba(255, 255, 255, ${opacity})`;

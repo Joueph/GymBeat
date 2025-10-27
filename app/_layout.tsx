@@ -16,7 +16,8 @@ function MainNavigation() {
     const inAuthGroup = segments[0] === '(auth)';
 
     if (user && inAuthGroup) {
-      router.replace('/');
+      // CORREÇÃO: Redireciona para o layout de tabs
+      router.replace('/(tabs)');
     } else if (!user && !inAuthGroup) {
       router.replace('/(auth)/registro'); // Verifique sua rota de login
     }

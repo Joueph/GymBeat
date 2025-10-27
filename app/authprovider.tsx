@@ -1,14 +1,15 @@
 // Em seu arquivo authprovider.tsx
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
-// Certifique-se de que os imports do Firebase estão corretos para o seu projeto
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth } from '../firebaseconfig'; // Verifique o caminho para sua config do Firebase
+import React, { createContext, useContext, useEffect, useState } from 'react';
+// ADICIONAR IMPORTS DO FIRESTORE
+import { doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { auth, db } from '../firebaseconfig'; // Verifique o caminho
 
 // Definimos o tipo do nosso contexto de autenticação
 interface AuthContextType {
   user: User | null;
-  initialized: boolean; // O estado que está causando o problema
+  initialized: boolean;
 }
 
 // Criamos o contexto com valores iniciais
@@ -28,19 +29,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false);
 
   useEffect(() => {
-    // A função onAuthStateChanged é um "ouvinte". Ela é chamada uma vez
-    // no início e depois toda vez que o usuário faz login ou logout.
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      // Após a primeira resposta do onAuthStateChanged (seja com um usuário ou nulo),
-      // consideramos o processo de autenticação inicializado.
-      // Isso garante que o estado 'initialized' seja definido como 'true' de forma confiável.
-      setInitialized(true);
+    let firestoreUnsubscribe: Unsubscribe | null = null;
+
+    // O ouvinte do Auth é o primeiro a disparar
+    const authUnsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      
+      // Se um ouvinte do Firestore da sessão anterior existir, cancele-o
+      if (firestoreUnsubscribe) {
+        firestoreUnsubscribe();
+      }
+
+      // Se o usuário fez logout (currentUser é nulo)
+      if (!currentUser) {
+        setUser(null);
+        setInitialized(true);
+        return;
+      }
+
+      // Se o usuário está logado (anônimo OU permanente)
+      // Agora verificamos se o documento DELE existe no Firestore
+      const userDocRef = doc(db, 'users', currentUser.uid);
+
+      // Crie um novo ouvinte em tempo real para o documento do usuário
+      firestoreUnsubscribe = onSnapshot(
+        userDocRef,
+        (docSnap) => {
+          // Agora que ouvimos do Auth E do Firestore, o app está inicializado
+          setInitialized(true);
+          
+          if (docSnap.exists()) {
+            // O DOCUMENTO EXISTE: O usuário está totalmente registrado.
+            // Definimos o usuário no contexto, o que acionará
+            // o _layout.tsx para redirecionar para (tabs).
+            setUser(currentUser);
+          } else {
+            // O DOCUMENTO NÃO EXISTE: O usuário está no meio do onboarding (anônimo)
+            // ou algo deu errado.
+            // Tratamos ele como 'null' para mantê-lo nas telas de (auth).
+            setUser(null);
+          }
+        },
+        (error) => {
+          // Em caso de erro lendo o Firestore
+          console.error("Erro no ouvinte do Firestore (authprovider):", error);
+          setUser(null);
+          setInitialized(true);
+        }
+      );
     });
 
-    // Esta função de limpeza é importante para evitar memory leaks
-    return () => unsubscribe();
-  }, []); // O array de dependências vazio [] garante que este useEffect rode apenas uma vez quando o app inicia.
+    // Função de limpeza principal
+    return () => {
+      authUnsubscribe(); // Limpa o ouvinte do Auth
+      if (firestoreUnsubscribe) {
+        firestoreUnsubscribe(); // Limpa o ouvinte do Firestore
+      }
+    };
+  }, []); // O array de dependências vazio [] garante que este useEffect rode apenas uma vez
 
   const value = {
     user,

@@ -92,6 +92,14 @@ export const createUserProfileDocument = async (
     isPro: additionalData.isPro || false,
     streakGoal: additionalData.streakGoal || 3,
     weeksStreakGoal: additionalData.weeksStreakGoal || 4,
+    
+    // --- NOVOS DADOS VINDOS DO ONBOARDING ---
+    objetivoPrincipal: additionalData.objetivoPrincipal || null,
+    localTreino: additionalData.localTreino || null,
+    possuiEquipamentosCasa: additionalData.possuiEquipamentosCasa === undefined ? null : additionalData.possuiEquipamentosCasa,
+    problemasParaTreinar: additionalData.problemasParaTreinar || [],
+
+    // --- O RESTANTE DOS DADOS ---
     fichas: [],
     amizades: {}, // Inicia o mapa de amizades vazio
     solicitacoesRecebidas: [],

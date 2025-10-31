@@ -621,10 +621,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 15,
+    paddingHorizontal: 8,
     paddingVertical: 10,
     backgroundColor: '#030405',
-    marginBottom: 20,
+    marginBottom: 8,
   },
   headerLeft: {
     flexDirection: 'row',
@@ -684,10 +684,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#030405',
   },
   transparentSection: {
-    marginTop: 20,
-    marginBottom: 15,
+    marginBottom: 16,
     backgroundColor: 'transparent',
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
   },
   centered: {
     flex: 1,
@@ -698,7 +697,7 @@ const styles = StyleSheet.create({
   calendarContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 5,
+    padding: 8,
     backgroundColor: '#141414',
     borderRadius: 15,
     borderWidth: 1,
@@ -707,7 +706,6 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ffffff1a',
     borderRightColor: '#ffffff1a',
     width: '100%',
-    gap: 5,
   },
   dayContainer: {
     alignItems: 'center',
@@ -716,6 +714,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     flexDirection: 'column',
     justifyContent: 'space-between',
+    gap: 1,
     flexBasis: '13%',  
   },
   progressionOverlay: {
@@ -792,7 +791,7 @@ const styles = StyleSheet.create({
   goalsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
     width: '100%',
   },
   statBox: {
@@ -933,7 +932,13 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     fontStyle: 'italic',
   },
-  cardTitle: { color: '#fff', alignItems: 'center', marginBottom: 15, fontSize: 20, fontWeight: 'bold', paddingBottom: 5, },
+  cardTitle: { 
+    color: '#fff', 
+    alignItems: 'center', 
+    marginBottom: 8, 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+  },
   // Hero Card
   heroCard: {
     backgroundColor: '#141414f1',

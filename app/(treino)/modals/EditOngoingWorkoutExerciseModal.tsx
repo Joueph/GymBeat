@@ -1,13 +1,12 @@
 import { Exercicio, Serie } from '@/models/exercicio';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DraggableFlatList, { RenderItemParams as DraggableRenderItemParams } from 'react-native-draggable-flatlist';
 import { MenuProvider } from 'react-native-popup-menu';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SetOptionsMenu } from '../../../components/SetOptionsMenu';
-import { VideoListItem } from '../ongoingWorkout'; // Assumindo que este é o caminho correto
+import { VideoListItem } from '../ongoingWorkout';
 
 interface SerieEdit extends Omit<Serie, 'id'> {
   peso: number;
@@ -24,7 +23,7 @@ interface EditExerciseModalProps {
   exercise: Exercicio | null;
 }
 
-export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercise }: EditExerciseModalProps) => {
+export const EditExerciseModal = ({ visible, onClose, onSave, exercise }: EditExerciseModalProps) => {
   const [editingSeries, setEditingSeries] = useState<SerieEdit[]>([]);
   const [pesoBarra, setPesoBarra] = useState<number>(0);
 
@@ -67,7 +66,7 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
         newSets.splice(index + 1, 0, { id: `set-${Date.now()}`, repeticoes: parentSet.repeticoes, peso: (parentSet.peso ?? 10) * 0.7, type: 'dropset' });
       }
       setEditingSeries(newSets);
-    }, 100);
+    }, 100); // 100ms é geralmente suficiente para a animação de fechamento.
   };
 
   const handleSaveChanges = () => {
@@ -75,14 +74,13 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
       Alert.alert("Erro", "Todas as séries devem ter repetições definidas.");
       return;
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onSave(editingSeries, pesoBarra);
   };
 
   return (
     <Modal animationType="slide" presentationStyle="pageSheet" visible={visible} onRequestClose={onClose}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.keyboardAvoidingView}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <MenuProvider>
@@ -127,25 +125,21 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
                       <Text style={styles.setText}>{(item.type || 'normal') === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
                       <TextInput style={styles.setInput} placeholder={isTimeBased ? "Tempo (s)" : "Reps"} placeholderTextColor="#888" value={String(item.repeticoes)} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].repeticoes = text; setEditingSeries(newSets); }} keyboardType={isTimeBased ? 'number-pad' : 'default'} />
                       {exercise?.modelo?.caracteristicas?.isPesoCorporal ? (
-                        <View style={styles.bodyWeightContainer}><Text style={styles.bodyWeightText}>Corporal</Text></View>
+                        <View style={styles.bodyWeightContainer}>
+                          <Text style={styles.bodyWeightText}>Peso Corporal</Text>
+                        </View>
                       ) : (
                         <TextInput 
                           style={styles.setInput} 
                           placeholder="kg" 
                           placeholderTextColor="#888" 
                           keyboardType="decimal-pad" 
-                          // Se for baseado em tempo, o peso é desabilitado e zerado
-                          editable={!isTimeBased}
                           value={String(item.peso || '')} 
                           onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = text as any; setEditingSeries(newSets); }} 
                           onEndEditing={(e) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0; setEditingSeries(newSets); }}
                         />
                       )}
-                      <SetOptionsMenu
-                        isTimeBased={!!item.isTimeBased}
-                        isNormalSet={(item.type || 'normal') === 'normal'}
-                        onSelect={(action) => handleSetOption(action, itemIndex)}
-                      />
+                      <SetOptionsMenu isTimeBased={!!item.isTimeBased} isNormalSet={(item.type || 'normal') === 'normal'} onSelect={(action) => handleSetOption(action, itemIndex)} />
                     </View>
                   </View>
                 );
@@ -219,6 +213,7 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
 };
 
 const styles = StyleSheet.create({
+    keyboardAvoidingView: { flex: 1 },
     modalSafeArea: { flex: 1, backgroundColor: '#141414' }, // Removido paddingBottom
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' , marginBottom: 20 },
     modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
@@ -227,9 +222,8 @@ const styles = StyleSheet.create({
     setText: { color: '#fff', fontWeight: 'bold', flex: 1 },
     setInput: { backgroundColor: '#2c2c2e', flex: 1, color: '#fff', padding: 8, borderRadius: 5, textAlign: 'center', marginHorizontal: 5 },
     addSetButton: { padding: 10, marginTop: 10, backgroundColor: '#2c2c2e', borderRadius: 8, width: '100%', alignItems: 'center' },
-    addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },
-    editingExercisePreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1f1f1f', borderRadius: 12, padding: 10, marginHorizontal: 20, marginBottom: 20, borderWidth: 1, borderColor: '#ffffff1a', },
-    modalFooter: { padding: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#222', backgroundColor: '#141414' },
+    addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },    editingExercisePreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1f1f1f', borderRadius: 12, padding: 10, marginHorizontal: 20, marginBottom: 20, borderWidth: 1, borderColor: '#ffffff1a', },
+    modalFooter: { padding: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#222', backgroundColor: '#141414' },    
     saveButton: { backgroundColor: '#1cb0f6', height: 60, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     saveButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
     bilateralInfoCard: { backgroundColor: '#1f1f1f', borderRadius: 12, padding: 15, alignItems: 'center', marginBottom: 15, borderWidth: 1, borderColor: '#ffffff1a' },

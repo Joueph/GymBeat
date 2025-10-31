@@ -7,9 +7,9 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:418244836174:android:1530957f2e0dce5fe5fc1f",
+        "mobilesdk_app_id": "1:418244836174:android:ae0bb6df79d9cdffe5fc1f",
         "android_client_info": {
-          "package_name": "com.gymbeat"
+          "package_name": "br.com.gymbeat"
         }
       },
       "oauth_client": [
@@ -29,6 +29,49 @@
             {
               "client_id": "418244836174-0e2ch7p0rjdg58d1hcghn135munqat75.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "418244836174-fb4v63hkc0bm2jvv96t70gdaeg10aaj7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "br.com.gymbeat"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:418244836174:android:1530957f2e0dce5fe5fc1f",
+        "android_client_info": {
+          "package_name": "br.com.gymbeat"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "418244836174-0e2ch7p0rjdg58d1hcghn135munqat75.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5fSD3f5y0y-rzNcNu7QbHxde1HhpW6jE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "418244836174-0e2ch7p0rjdg58d1hcghn135munqat75.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "418244836174-fb4v63hkc0bm2jvv96t70gdaeg10aaj7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "br.com.gymbeat"
+              }
             }
           ]
         }

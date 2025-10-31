@@ -1,8 +1,8 @@
 import { FontAwesome } from '@expo/vector-icons';
+import { ResizeMode, Video } from 'expo-av'; // Changed from expo-video
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics'; // ADICIONADO Haptics
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'; // ADICIONADO Image
 import DraggableFlatList, { RenderItemParams, } from 'react-native-draggable-flatlist';
@@ -36,18 +36,16 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
   useEffect(() => {
     const manageMedia = async () => {
       if (!uri) return;
-      const fileName = uri.split('/').pop()?.split('?')[0];
+      const fileName = uri.split('/').pop()?.split('?')[0]; // Ensure filename is clean
       if (!fileName) return;
 
       const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
-      // CORRIGIDO: Usando FileSystem.getInfoAsync
       const fileInfo = await FileSystem.getInfoAsync(localFileUri);
 
       if (fileInfo.exists) {
         setLocalUri(localFileUri);
       } else {
         try {
-          // CORRIGIDO: Usando FileSystem.downloadAsync
           await FileSystem.downloadAsync(uri, localFileUri);
           setLocalUri(localFileUri);
         } catch (e) {
@@ -60,33 +58,29 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
     manageMedia();
   }, [uri]);
 
-  const player = useVideoPlayer(isWebP ? null : localUri, (player) => {
-    player.loop = true;
-    player.muted = true;
-    player.play();
-  });
-
-  useEffect(() => {
-    return () => {
-      if (!isWebP && player) {
-        player.release();
-      }
-    };
-  }, [localUri, player, isWebP]);
-
   if (!localUri) {
-    return <View style={[style, { backgroundColor: '#333' }]}><ActivityIndicator color="#fff" /></View>;
+    return <View style={[style, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color="#fff" /></View>;
   }
 
   if (isWebP) {
-    // CORRIGIDO: Usa a importação de 'Image' do topo do ficheiro
     return <Image source={{ uri: localUri }} style={style} />;
   }
 
-  return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
+  return (
+    <Video
+      source={{ uri: localUri }}
+      isMuted={true}
+      isLooping={true}
+      shouldPlay={true}
+      resizeMode={ResizeMode.COVER}
+      style={style}
+    />
+  );
 }
 
 const LeftActions = ({ onPress }: { onPress: () => void }) => {
+  // CORREÇÃO: O componente precisa retornar um elemento JSX.
+  // Adicionado um RectButton para a ação de editar, similar ao RightActions.
   return (
     <RectButton style={styles.editBox} onPress={onPress}>
       <FontAwesome name="pencil" size={24} color="white" />
@@ -374,9 +368,9 @@ const handleSaveExercicio = (newSeries: SerieEdit[], pesoBarra?: number) => {
             <FontAwesome name="link" size={20} color={isPartOfBiSet ? '#1cb0f6' : '#666'} />
             {isPartOfBiSet && (
               // CORRIGIDO: Usa a importação de FadeInLeft
-              <Animated.Text entering={FadeInLeft.duration(400)} style={styles.biSetLabel}>
-                Bi-set
-              </Animated.Text>
+              <Animated.View entering={FadeInLeft.duration(400)}>
+                <Text style={styles.biSetLabel}>Bi-set</Text>
+              </Animated.View>
             )}
           </TouchableOpacity>
         )}

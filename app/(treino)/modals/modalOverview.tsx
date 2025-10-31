@@ -3,10 +3,10 @@ import { Log } from '@/models/log';
 import { Treino } from '@/models/treino';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome } from '@expo/vector-icons';
+import { ResizeMode, Video } from 'expo-av'; // Changed from expo-video
 import * as FileSystem from 'expo-file-system/legacy';
-import { VideoView as Video, useVideoPlayer } from 'expo-video';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Image, Modal, Platform, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Modal, Platform, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 
 // Flag para detecção do Expo Go
 const IS_EXPO_GO = !__DEV__ || Platform.OS === 'ios';
@@ -45,16 +45,24 @@ const VideoListItem = React.memo(({ uri, style }: { uri: string; style: any }) =
       manageMedia();
     }, [uri]);
 
-    // No Expo Go iOS, ou se for WebP, usa apenas imagens estáticas
-    if (IS_EXPO_GO || isWebP) {
+    if (!localUri) {
+      return <View style={[style, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color="#fff" /></View>;
+    }
+
+    if (isWebP) { // Handle WebP as Image
       return <Image source={{ uri: localUri || uri }} style={style} resizeMode="cover" />;
     }
 
-    const player = useVideoPlayer(localUri, (p) => { p.loop = true; p.muted = true; p.play(); });
-  
-    useEffect(() => () => { if (player) player.release(); }, [player]);
-  
-    return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
+    return (
+      <Video
+        source={{ uri: localUri || uri }}
+        isMuted={true}
+        isLooping={true}
+        shouldPlay={true}
+        resizeMode={ResizeMode.COVER}
+        style={style}
+      />
+    );
 });
 
 const ExerciseLoadItem = React.memo(({ 

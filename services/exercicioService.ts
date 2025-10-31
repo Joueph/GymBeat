@@ -4,8 +4,29 @@ import { ExercicioModelo } from '../models/exercicio';
 
 const EXERCICIOS_PAGE_SIZE = 20; // Define a default page size
 
-export const getExerciciosModelos = async (params: { lastVisibleDoc?: DocumentSnapshot | null, limit?: number, searchTerm?: string }): Promise<{ exercicios: ExercicioModelo[], lastVisibleDoc: DocumentSnapshot | null }> => {
-  const { lastVisibleDoc, limit: queryLimit = EXERCICIOS_PAGE_SIZE, searchTerm } = params;
+export const getTodosGruposMusculares = async (): Promise<string[]> => {
+  try {
+    const q = query(collection(db, 'exerciciosModelos'));
+    const querySnapshot = await getDocs(q);
+    
+    const grupos = new Set<string>();
+    querySnapshot.forEach((doc) => {
+      const data = doc.data() as ExercicioModelo;
+      if (data.grupoMuscular) {
+        grupos.add(data.grupoMuscular);
+      }
+    });
+
+    // Retorna os grupos ordenados alfabeticamente
+    return Array.from(grupos).sort();
+  } catch (error) {
+    console.error("Erro ao buscar todos os grupos musculares: ", error);
+    throw error;
+  }
+};
+
+export const getExerciciosModelos = async (params: { lastVisibleDoc?: DocumentSnapshot | null, limit?: number, searchTerm?: string, grupoMuscular?: string | null }): Promise<{ exercicios: ExercicioModelo[], lastVisibleDoc: DocumentSnapshot | null }> => {
+  const { lastVisibleDoc, limit: queryLimit = EXERCICIOS_PAGE_SIZE, searchTerm, grupoMuscular } = params;
   const exerciciosRef = collection(db, 'exerciciosModelos');
 
   let q = query(exerciciosRef);
@@ -18,8 +39,13 @@ export const getExerciciosModelos = async (params: { lastVisibleDoc?: DocumentSn
     q = query(q, where('nome', '>=', searchTerm), where('nome', '<=', searchTerm + '\uf8ff'));
   }
 
+  // Apply muscle group filter if present
+  if (grupoMuscular) {
+    q = query(q, where('grupoMuscular', '==', grupoMuscular));
+  }
+
   // Always order for consistent pagination. 'nome' is a good candidate.
-  q = query(q, orderBy('nome'));
+  q = query(q, orderBy('nome')); // A ordenação principal continua sendo por nome
 
   // Apply startAfter for pagination
   if (lastVisibleDoc) {

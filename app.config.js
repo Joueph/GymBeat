@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "GymBeat",
     slug: "GymBeat",
-    version: "1.1.0",
+    version: "1.1.1",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: "gymbeat",
@@ -25,8 +25,8 @@ export default {
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
-      package: "com.gymbeat",
-      versionCode: 11,
+      package: "br.com.gymbeat",
+      versionCode: 15,
       googleServicesFile: "./google-services.json"
     },
     web: {
@@ -93,6 +93,17 @@ export default {
       firebaseAppId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
       firebaseMeasurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
     },
+    updates: {
+      url: "https://u.expo.dev/98b439cb-fc45-4f0b-ab2b-36f1c758c347", // mesmo ID do seu projeto
+      enabled: true,
+      fallbackToCacheTimeout: 0,
+    },
+        runtimeVersion: {
+      policy: "appVersion",
+    },
+
+    
+
     owner: "joueph",
   },
 };

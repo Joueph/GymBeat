@@ -1,11 +1,9 @@
 // services/fichaService.ts
 
-import { Exercicio } from '@/models/exercicio';
 import {
   addDoc,
   collection,
   doc,
-  documentId,
   getDoc,
   getDocs,
   query,
@@ -44,49 +42,44 @@ export const getFichasModelos = async (): Promise<FichaModelo[]> => {
 /**
  * Copies a FichaModelo and its associated TreinoModelos to a user-specific Ficha and Treinos.
  */
-export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: string, treinosParaCopiar: { diasSemana: string[]; id: string; nome: string; intervalo: { min: number; seg: number; }; exercicios: Exercicio[]; }[]): Promise<string> => {
-  const batch = writeBatch(db);
-  const newTreinoRefs: any[] = [];
+  export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: string, treinosParaCopiar: TreinoModelo[]): Promise<string> => {
+    const batch = writeBatch(db);
+    const newTreinoRefs: any[] = [];
 
-  // 1. Get all TreinoModelo documents using the array of IDs from the FichaModelo
-  if (fichaModelo.treinos?.length > 0) {
-    const treinosQuery = query(collection(db, 'treinosModelos'), where(documentId(), 'in', fichaModelo.treinos));
-    const treinosSnapshot = await getDocs(treinosQuery);
-
-    // 2. For each TreinoModelo, create a new user-specific Treino document
-    for (const treinoModeloDoc of treinosSnapshot.docs) {
-      const treinoModelo = { id: treinoModeloDoc.id, ...treinoModeloDoc.data() } as TreinoModelo;
-      const newTreinoRef = doc(collection(db, 'treinos'));
+    // 1. NÃO buscamos mais os modelos. Usamos 'treinosParaCopiar' que já veio customizado.
+    if (treinosParaCopiar.length > 0) {
       
-      // The 'exercicios' array in TreinoModelo contains DocumentReferences to 'exerciciosModelos'.
-      // We can copy these references directly.
-const newTreinoData = {
-  nome: treinoModelo.nome,
-  diasSemana: treinoModelo.diasSemana,
-  exercicios: (treinoModelo.exercicios as any[]).map((ex, exIndex) => {
-    // Gera array de séries com base no número de séries do modelo
-    const seriesArray = Array.from({ length: Number(ex.series) || 0 }, (_, i) => ({
-      id: `set-${Date.now()}-${i}`,
-      peso: 0,
-      repeticoes: ex.repeticoes || '',
-    }));
+      // 2. Itera sobre os treinos customizados passados como parâmetro
+      for (const treinoCustomizado of treinosParaCopiar) {
+        const newTreinoRef = doc(collection(db, 'treinos'));
+        
+        const newTreinoData = {
+          nome: treinoCustomizado.nome,
+          diasSemana: treinoCustomizado.diasSemana, // <-- CORRIGIDO: Usa os dias customizados
+          exercicios: (treinoCustomizado.exercicios as any[]).map((ex, exIndex) => {
+            // Gera array de séries com base no número de séries do modelo
+            // Usamos 'ex.series' e 'ex.repeticoes' que vêm do TreinoModelo
+            const seriesArray = Array.from({ length: Number((ex as any).series) || 0 }, (_, i) => ({
+              id: `set-${Date.now()}-${i}`,
+              peso: 0,
+              repeticoes: (ex as any).repeticoes || '',
+            }));
 
-    return {
-      ...ex,
-      modelo: ex.modelo, // mantém referência ao modelo
-      series: seriesArray, // substitui o número por o array de mapas
-      anotacoes: '', // adiciona campo vazio
-    };
-  }),
-  usuarioId: userId,
-  modeloId: treinoModelo.id,
-};
+            return {
+              ...ex,
+              modelo: (ex as any).modelo, // mantém referência ao modelo
+              series: seriesArray, // substitui o número por o array de mapas
+              anotacoes: '', // adiciona campo vazio
+            };
+          }),
+          usuarioId: userId,
+          modeloId: treinoCustomizado.id, // Usa o ID do modelo original
+        };
 
-      batch.set(newTreinoRef, newTreinoData);
-      newTreinoRefs.push(newTreinoRef); // Store the full reference
+        batch.set(newTreinoRef, newTreinoData);
+        newTreinoRefs.push(newTreinoRef); // Store the full reference
+      }
     }
-  }
-
   // 3. Create the new user-specific Ficha document
   const newFichaRef = doc(collection(db, 'fichas'));
   const expirationDate = new Date();
@@ -129,7 +122,7 @@ export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => 
   return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Ficha));
 };
 
-export const setFichaAtiva = async (userId: string, fichaId: string): Promise<void> => {
+export const setFichaAtiva = async (userId: string, fichaId: string): Promise<Ficha | null> => {
   const batch = writeBatch(db);
   const fichasRef = collection(db, 'fichas');
   
@@ -143,6 +136,13 @@ export const setFichaAtiva = async (userId: string, fichaId: string): Promise<vo
   batch.update(newActiveFichaRef, { ativa: true });
 
   await batch.commit();
+
+  // ADICIONADO: Busca e retorna a ficha recém-ativada
+  const docSnap = await getDoc(newActiveFichaRef);
+  if (docSnap.exists()) {
+    return { id: docSnap.id, ...docSnap.data() } as Ficha;
+  }
+  return null; // Caso a ficha não seja encontrada
 };
 
 export const addFicha = async (fichaData: Omit<Ficha, 'id'>): Promise<string> => {

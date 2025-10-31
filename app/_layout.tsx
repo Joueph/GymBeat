@@ -2,6 +2,7 @@
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
+import { MenuProvider } from 'react-native-popup-menu';
 import { AuthProvider, useAuth } from './authprovider'; // Verifique o caminho
 
 // O componente que consome o contexto e faz a lógica de navegação
@@ -31,6 +32,7 @@ function MainNavigation() {
 
   // Retorna a estrutura de navegação principal
   return (
+    <MenuProvider>
       <Stack
         screenOptions={{
           headerStyle: { backgroundColor: '#141414' },
@@ -44,6 +46,7 @@ function MainNavigation() {
         <Stack.Screen name="(projetos)" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       </Stack>
+      </MenuProvider>
   );
 }
 

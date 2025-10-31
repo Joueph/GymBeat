@@ -1,6 +1,6 @@
 import { calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome } from '@expo/vector-icons';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router'; // Adicionado ThemedText
 // import { VideoView as Video, useVideoPlayer } from 'expo-video'; // Removido
 import { doc, getDoc } from 'firebase/firestore';
 import React, { memo, useEffect, useState } from 'react';
@@ -16,6 +16,8 @@ import { getLogsByUsuarioId } from '../../services/logService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 // --- Imports dos novos componentes ---
+import { ThemedText } from '@/components/themed-text';
+import { Ficha } from '@/models/ficha';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '../../components/exercicios/ExpandableExerciseItem';
 
@@ -29,6 +31,11 @@ const ProgressBar = memo(({ progress }: { progress: number }) => (
 interface SerieComStatus extends Serie {
   concluido?: boolean;
 }
+
+const DIAS_SEMANA_MAP: { [key: number]: string } = {
+  0: 'dom', 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sab'
+};
+
 
 const toDate = (date: any): Date | null => {
 // ... (código existente de toDate)
@@ -75,6 +82,7 @@ export default function TreinoCompletoScreen() {
     const [log, setLog] = useState<Log | null>(null);
     const [duration, setDuration] = useState(0);
     const [weeklyProgress, setWeeklyProgress] = useState({ completed: 0, total: 2 });
+    const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
     const [weekStreak, setWeekStreak] = useState(0);
     const [currentVolume, setCurrentVolume] = useState(0);
     const [allUserLogs, setAllUserLogs] = useState<Log[]>([]);
@@ -143,11 +151,13 @@ export default function TreinoCompletoScreen() {
     const calculateCompletionData = async (completedLog: Log) => {
 // ... (código existente de calculateCompletionData)
         if (!user) return;
+        const { getFichaAtiva } = require('../../services/fichaService');
         try {
-            const [userProfile, userLogs] = await Promise.all([
+            const [userProfile, userLogs, fichaAtiva] = await Promise.all([
 // ... (código existente de promise.all)
                 getUserProfile(user.uid),
-                getLogsByUsuarioId(user.uid)
+                getLogsByUsuarioId(user.uid),
+                getFichaAtiva(user.uid)
             ]);
             setAllUserLogs(userLogs); // Guarda todos os logs para os componentes filhos
             
@@ -155,6 +165,7 @@ export default function TreinoCompletoScreen() {
                 setUserWeight(userProfile.peso);
             }
 
+            setActiveFicha(fichaAtiva);
             const streakGoal = userProfile?.streakGoal || 2;
 // ... (código existente de streak)
             const today = new Date();
@@ -210,6 +221,54 @@ export default function TreinoCompletoScreen() {
     
     // Config do gráfico movida para o componente
     
+    const renderWeeklyCalendar = () => {
+      const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
+      const today = new Date();
+      const currentDay = today.getDay();
+  
+      const loggedDays = new Set(
+        allUserLogs.map(log => {
+          const logDate = toDate(log.horarioFim);
+          return logDate ? logDate.toDateString() : null;
+        })
+        .filter((d): d is string => d !== null)
+      );
+  
+      const scheduledDays = activeFicha ? new Set(activeFicha.treinos.flatMap((t: any) => t.diasSemana)) : new Set();
+      
+      return (
+        <View style={styles.calendarContainer}>
+          {weekDays.map((day, index) => {
+            const date = new Date();
+            date.setDate(today.getDate() - (currentDay - index));
+            const isToday = index === currentDay;
+            const isPast = index < currentDay;
+            
+            const isLogged = loggedDays.has(date.toDateString());
+            const dayString = DIAS_SEMANA_MAP[index] as any;
+            const isScheduled = scheduledDays.has(dayString);
+  
+            const isMissed = isPast && isScheduled && !isLogged;
+  
+            const dayStyles = [
+              styles.dayContainer,
+              (isPast || isToday) && styles.progressionOverlay,
+              isScheduled && !isLogged && !isMissed && styles.scheduledDay,
+              isLogged && styles.loggedDay,
+              isMissed && styles.missedDay,
+            ];
+            
+            return (
+              <View key={day} style={dayStyles}>
+                <ThemedText style={styles.dayText}>{day}</ThemedText>
+                <ThemedText style={styles.dateText}>{date.getDate()}</ThemedText>
+              </View>
+            );
+          })}
+        </View>
+      );
+    };
+
     const ListHeader = () => (
 // ... (código existente de ListHeader)
         <>
@@ -222,7 +281,7 @@ export default function TreinoCompletoScreen() {
 // ... (código existente de ...statsSection Progresso)
               <View style={styles.statsSection}>
                 <Text style={styles.statsSectionTitle}>Seu Progresso</Text>
-                <View style={styles.progressItem}><Text style={styles.progressLabel}>Treinos da Semana</Text><ProgressBar progress={weeklyProgress.total > 0 ? weeklyProgress.completed / weeklyProgress.total : 0} /><Text style={styles.progressText}>{weeklyProgress.completed} de {weeklyProgress.total} treinos</Text></View>
+                <View style={styles.progressItem}><Text style={styles.progressLabel}>Treinos da Semana</Text>{renderWeeklyCalendar()}</View>
                 <View style={styles.progressItem}><Text style={styles.progressLabel}>Sequência de Semanas</Text><View style={styles.streakContainer}><FontAwesome name="fire" size={16} color="#FFA500" /><Text style={styles.streakText}>{weekStreak} {weekStreak === 1 ? 'semana' : 'semanas'}</Text></View></View>
               </View>
               <View style={styles.statsSection}>
@@ -278,7 +337,7 @@ export default function TreinoCompletoScreen() {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 80 }} // Space for the button
             />
-            <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('./')}>
+            <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('/(tabs)/treinoHoje')}>
 
               <Text style={styles.continueButtonText}>Fechar</Text>
             </TouchableOpacity>
@@ -457,6 +516,58 @@ const styles = StyleSheet.create({
         borderTopColor: '#333',
         paddingTop: 15,
         overflow: 'hidden', 
+    },
+    // Calendar Styles
+    calendarContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      padding: 8,
+      backgroundColor: '#1f1f1f',
+      borderRadius: 15,
+      borderWidth: 1,
+      borderTopColor: '#ffffff2a',
+      borderLeftColor: '#ffffff2a', 
+      borderBottomColor: '#ffffff1a',
+      borderRightColor: '#ffffff1a',
+      width: '100%',
+    },
+    dayContainer: {
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 2 ,
+      borderRadius: 10,
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      gap: 1,
+      flexBasis: '13%',  
+    },
+    progressionOverlay: {
+      backgroundColor: '#ffffff1a',
+    },
+    loggedDay: {
+      backgroundColor: '#00A6FF33',
+      borderColor: '#00A6FF',
+      borderWidth: 1.5,
+    },
+    missedDay: {
+      borderColor: '#FFA500',
+      borderWidth: 1.5,
+    },
+    scheduledDay: {
+      borderWidth: 1.5,
+      borderTopColor: '#ffffff2a',
+      borderLeftColor: '#ffffff2a', 
+      borderBottomColor: '#ffffff1a',
+      borderRightColor: '#ffffff1a',
+      backgroundColor: '#ffffff0d',
+    },
+    dayText: {
+      fontWeight: 'bold',
+      color: '#E0E0E0',
+    },
+    dateText: {
+      marginTop: 5,
+      color: '#FFFFFF',
     },
     // Estilos de exerciseItem removidos (agora estão no componente)
 });

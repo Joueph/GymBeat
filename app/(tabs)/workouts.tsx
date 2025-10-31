@@ -8,18 +8,19 @@ import { ActivityIndicator, Alert, FlatList, Image, Modal, StyleSheet, Text, Tou
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AnimatedGradientBorderButton from '../../components/AnimatedGradientBorderButton';
+import { Ficha } from '../../models/ficha';
 import { FichaModelo } from '../../models/fichaModelo';
 import { TreinoModelo } from '../../models/treinoModelo';
 import { Usuario } from '../../models/usuario';
-import { copyFichaModeloToUser, getFichasModelos, setFichaAtiva } from '../../services/fichaService';
-import { getTreinosModelosByIds } from '../../services/treinoService';
+import { copyFichaModeloToUser, getFichasModelos, setFichaAtiva as setFichaAtivaService } from '../../services/fichaService';
+import { DiaSemana, getTreinosModelosByIds } from '../../services/treinoService';
 import { getUserProfile, updateUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 
-const DIAS_SEMANA_ORDEM: { [key: string]: number } = {
+const DIAS_SEMANA_ORDEM: { [key in DiaSemana]: number } = {
   'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6
 };
-const DIAS_SEMANA_ARRAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+const DIAS_SEMANA_ARRAY: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
 
 const DIAS_SEMANA_MAP: { [key: number]: string } = {
   0: 'dom', 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sab'
@@ -38,8 +39,8 @@ export default function WorkoutsScreen() {
   const [isCopying, setIsCopying] = useState(false);
   // Novos estados para personalização do calendário
   const [isCustomizing, setIsCustomizing] = useState(false);
-  const [customDays, setCustomDays] = useState<string[]>([]);
-  const [originalDays, setOriginalDays] = useState<Set<string>>(new Set());
+  const [customDays, setCustomDays] = useState<DiaSemana[]>([]);
+  const [originalDays, setOriginalDays] = useState<Set<DiaSemana>>(new Set());
   const [isCustomizationAllowed, setIsCustomizationAllowed] = useState(true);
 
   // Alterado de useFocusEffect para useEffect para carregar dados apenas uma vez.
@@ -153,8 +154,12 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     if (!user || !selectedFicha || !treinos) return;
     setIsCopying(true);
     try {
-      // Se a customização estiver permitida e ativa, envia os treinos com os dias alterados
-      const treinosParaCopiar = isCustomizing
+      // Importa o serviço de cache aqui para evitar importações cíclicas no nível superior
+      const { cacheFichaCompleta } = require('../../services/offlineCacheService');
+      const { getTreinosByIds: getTreinosReaisByIds } = require('../../services/treinoService');
+
+      // CORREÇÃO: Garante que o tipo de treinosParaCopiar seja TreinoModelo[]
+      const treinosParaCopiar: TreinoModelo[] = isCustomizing
         ? treinos.map((treino, index) => ({
             ...treino,
             diasSemana: customDays[index] ? [customDays[index]] : [],
@@ -162,7 +167,14 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
         : treinos;
 
       const newFichaId = await copyFichaModeloToUser(selectedFicha, user.uid, treinosParaCopiar);
-      await setFichaAtiva(user.uid, newFichaId);
+      const fichaAtivada: Ficha | null = await setFichaAtivaService(user.uid, newFichaId);
+
+      // Após ativar, busca os treinos recém-criados e salva tudo no cache
+      if (fichaAtivada && fichaAtivada.treinos.length > 0) {
+        const treinosRecemCriados = await getTreinosReaisByIds(fichaAtivada.treinos);
+        await cacheFichaCompleta(fichaAtivada, treinosRecemCriados);
+      }
+
       setIsCopying(false);
       setModalVisible(false);
       router.replace('/(tabs)/treinoHoje');
@@ -188,7 +200,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     setCustomDays(Array.from(originalDays).sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]));
   };
 
-  const handleDayPress = (day: string) => {
+  const handleDayPress = (day: DiaSemana) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCustomDays(prev => {
       let newDays = new Set(prev);
@@ -286,7 +298,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
   const renderCalendar = () => {
     return (
       <View>
-        <View style={styles.calendarContainer}> 
+        <View style={styles.calendarContainer}>
           {DIAS_SEMANA_ARRAY.map((day) => {
             const isScheduled = originalDays.has(day);
             const isSelected = customDays.includes(day);
@@ -302,7 +314,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
                   // Estilo para dias selecionados na customização
                   isCustomizing && isSelected && styles.daySelected,
                 ]}
-                onPress={() => handleDayPress(day)}
+                onPress={() => handleDayPress(day as DiaSemana)}
               >
                 <Text style={styles.dayText}>{day.toUpperCase()}</Text>
               </TouchableOpacity>

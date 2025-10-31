@@ -1,10 +1,10 @@
 import { Exercicio, Serie } from '@/models/exercicio';
 import { calculateLoadForSerie } from '@/utils/volumeUtils';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import { ResizeMode, Video } from 'expo-av'; // Changed from expo-video
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { VideoView as Video, VideoPlayer, useVideoPlayer } from 'expo-video';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react'; // Removido FlatList
 import { ActivityIndicator, Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -14,16 +14,18 @@ import Animated, { FadeIn, FadeOut, FadeOutUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Treino } from '../../models/treino';
 import { addLog } from '../../services/logService';
-import { getTreinoById, updateTreino } from '../../services/treinoService';
+import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
-import { EditExerciseModal } from './modals/EditExerciseModal';
+import { EditExerciseModal } from './modals/EditOngoingWorkoutExerciseModal';
 import { OngoingWorkoutListModal } from './modals/listaOngoingWorkout';
 import { WorkoutOverviewModal } from './modals/modalOverview';
 
 // **INÍCIO DA CORREÇÃO**
+import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
 // Adiciona a propriedade 'concluido' à interface Serie localmente
 interface SerieComStatus extends Serie {
+  id: string; // Garante que toda série tenha um ID
   concluido?: boolean;
 }
 // A interface Serie agora inclui um tipo para diferenciar séries normais de dropsets e um status de conclusão.
@@ -43,7 +45,7 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
   useEffect(() => {
     const manageMedia = async () => {
       if (!uri) return;
-      const fileName = uri.split('/').pop()?.split('?')[0];
+      const fileName = uri.split('/').pop()?.split('?')[0]; // Ensure filename is clean
       if (!fileName) return;
 
       const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
@@ -65,19 +67,24 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
     manageMedia();
   }, [uri]);
 
-  const player: VideoPlayer | null = useVideoPlayer(isWebP ? null : localUri, (player) => {
-    player.loop = true;
-    player.muted = true;
-    player.play();
-  });
-
-  useEffect(() => () => { if (!isWebP) player.release(); }, [localUri, player, isWebP]);
+  if (!localUri) {
+    return <View style={[style, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color="#fff" /></View>;
+  }
 
   if (isWebP) {
     const { Image } = require('react-native');
     return <Image source={{ uri: localUri || uri }} style={style} />;
   }
-  return <Video style={style} player={player} nativeControls={false} contentFit="cover" />;
+  return (
+    <Video
+      source={{ uri: localUri || uri }}
+      isMuted={true}
+      isLooping={true}
+      shouldPlay={true}
+      resizeMode={ResizeMode.COVER}
+      style={style}
+    />
+  );
 }
 
 // Componente para exibir os detalhes de uma série normal.
@@ -246,83 +253,87 @@ export default function OngoingWorkoutScreen() {
   }, []);
 
   useEffect(() => {
-    const startTime = new Date();
     const fetchTreino = async () => {
       if (typeof treinoId !== 'string') {
         Alert.alert("Erro", "ID do treino inválido.");
         router.back();
         return;
       }
+  
       try {
-        const treinoData = await getTreinoById(treinoId);
-        if (!treinoData || !treinoData.exercicios || treinoData.exercicios.length === 0 || !treinoData.exercicios[0].series || treinoData.exercicios[0].series.length === 0) {
-          Alert.alert("Treino Vazio", "Adicione exercícios para poder iniciá-lo.", [{ text: "OK", onPress: () => router.back() }]);
-          return;
-        }
-        setTreino(treinoData);
-        const intervalo = treinoData.intervalo ?? { min: 1, seg: 0 };
-        setRestTime(intervalo.min * 60 + intervalo.seg);
-        if (logId && typeof logId === 'string') {
-          const { getFirestore, doc, getDoc } = require('firebase/firestore');
-          const db = getFirestore();
-          const logRef = doc(db, 'logs', logId);
-          const logSnap = await getDoc(logRef);
-          if (logSnap.exists()) {
-            const logData = logSnap.data();
-            // **INÍCIO DA CORREÇÃO**
-            // A fonte da verdade para um treino em andamento são os exercícios salvos no log.
-            // Isso garante que o status 'concluido' de cada série seja recuperado corretamente.
-            // A variável 'treinoData' serve como um fallback caso o log não tenha os exercícios.
-            const exerciciosDoLog = logData.exercicios || treinoData.exercicios;
-            setTreino({ ...treinoData, exercicios: exerciciosDoLog });
-            // **FIM DA CORREÇÃO**
-
-            setHorarioInicio(toDate(logData.horarioInicio));
-            setActiveLogId(logId);
-            
-            // **INÍCIO DA REATORAÇÃO**
-            // Determina o ponto de partida com base nas séries concluídas
-            
-            let initialLoad = 0;
-            let proximoExercicioIndex = 0;
-            let proximaSerieIndex = 0;
-            let foundNext = false;
-
-            exerciciosDoLog.forEach((ex: Exercicio, exIndex: number) => {
-              (ex.series as SerieComStatus[]).forEach((serie, sIndex: number) => {
-                if (serie.concluido) {
-                  const repsMatch = String(serie.repeticoes).match(/\d+/);
-                  const reps = repsMatch ? parseInt(repsMatch[0], 10) : 0;
-                  initialLoad += (serie.peso || 0) * reps;
-                } else if (!foundNext) {
-                  // A primeira série não concluída que encontramos é o nosso ponto de partida.
-                  proximoExercicioIndex = exIndex;
-                  proximaSerieIndex = sIndex;
-                  foundNext = true;
-                }
-              })
-            });
-            setCargaAcumuladaTotal(initialLoad);
-
-            // Se todos os exercícios foram concluídos, foundNext será false.
-            // Nesse caso, o estado inicial (índice 0, série 0) é um fallback seguro,
-            // embora o treino deva ser finalizado em seguida.
-            setCurrentExerciseIndex(proximoExercicioIndex);
-            setCompletedSets(proximaSerieIndex);
-          // **FIM DA REATORAÇÃO**
-          } else { throw new Error("Log de treino para continuar não encontrado."); }
+        // 1. Tenta carregar o log do cache local primeiro
+        const cachedLog = await getCachedActiveWorkoutLog();
+        if (cachedLog && (cachedLog.treino.id === treinoId || logId === cachedLog.id)) {
+          // Se encontrou um log em cache para este treino, usa ele como fonte da verdade
+          setTreino(cachedLog.treino);
+          setHorarioInicio(toDate(cachedLog.horarioInicio));
+          setActiveLogId(cachedLog.id);
+          // A carga acumulada já deve estar correta no log em cache
+          setCargaAcumuladaTotal(cachedLog.cargaAcumulada || 0);
+  
+          // Encontra o ponto de partida
+          let proximoExercicioIndex = 0;
+          let proximaSerieIndex = 0;
+          let foundNext = false;
+          cachedLog.treino.exercicios.forEach((ex: Exercicio, exIndex: number) => {
+            if (!foundNext) {
+              const nextSetIndex = (ex.series as SerieComStatus[]).findIndex((s: SerieComStatus) => !s.concluido);
+              if (nextSetIndex !== -1) {
+                proximoExercicioIndex = exIndex;
+                proximaSerieIndex = nextSetIndex;
+                foundNext = true;
+              }
+            }
+          });
+  
+          setCurrentExerciseIndex(proximoExercicioIndex);
+          setCompletedSets(proximaSerieIndex);
+  
         } else if (user) {
-          // **INÍCIO DA CORREÇÃO**
-          // Garante que todas as séries sejam inicializadas com 'concluido: false'
+          // 2. Se não há cache, busca os dados do Firestore (comportamento original)
+          const treinoData = await getTreinoById(treinoId);
+          if (!treinoData || !treinoData.exercicios || treinoData.exercicios.length === 0) {
+            Alert.alert("Treino Vazio", "Adicione exercícios para poder iniciá-lo.", [{ text: "OK", onPress: () => router.back() }]);
+            return;
+          }
+  
+          const startTime = new Date();
           const exerciciosInicializados = treinoData.exercicios.map(ex => ({
-            ...ex,
+            ...ex, // Corrigido: `ex` em vez de `treinoData`
             series: ex.series.map(s => ({ ...s, concluido: false }))
           }));
-          setTreino({ ...treinoData, exercicios: exerciciosInicializados }); // Atualiza o estado local também
+          const treinoComExercicios = { ...treinoData, exercicios: exerciciosInicializados };
+          setTreino(treinoComExercicios);
           setHorarioInicio(startTime);
-          const newLogId = await addLog({ usuarioId: user.uid, treino: { ...treinoData, id: treinoId, fichaId: fichaId as string }, exercicios: exerciciosInicializados, exerciciosFeitos: [], horarioInicio: startTime }) ?? null;
-          // **FIM DA CORREÇÃO**
+  
+          // Cria o log no Firestore para obter um ID
+          const newLogId = await addLog({
+            usuarioId: user.uid, // Corrigido: `user.uid`
+            treino: { ...treinoData, id: treinoId, fichaId: fichaId as string },
+            exercicios: exerciciosInicializados,
+            horarioInicio: startTime,
+            status: 'em_andamento',
+            cargaAcumulada: 0,
+          }) ?? null;
+  
           setActiveLogId(newLogId);
+  
+          // Salva o log recém-criado no cache local
+          if (newLogId) {
+            await cacheActiveWorkoutLog({
+              id: newLogId,
+              usuarioId: user.uid,
+              treino: treinoComExercicios,
+              horarioInicio: startTime,
+              status: 'em_andamento',
+              cargaAcumulada: 0,
+              exercicios: exerciciosInicializados,
+              exerciciosFeitos: [],
+              observacoes: undefined,
+              nomeTreino: undefined
+            });
+          }
+        } else if (user) {
         }
         if (user) {
           const { getLogsByUsuarioId } = require('../../services/logService');
@@ -424,15 +435,15 @@ export default function OngoingWorkoutScreen() {
     // **INÍCIO DA REATORAÇÃO**
     // Marca a série como concluída no estado do treino
     const updatedExercicios = [...treino.exercicios];
-    const exercicioAtualIndex = updatedExercicios.findIndex(ex => ex.modeloId === currentExercise.modeloId);
-    if (exercicioAtualIndex !== -1) {
+    const exercicioParaAtualizarIndex = updatedExercicios.findIndex((ex: Exercicio) => ex.modeloId === currentExercise.modeloId);
+    if (exercicioParaAtualizarIndex !== -1) {
       const serieAtualIndex = completedSets;
-      if ((updatedExercicios[exercicioAtualIndex].series as SerieComStatus[])[serieAtualIndex]) {
-        (updatedExercicios[exercicioAtualIndex].series as SerieComStatus[])[serieAtualIndex].concluido = true;
+      if ((updatedExercicios[exercicioParaAtualizarIndex].series as SerieComStatus[])[serieAtualIndex]) {
+        (updatedExercicios[exercicioParaAtualizarIndex].series as SerieComStatus[])[serieAtualIndex].concluido = true;
       }
       // Se for um bi-set, marca a série do parceiro também
-      if (isBiSet && (updatedExercicios[exercicioAtualIndex + 1]?.series as SerieComStatus[])[serieAtualIndex]) {
-        (updatedExercicios[exercicioAtualIndex + 1].series as SerieComStatus[])[serieAtualIndex].concluido = true;
+      if (isBiSet && (updatedExercicios[exercicioParaAtualizarIndex + 1]?.series as SerieComStatus[])[serieAtualIndex]) {
+        (updatedExercicios[exercicioParaAtualizarIndex + 1].series as SerieComStatus[])[serieAtualIndex].concluido = true;
       }
       setTreino({ ...treino, exercicios: updatedExercicios });
     }
@@ -440,35 +451,36 @@ export default function OngoingWorkoutScreen() {
 
     const newCompletedSets = completedSets + 1;
     
-    // Salva o progresso atualizado no log imediatamente após marcar a série como concluída
-    if (activeLogId) {
-      try { await addLog({ exercicios: updatedExercicios }, activeLogId); } 
-      catch (error) { console.error("Erro ao salvar progresso da série:", error); }
-    }
+    // **MUDANÇA PRINCIPAL: Salva no cache local em vez do Firestore**
+    const updatedLogForCache: Log = {
+      id: activeLogId!,
+      usuarioId: user.uid,
+      treino: { ...treino, exercicios: updatedExercicios },
+      horarioInicio: horarioInicio!,
+      status: 'em_andamento',
+      cargaAcumulada: newTotalLoad,
+      exercicios: updatedExercicios,
+      exerciciosFeitos: [],
+      observacoes: undefined,
+      nomeTreino: undefined
+    };
+    await cacheActiveWorkoutLog(updatedLogForCache);
 
     if (newCompletedSets >= currentExercise.series.length) {
-      if (activeLogId) {
-        try {
-          // Salva o estado atualizado dos exercícios no log
-          await addLog({ exercicios: updatedExercicios }, activeLogId);
-        } catch (error) { console.error("Erro ao salvar progresso do exercício:", error); }
-      }
       const jump = isBiSet ? 2 : 1;
       const nextIndex = currentExerciseIndex + jump;
       if (nextIndex < treino.exercicios.length) {
         setCurrentExerciseIndex(nextIndex);
         setCompletedSets(0);
       } else {
+        // FIM DO TREINO
         const horarioFim = new Date();
         try {
           if (activeLogId) {
-            // Salva o log final com os exercícios feitos e a carga acumulada total.
-            // Este é o único momento em que `cargaAcumulada` é preenchida,
-            // conforme solicitado.
-            await addLog({ horarioFim, exercicios: updatedExercicios, status: 'concluido', cargaAcumulada: newTotalLoad }, activeLogId);
-            
-            // Atualiza o treino original com os exercícios modificados durante a sessão
-            await updateTreino(treinoId as string, { exercicios: updatedExercicios });
+            // Agora sim, salva o log final no Firestore
+            await addLog({ horarioFim, status: 'concluido', cargaAcumulada: newTotalLoad, exercicios: updatedExercicios }, activeLogId);
+            // Limpa o cache local
+            await cacheActiveWorkoutLog(null);
 
             router.replace({ pathname: './treinoCompleto', params: { logId: activeLogId } });
           }
@@ -485,9 +497,6 @@ export default function OngoingWorkoutScreen() {
     const restStartTimestamp = Date.now();
     setRestStartTime(restStartTimestamp);
     setIsResting(true);
-    if (activeLogId) {
-      await addLog({ lastInterval: restStartTimestamp }, activeLogId);
-    }
   };
 
   const handleMainAction = () => {
@@ -512,9 +521,6 @@ export default function OngoingWorkoutScreen() {
       setIsResting(false);
       setRestStartTime(null);
       setRestTime(maxRestTime);
-      if (activeLogId) {
-        await addLog({ lastInterval: null }, activeLogId);
-      }
     }
   };
 
@@ -546,10 +552,15 @@ export default function OngoingWorkoutScreen() {
     }
     setTreino(prevTreino => prevTreino ? { ...prevTreino, exercicios: updatedExercicios } : null);
     // **INÍCIO DA CORREÇÃO**
-    // Salva as alterações no log do Firestore imediatamente
-    if (activeLogId) {
-      addLog({ exercicios: updatedExercicios }, activeLogId);
-    }
+    // Salva as alterações no log em cache local
+    const updatedLogForCache: Partial<Log> = {
+      id: activeLogId!,
+      usuarioId: user!.uid,
+      treino: { ...treino, exercicios: updatedExercicios },
+      horarioInicio: horarioInicio!,
+      exercicios: updatedExercicios,
+    };
+    cacheActiveWorkoutLog(updatedLogForCache as Log);
     setEditExerciseModalVisible(false);
     setExercicioSendoEditado(null);
   };
@@ -564,10 +575,9 @@ export default function OngoingWorkoutScreen() {
     const exitWorkout = async () => {
       if (activeLogId) {
         try {
-          const { getFirestore, doc, updateDoc } = require('firebase/firestore');
-          const db = getFirestore();
-          await updateDoc(doc(db, 'logs', activeLogId), { status: 'cancelado' });
+          await addLog({ status: 'cancelado' }, activeLogId);
           router.back();
+          await cacheActiveWorkoutLog(null); // Limpa o cache
         } catch (error) {
           console.error("Erro ao cancelar o log:", error);
           Alert.alert("Erro", "Não foi possível cancelar o registro do treino, mas você pode sair.");

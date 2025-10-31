@@ -6,12 +6,12 @@ import DraggableFlatList, { RenderItemParams } from 'react-native-draggable-flat
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ficha } from '../../models/ficha';
-import { Treino } from '../../models/treino';
-import { deleteFicha, getFichaById, setFichaAtiva, updateFicha } from '../../services/fichaService';
+import { DiaSemana, Treino } from '../../models/treino';
+import { deleteFicha, getFichaById, setFichaAtiva as setFichaAtivaService, updateFicha } from '../../services/fichaService';
 import { getTreinosByIds } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 
-const DIAS_SEMANA_ORDEM: { [key: string]: number } = {
+const DIAS_SEMANA_ORDEM: { [key in DiaSemana]: number } = {
   'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6
 };
 
@@ -65,9 +65,18 @@ export default function CriarFichaScreen() {
   const handleSaveChanges = async () => {
     if (!ficha || !user) return;
 
+    // Importa o serviço de cache aqui
+    const { cacheFichaCompleta } = require('../../services/offlineCacheService');
+
     const saveAndGoBack = async () => {
       try {
         await updateFicha(ficha.id, { nome: ficha.nome, treinos: ficha.treinos });
+        // Se a ficha que estamos salvando é a ativa, atualiza o cache
+        if (ficha.ativa) {
+          // Busca a ficha atualizada para garantir que temos os dados mais recentes
+          const fichaAtualizada = await getFichaById(ficha.id);
+          await cacheFichaCompleta(fichaAtualizada, treinos);
+        }
         Alert.alert("Sucesso", "Ficha salva com sucesso!");
         router.back();
       } catch (error) {
@@ -87,8 +96,9 @@ export default function CriarFichaScreen() {
           { text: "Salvar e manter inativa", onPress: saveAndGoBack, style: "cancel" },
           { text: "Salvar e ativar", onPress: async () => {
             try {
-              await updateFicha(ficha.id, { nome: ficha.nome, treinos: ficha.treinos });
-              await setFichaAtiva(user.uid, ficha.id);
+              await updateFicha(ficha.id, { nome: ficha.nome, treinos: ficha.treinos }); // Salva as mudanças primeiro
+              const fichaAtivada = await setFichaAtivaService(user.uid, ficha.id); // Ativa a ficha
+              await cacheFichaCompleta(fichaAtivada, treinos); // Salva a ficha ativada e seus treinos no cache
               Alert.alert("Sucesso", "Ficha salva e definida como ativa!");
               router.back();
             } catch (error) { Alert.alert("Erro", "Não foi possível ativar a ficha após salvar."); }
@@ -97,6 +107,7 @@ export default function CriarFichaScreen() {
       );
     }
   };
+
 
   const handleDeleteFicha = async () => {
     if (!ficha) return;

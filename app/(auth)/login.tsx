@@ -2,11 +2,14 @@ import { FontAwesome } from "@expo/vector-icons";
 // import appleAuth from '@invertase/react-native-apple-authentication';
 // import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { useRouter } from "expo-router";
-import { sendPasswordResetEmail, signInWithEmailAndPassword } from "firebase/auth";
+import { sendPasswordResetEmail, signInWithEmailAndPassword, User } from "firebase/auth";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { auth } from "../../firebaseconfig";
 // import { createUserProfileDocument, getUserProfile } from "../../userService";
+import { doc, getDoc, writeBatch } from "firebase/firestore";
+import { db } from "../../firebaseconfig";
+import { Ficha } from "../../models/ficha";
 
 // Configuração do Google Sign-In
 // GoogleSignin.configure({
@@ -90,10 +93,50 @@ export default function LoginScreen() {
     setErrorMessage(""); // limpa mensagens anteriores
     setLoading(true);
     try {
-      // A navegação após o login é gerenciada globalmente pelo _layout.tsx.
-      // Apenas realizamos o login aqui.
-      await signInWithEmailAndPassword(auth, email, senha);
-      // O AuthProvider cuidará do redirecionamento
+      const userCredential = await signInWithEmailAndPassword(auth, email, senha);
+      const user = userCredential.user;
+
+      // Após o login, verifica se há uma ficha pendente do onboarding
+      await checkAndAssignPendingFicha(user);
+
+    } catch (error: any) {
+      setErrorMessage(error.message); // atualiza feedback
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const checkAndAssignPendingFicha = async (user: User) => {
+    try {
+      const statsRef = doc(db, 'onboarding_stats', user.uid);
+      const statsSnap = await getDoc(statsRef);
+
+      if (statsSnap.exists()) {
+        const statsData = statsSnap.data();
+        
+        // Verifica se o usuário aceitou a ficha recomendada durante o onboarding
+        if (statsData.acceptedFicha && statsData.recommendedFicha) {
+          // Importa os serviços necessários
+          const { copyFichaModeloToUser, setFichaAtiva } = require('../../services/fichaService'); // Renomeado para evitar conflito
+          const { getTreinosByIds } = require('../../services/treinoService');
+          const { cacheFichaCompleta } = require('../../services/offlineCacheService');
+          
+          // Copia a ficha e os treinos para o usuário
+          const newFichaId = await copyFichaModeloToUser(statsData.recommendedFicha, user.uid, statsData.recommendedTreinos);
+          
+          // Define a nova ficha como ativa
+          const fichaAtivada: Ficha | null = await setFichaAtiva(user.uid, newFichaId);
+
+          // Busca os treinos recém-criados e salva tudo no cache para uso offline
+          const treinosRecemCriados = await getTreinosByIds(fichaAtivada?.treinos || []);
+          await cacheFichaCompleta(fichaAtivada, treinosRecemCriados);
+
+          // Limpa os dados do onboarding para não processar novamente
+          const batch = writeBatch(db);
+          batch.delete(statsRef);
+          await batch.commit();
+        }
+      }
     } catch (error: any) {
       setErrorMessage(error.message); // atualiza feedback
     } finally {

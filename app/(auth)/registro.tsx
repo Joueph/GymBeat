@@ -25,11 +25,14 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import Animated, { FadeInUp, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { FadeInUp, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { NumberSlider } from '../../components/NumberSlider';
 import { OnboardingOption } from '../../components/Onboarding/onboardingOptions'; // Importar o novo componente
 import { auth } from "../../firebaseconfig";
 import { EstatisticasOnboarding } from '../../models/EstatisticasOnboarding'; // Importar o Model
+import { FichaModelo } from '../../models/fichaModelo';
+import { TreinoModelo } from '../../models/treinoModelo';
+import { getFichasModelos } from '../../services/fichaService';
 import {
   atualizarPassoOnboarding,
   converterContaAnonima,
@@ -37,9 +40,14 @@ import {
   iniciarOnboarding
 } from '../../services/onboardingService'; // Importar o Service
 import { uploadImageAndGetURL } from '../../services/storageService';
+import { DiaSemana, getTreinosModelosByIds } from '../../services/treinoService';
 import { createUserProfileDocument } from "../../userService";
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
+
+const DIAS_SEMANA_ORDEM: { [key in DiaSemana]: number } = {
+  'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6
+};
 
 /**
  * Componente da Barra de Progresso com animação.
@@ -103,7 +111,7 @@ const StreakGoalItem = ({
 export default function CadastroScreen() { 
   const router = useRouter();
   const netInfo = useNetInfo(); // Hook para verificar a conexão
-  const TOTAL_FORM_STEPS = 25; // Agora são 25
+  const TOTAL_FORM_STEPS = 20; // Agora são 20
   
   const [onboardingStep, setOnboardingStep] = useState(0); // 0: Welcome, 1-25: Form steps
 
@@ -111,6 +119,11 @@ export default function CadastroScreen() {
 
   // -------- NOVOS ESTADOS --------
   // Estado unificado para os dados do onboarding
+  const [recommendedFicha, setRecommendedFicha] = useState<FichaModelo | null>(null);
+  const [recommendedTreinos, setRecommendedTreinos] = useState<TreinoModelo[]>([]);
+  const [isRecommending, setIsRecommending] = useState(false);
+  const [recommendationProgress, setRecommendationProgress] = useState(0);
+  const [acceptedFicha, setAcceptedFicha] = useState(false);
   const [onboardingData, setOnboardingData] = useState<Partial<EstatisticasOnboarding>>({ problemasParaTreinar: [] });
   // -------------------------------
 
@@ -131,6 +144,7 @@ export default function CadastroScreen() {
   const [confirmarSenha, setConfirmarSenha] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isStarting, setIsStarting] = useState(false); // Novo estado para o botão "Vamos lá!"
 
   // --- Refs para o carrossel de metas ---
   const flatListRef = useRef<FlatList>(null);
@@ -141,6 +155,11 @@ export default function CadastroScreen() {
   const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
     const visibleItem = viewableItems.find((i: any) => i.isViewable);
     if (visibleItem && typeof visibleItem.item.id === 'number') {
+      // Se o usuário aceitou a ficha, não faz nada
+      if (acceptedFicha) {
+        // Aqui você pode adicionar a lógica para copiar a ficha aceita
+        // e talvez até definir como ativa no final do onboarding.
+      }
       if (streakGoal !== visibleItem.item.id) {
         setStreakGoal(visibleItem.item.id);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -148,8 +167,29 @@ export default function CadastroScreen() {
     }
   }, [streakGoal]);
 
+  const checkIconScale = useSharedValue(0);
+  const checkIconStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: checkIconScale.value }],
+    };
+  });
+
+
+
+
+  useEffect(() => {
+    if (recommendationProgress === 1) {
+      // Animação de bounce para o ícone de check
+      checkIconScale.value = withSpring(1, { damping: 12, stiffness: 150 });
+      // Feedback tátil de sucesso
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      // Reseta a animação se o progresso for reiniciado
+      checkIconScale.value = 0;
+    }
+  }, [recommendationProgress]);
   // This validation is now only for the email/password form
-  const isCredentialsValid = nome.trim().length > 0 && email.trim().length > 5 && email.includes('@') && senha.length >= 6 && senha === confirmarSenha;
+  const isCredentialsValid = email.trim().length > 5 && email.includes('@') && senha.length >= 6 && senha === confirmarSenha;
 
   const isStepComplete = () => {
     // Vamos atualizar isso a cada passo
@@ -172,39 +212,93 @@ export default function CadastroScreen() {
       case 14: return diaNascimento > 0 && mesNascimento > 0 && anoNascimento > 1920; // Data de Nascimento
       case 15: return altura > 0; // Altura
       case 16: return peso > 0; // Peso
-      case 17: return nome.trim().length > 0; // Nome
-      case 18: return isCredentialsValid; // Credenciais
-      // Adicionar os próximos cases (até 25) aqui
-      default: return true;
+      case 17: return true; // Tela de processamento
+      case 18: return true; // Tela de recomendação
+      case 19: return nome.trim().length > 0; // Nome
+      case 20: return isCredentialsValid; // Credenciais
+      default:
+        return true;
     }
   };
 
   const handleIniciarOnboarding = async () => {
+    setIsStarting(true); // Ativa o estado de carregamento
     try {
       // ETAPA 1 (CRÍTICA): Garantir que o usuário esteja autenticado (anonimamente)
       // Isso PRECISA ser 'await' pois o passo 2 depende do UID.
       if (!auth.currentUser) {
         await signInAnonymously(auth);
       }
+
+      // ETAPA 2 (BACKGROUND): Iniciar a criação do documento no Firestore.
+      // Removemos o 'await' e adicionamos .catch() para rodar em background.
+      iniciarOnboarding()
+        .catch(error => console.error("Erro (background) ao iniciar onboarding:", error));
+      
+      // ETAPA 3 (IMEDIATA): Navegar para o próximo passo.
+      // Isso agora acontece imediatamente após o login, sem esperar o Firestore.
+      setAnimationDirection('forward');
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setOnboardingStep(s => s + 1);
+
     } catch (error) {
       // Se o LOGIN falhar (ex: sem rede), não podemos continuar.
       console.error("Erro CRÍTICO ao fazer login anônimo:", error);
       Alert.alert("Erro de Conexão", "Não foi possível iniciar. Verifique sua conexão e tente novamente.");
-      return; // Impede o avanço
+    } finally {
+      setIsStarting(false); // Desativa o estado de carregamento, independentemente do resultado
     }
-    
-    // ETAPA 2 (BACKGROUND): Iniciar a criação do documento no Firestore.
-    // Removemos o 'await' e adicionamos .catch() para rodar em background.
-    iniciarOnboarding()
-      .catch(error => console.error("Erro (background) ao iniciar onboarding:", error));
-    
-    // ETAPA 3 (IMEDIATA): Navegar para o próximo passo.
-    // Isso agora acontece imediatamente após o login, sem esperar o Firestore.
-    setAnimationDirection('forward');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setOnboardingStep(s => s + 1);
   };
 
+  const handleRecommendation = async () => {
+    if (isRecommending) return;
+    setIsRecommending(true);
+    setRecommendationProgress(0);
+
+    try {
+      const [fichas, userProfileData] = await Promise.all([
+        getFichasModelos(),
+        Promise.resolve({ nivel, genero, streakGoal }) // Usa os dados do state do onboarding
+      ]);
+      setRecommendationProgress(0.3);
+
+      const modelosComTotalDias = await Promise.all(fichas.map(async (ficha) => {
+        const treinosDaFicha = await getTreinosModelosByIds(ficha.treinos);
+        const totalDias = treinosDaFicha.reduce((sum, treino) => sum + (treino.diasSemana?.length || 0), 0);
+        return { ...ficha, totalDias };
+      }));
+      setRecommendationProgress(0.6);
+
+      const sortFichas = (a: FichaModelo, b: FichaModelo) => {
+        const getScore = (ficha: FichaModelo) => {
+          let score = 0;
+          if (Math.abs((ficha.totalDias || 0) - (userProfileData.streakGoal || 3)) <= 1) score += 20;
+          if (ficha.dificuldade === userProfileData.nivel) score += 10;
+          else if (ficha.dificuldade === 'Todos') score += 5;
+          if (ficha.sexo === (userProfileData.genero === 'Masculino' ? 'Homem' : userProfileData.genero === 'Feminino' ? 'Mulher' : undefined)) score += 10;
+          else if (ficha.sexo === 'Ambos') score += 5;
+          return score;
+        };
+        const scoreA = getScore(a);
+        const scoreB = getScore(b);
+        return scoreB - scoreA;
+      };
+
+      const sortedFichas = modelosComTotalDias.sort(sortFichas);
+      const bestFicha = sortedFichas[0];
+      setRecommendedFicha(bestFicha);
+      setRecommendationProgress(0.8);
+
+      const treinosData = await getTreinosModelosByIds(bestFicha.treinos ?? []);
+      setRecommendedTreinos(treinosData);
+      setRecommendationProgress(1);
+
+      // A navegação agora é manual, via botão "Próximo" que aparecerá.
+    } catch (error) {
+      console.error("Erro ao recomendar ficha:", error);
+      handleNext(); // Continua mesmo se der erro
+    } finally { setIsRecommending(false); }
+  };
 
 // ... (linha de adjacência)
   const handleNext = () => { // Removido o 'async'
@@ -241,6 +335,14 @@ export default function CadastroScreen() {
     // A lógica de salvar os dados restantes (nível, metas, dados pessoais)
     // será feita no próprio handleCadastro, antes de finalizar, para garantir
     // que tudo seja salvo.
+
+    if (onboardingStep === 16) { // Ao sair da tela de peso
+      // Avança para a tela de processamento
+      setOnboardingStep(s => s + 1);
+      // Inicia a recomendação em background
+      handleRecommendation();
+      return;
+    }
 
 
     // Esta lógica agora executa IMEDIATAMENTE, sem esperar o salvamento
@@ -290,6 +392,12 @@ export default function CadastroScreen() {
         return;
       }
       // Se vindo do 6, ou qualquer outro passo, avança normalmente
+      if (onboardingStep === 18) { // Se o usuário está na tela de recomendação
+        // Se ele clicar em "próximo" (usar este treino), marcamos como aceito
+        setAcceptedFicha(true);
+        setOnboardingStep(s => s + 1); // Vai para a tela de nome
+        return;
+      }
       setOnboardingStep(s => s + 1);
 
     } else if (onboardingStep === TOTAL_FORM_STEPS) {
@@ -338,6 +446,12 @@ export default function CadastroScreen() {
         }
         // Se treina 'Em casa', volta para o 9 (Halteres)
         setOnboardingStep(9);
+        return;
+      }
+
+      if (onboardingStep === 19) { // Vindo da tela de nome
+        // Volta para a tela de recomendação
+        setOnboardingStep(18);
         return;
       }
       // --- FIM NOVA LÓGICA CONDICIONAL ---
@@ -419,6 +533,13 @@ export default function CadastroScreen() {
         photoURL = await uploadImageAndGetURL(photoURI, currentUser.uid); // Upload da foto
       }
 
+      // Se o usuário aceitou a ficha recomendada, copia ela para o perfil dele
+      if (acceptedFicha && recommendedFicha) {
+        const { copyFichaModeloToUser, setFichaAtiva } = require('../../services/fichaService');
+        const newFichaId = await copyFichaModeloToUser(recommendedFicha, currentUser.uid, recommendedTreinos);
+        await setFichaAtiva(currentUser.uid, newFichaId);
+      }
+
       // 2. Salva os últimos dados coletados no documento de estatísticas
       const alturaNum = altura;
       const pesoNum = peso;
@@ -464,6 +585,14 @@ export default function CadastroScreen() {
     }
   };
 
+  const handleUpdateStreakGoal = () => {
+    if (!recommendedFicha || !recommendedFicha.totalDias) return;
+    // Atualiza o estado localmente. Este valor será usado ao criar o perfil do usuário.
+    setStreakGoal(recommendedFicha.totalDias);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Opcional: podemos mostrar um alerta, mas como a UI vai atualizar, talvez não seja necessário.
+    // Alert.alert("Sucesso", "Sua meta semanal foi atualizada!");
+  };
 
   const getStreakImage = (num: number) => {
     switch (num) {
@@ -509,8 +638,12 @@ export default function CadastroScreen() {
                     <Text style={styles.offlineText}>Conecte-se à internet para prosseguir</Text>
                   </View>
                 ) : (
-                  <TouchableOpacity style={styles.welcomePrimaryButton} onPress={handleIniciarOnboarding}>
-                    <Text style={styles.welcomePrimaryButtonText}>Vamos lá!</Text>
+                  <TouchableOpacity style={[styles.welcomePrimaryButton, isStarting && styles.nextButtonDisabled]} onPress={handleIniciarOnboarding} disabled={isStarting}>
+                    {isStarting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.welcomePrimaryButtonText}>Vamos lá!</Text>
+                    )}
                   </TouchableOpacity>
                 )}
 
@@ -639,7 +772,7 @@ case 4: // NOVO STEP: Problemas para treinar (Multi-select)
       case 5: // NOVO STEP: Feature Streaks (Condicional - Onboarding 9.png)
         return (
             <Video
-              source={require('../../assets/images/onboarding/Animations/CaseNãoVejoResultadosMeSintoIntimidado2.mp4')}
+              source={require('../../assets/images/onboarding/Animations/CaseFaltaDeMotivacaofaltaDeConstancia.mp4')}
               rate={1.0}
               isMuted={true}
               isLooping={false}
@@ -652,7 +785,7 @@ case 4: // NOVO STEP: Problemas para treinar (Multi-select)
       case 6: // NOVO STEP: Feature Gráficos (Condicional - Onboarding 10.png)
         return (
             <Video
-              source={require('../../assets/images/onboarding/Animations/CaseFaltaDeMotivacaofaltaDeConstância.mp4')}
+              source={require('../../assets/images/onboarding/Animations/CaseNaoVejoResultadosMeSintoIntimidado2.mp4')}
               rate={1.0}
               isMuted={true}
               isLooping={false}
@@ -921,7 +1054,108 @@ case 15: // Altura
           </>
         );
         
-      case 17: // Nome e Foto
+      case 17: // Tela de Processamento da Recomendação
+        return (
+          <View style={styles.stepContentWrapper}>
+            <Text style={[styles.mainTitle, { textAlign: 'center', fontSize: 28, marginBottom: 20 }]}>
+              Formulando uma ficha especialmente para você...
+            </Text>
+            {recommendationProgress === 1 && (
+              <Animated.View style={[styles.checkIconContainer, checkIconStyle]}><FontAwesome name="check-circle" size={80} color="#1cb0f6" /></Animated.View>
+            )}
+            <View style={styles.recommendationProgressContainer}>
+              <Animated.View style={[styles.recommendationProgressBar, { width: `${recommendationProgress * 100}%` }]} />
+            </View>
+          </View>
+        );
+
+      case 18: // Tela de Apresentação da Ficha Recomendada
+        if (!recommendedFicha) return <ActivityIndicator color="#fff" />;
+        const DIAS_SEMANA_ARRAY: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+        const originalDays = new Set(recommendedTreinos.flatMap(t => t.diasSemana));
+        
+        // Ordena os treinos pela ordem dos dias da semana (dom a sab)
+        const sortedTreinos = [...recommendedTreinos].sort((a, b) => (DIAS_SEMANA_ORDEM[a.diasSemana[0]] ?? 7) - (DIAS_SEMANA_ORDEM[b.diasSemana[0]] ?? 7));
+
+        const renderGoalDifferenceCard = () => {
+          if (!recommendedFicha || !recommendedFicha.totalDias || recommendedFicha.totalDias === (streakGoal || 0)) {
+            return null;
+          }
+      
+          const userGoal = streakGoal || 0;
+          const workoutGoal = recommendedFicha.totalDias;
+      
+          if (workoutGoal > userGoal) {
+            return (
+              <View style={[styles.goalDiffCard, styles.goalDiffConstructive]}>
+                <Text style={styles.goalDiffTitle}>Você consegue!</Text>
+                <View style={styles.goalDiffImages}>
+                  <Image source={getStreakImage(userGoal)} style={styles.goalDiffImage} />
+                  <FontAwesome name="long-arrow-right" size={24} color="#fff" />
+                  <Image source={getStreakImage(workoutGoal)} style={styles.goalDiffImage} />
+                </View>
+                <Text style={styles.goalDiffInfo}>Para aderir à este treino, você deverá ir na academia ao menos {workoutGoal} vezes por semana. Recomendamos que você <Text style={{ fontWeight: 'bold' }}>AUMENTE SUA META SEMANAL</Text>.</Text>
+                <TouchableOpacity style={styles.goalDiffButtonConstructive} onPress={handleUpdateStreakGoal}>
+                  <Text style={styles.goalDiffButtonText}>Aumentar meta para {workoutGoal} dias</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          } else { // workoutGoal < userGoal
+            return (
+              <View style={[styles.goalDiffCard, styles.goalDiffDestructive]}>
+                <Text style={styles.goalDiffTitle}>Este treino possui uma meta <Text style={{ fontStyle: 'italic' }}>Menor que a sua</Text></Text>
+                <View style={styles.goalDiffImages}>
+                  <Image source={getStreakImage(userGoal)} style={styles.goalDiffImage} />
+                  <FontAwesome name="long-arrow-right" size={24} color="#fff" />
+                  <Image source={getStreakImage(workoutGoal)} style={styles.goalDiffImage} />
+                </View>
+                <Text style={styles.goalDiffInfo}>Para seguir este plano, sua sequência pode ser comprometida. Recomendamos que você <Text style={{ fontWeight: 'bold' }}>AJUSTE SUA META SEMANAL</Text>.</Text>
+                <TouchableOpacity style={styles.goalDiffButtonDestructive} onPress={handleUpdateStreakGoal}>
+                  <Text style={styles.goalDiffButtonText}>Diminuir meta para {workoutGoal} dias</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }
+        };
+        return(
+          <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
+            {renderGoalDifferenceCard()}
+            <View style={styles.recommendationCard}>
+              <Image source={getStreakImage(recommendedFicha.totalDias || 0)} style={styles.recommendationCardImage} />
+              <View style={styles.recommendationCardTextContainer}>
+                <Text style={styles.recommendationCardTitle}>{recommendedFicha.nome}</Text>
+                <Text style={styles.recommendationCardDifficulty}>{recommendedFicha.dificuldade}</Text>
+              </View>
+            </View>
+
+            <View style={styles.calendarContainer}>
+              {DIAS_SEMANA_ARRAY.map((day) => (
+                <View key={day} style={[styles.dayContainer, originalDays.has(day) && styles.dayScheduled]}>
+                  <Text style={styles.dayText}>{day.toUpperCase()}</Text>
+                </View>
+              ))}
+            </View>
+            {sortedTreinos.map(treino => {
+              return (
+                <View key={treino.id} style={styles.treinoContainer}>
+                  <Text style={styles.treinoTitle}>{treino.nome}</Text>
+                  <Text style={styles.treinoDetailDays}>{treino.diasSemana.join(', ').toUpperCase()}</Text>
+                  {treino.exercicios.map((ex, index) => {
+                    const seriesCount = (ex as any).series || 0;
+                    const reps = (ex as any).repeticoes || 'N/A';
+                    return (
+                      <View key={`${ex.modeloId}-${index}`} style={styles.exercicioContainer}>
+                        <Text style={styles.exercicioText}>{ex.modelo.nome}</Text>
+                        <Text style={styles.exercicioDetailText}>{seriesCount}x {reps}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })}
+          </ScrollView>
+        );
+      case 19: // Nome e Foto
         return(
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <View style={styles.finalSummaryContainer}>
@@ -937,10 +1171,10 @@ case 15: // Altura
             </View>
 
             {/* --- Campos do Formulário --- */}
-            <TextInput placeholder="Como podemos te chamar?" value={nome} onChangeText={setNome} style={styles.input} placeholderTextColor="#ccc" />
+            <TextInput placeholder="Seu nome" value={nome} onChangeText={setNome} style={styles.nameInput} placeholderTextColor="#555" />
           </ScrollView>
         );
-      case 18: // Credenciais
+      case 20: // Credenciais
         return (
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#ccc" />
@@ -1028,21 +1262,22 @@ const getStepTitle = () => {
       case 9: return "Você possui halteres e pesos livres em casa?";
       case 10: // Título condicional
         return `Como você se considera em relação à ${onboardingData.localTreino === 'Em casa' ? 'Exercícios físicos' : 'academia'}?`;
-      // --- TÍTULOS RE-NUMERADOS ---
       case 11: return "Qual sua meta treinos por semana"; // (CORRETO)
       case 12: return "Qual sua meta de semanas em sequência?"; // (CORRETO)
       case 13: return "Qual seu gênero?"; // (CORRETO)
       case 14: return "Qual sua data de nascimento?";
       case 15: return "Qual sua altura?";
       case 16: return "E o seu peso?";
-      case 17: return "Para finalizar, seu nome";
-      case 18: return "Crie sua conta";
+      case 17: return ""; // Tela de processamento não tem título
+      case 18: return "Esta ficha é ideal para você";
+      case 19: return "Para finalizar, como podemos te chamar?";
+      case 20: return "Crie sua conta";
       // Adicionar títulos para os steps 18-25
       default: return "";
     }
 }
     
-const progress = (onboardingStep / 18) * 100;
+const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
   const title = getStepTitle();
   const subtitle = getStepSubtitle();
   const stepComplete = isStepComplete();
@@ -1086,18 +1321,31 @@ const progress = (onboardingStep / 18) * 100;
         {/* Rodapé com Botão "Avançar" */}
         {/* Oculta o botão no step 0 (tela de welcome) 
           e no step 17 (tela de credenciais), pois ele tem seu próprio botão "Finalizar Cadastro"
-        */} 
-        {onboardingStep > 0 && onboardingStep !== 18 && (
+        */}
+        {onboardingStep > 0 && ![20].includes(onboardingStep) && (
           <View style={styles.footer}>
-            <TouchableOpacity
-              style={[styles.nextButton, !stepComplete && styles.nextButtonDisabled]}
-              onPress={handleNext}
-              disabled={!stepComplete}
-            >
-              <Text style={styles.nextButtonText}> 
-                  {onboardingStep === TOTAL_FORM_STEPS ? "Finalizar Cadastro" : ([5, 6, 7].includes(onboardingStep) ? "Eu vou conseguir" : "Próximo")}
-                </Text>
-            </TouchableOpacity>
+            {/* Mostra o botão na etapa 17 apenas quando o progresso for 100%, caso contrário, não mostra nada no rodapé. */}
+            {onboardingStep === 17 && recommendationProgress < 1 ? null : (
+              <>
+                {onboardingStep === 18 && (
+                  <TouchableOpacity style={styles.secondaryButton} onPress={() => { setAcceptedFicha(false); handleNext(); }}>
+                    <Text style={styles.secondaryButtonText}>Quero criar meu próprio treino</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={[styles.nextButton, !stepComplete && styles.nextButtonDisabled]}
+                  onPress={handleNext}
+                  disabled={!stepComplete}
+                >
+                  <Text style={styles.nextButtonText}>
+                    {onboardingStep === TOTAL_FORM_STEPS ? "Finalizar Cadastro" :
+                     [5, 6, 7].includes(onboardingStep) ? "Eu vou conseguir" :
+                     onboardingStep === 18 ? "Usar este treino" :
+                     "Próximo"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 
@@ -1174,6 +1422,16 @@ const progress = (onboardingStep / 18) * 100;
       // Removido: borderTopWidth: 1,
       // Removido: borderTopColor: '#ffffff1a',
     },
+    secondaryButton: {
+      paddingVertical: 15,
+      width: '100%',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    secondaryButtonText: {
+      color: '#1cb0f6',
+      fontSize: 16,
+    },
     // Removido: backButton e backButtonText
     // Removido: skipButtonText
     
@@ -1228,6 +1486,19 @@ const progress = (onboardingStep / 18) * 100;
   
       height: 64,
       width: '100%',
+    },
+    nameInput: {
+      backgroundColor: 'transparent',
+      color: '#fff',
+      borderBottomWidth: 2,
+      borderBottomColor: '#ffffff1a',
+      textAlign: 'center',
+      fontSize: 42,
+      fontWeight: 'bold',
+      paddingBottom: 10,
+      marginBottom: 20,
+      width: '100%',
+      paddingTop: 30,
     },  
     nextButton: {
       backgroundColor: '#1cb0f6',
@@ -1357,7 +1628,7 @@ const progress = (onboardingStep / 18) * 100;
     optionText: { color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: 18 },
     optionDescription: { color: '#ccc', fontSize: 14, textAlign: 'center', marginTop: 5 },
     pfpContainer: { alignItems: 'center', marginBottom: 10 },
-    pfp: { width: 150, height: 150, borderRadius: 75, borderWidth: 2, borderColor: '#1cb0f6' },
+    pfp: { width: 150, height: 150, borderRadius: 75, borderWidth: 2, borderColor: '#ffffff1a' },
     pfpPlaceholder: { width: 150, height: 150, borderRadius: 75, backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#ffffff1a' },
     pfpPlaceholderMedium: {
       width: 100,
@@ -1634,6 +1905,140 @@ const progress = (onboardingStep / 18) * 100;
     // CORREÇÃO: A largura de 60% para cada uma das 3 colunas extrapolava a tela.
     width: '30%',
   }
+  ,
+  checkIconContainer: {
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recommendationProgressContainer: {
+    width: '80%',
+    height: 8,
+    backgroundColor: '#173F5F',
+    borderRadius: 4,
+    marginTop: 20,
+  },
+  recommendationProgressBar: {
+    height: '100%',
+    backgroundColor: '#1cb0f6',
+    borderRadius: 4,
+  },
+  recommendationCard: {
+    backgroundColor: '#141414',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+    padding: 20,
+    width: '100%',
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recommendationCardTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  recommendationCardTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  recommendationCardDifficulty: {
+    color: '#ccc',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  recommendationCardImage: {
+    width: 60,
+    height: 60,
+    resizeMode: 'contain',
+    marginRight: 15,
+  },
+  calendarContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20, width: '100%' },
+  dayContainer: { flex: 1, paddingVertical: 10, marginHorizontal: 3, borderRadius: 8, backgroundColor: '#1f1f1f', alignItems: 'center', borderWidth: 1, borderColor: '#333' },
+  dayScheduled: { backgroundColor: 'rgba(28, 176, 246, 0.5)', borderColor: '#1cb0f6' },
+  dayText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
+  treinoContainer: {
+    backgroundColor: '#141414',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 10,
+    width: '100%',
+    borderWidth: 1,
+    borderTopColor: '#ffffff2a',
+    borderLeftColor: '#ffffff2a', 
+    borderBottomColor: '#ffffff1a',
+    borderRightColor: '#ffffff1a',
+  },
+  treinoTitle: { fontSize: 16, fontWeight: 'bold', color: '#fff' },
+  treinoDetailDays: { fontSize: 12, color: '#1cb0f6', marginTop: 5 },
+  exercicioContainer: {
+    marginLeft: 10,
+    marginTop: 12,
+  },
+  exercicioText: {
+    fontSize: 16, color: '#fff', fontWeight: '500',
+  },
+  exercicioDetailText: {
+    fontSize: 14, color: '#aaa', marginTop: 4,
+  },
+  // Goal Difference Card
+  goalDiffCard: {
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    width: '100%',
+  },
+  goalDiffDestructive: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+    borderColor: 'rgba(255, 59, 48, 0.5)',
+  },
+  goalDiffConstructive: {
+    backgroundColor: 'rgba(28, 176, 246, 0.15)',
+    borderColor: 'rgba(28, 176, 246, 0.5)',
+  },
+  goalDiffTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  goalDiffImages: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    marginBottom: 15,
+  },
+  goalDiffImage: {
+    width: 50,
+    height: 50,
+    resizeMode: 'contain',
+  },
+  goalDiffInfo: {
+    color: '#ccc',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 15,
+  },
+  goalDiffButtonDestructive: {
+    backgroundColor: '#ff3b30',
+    paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8,
+  },
+  goalDiffButtonConstructive: {
+    backgroundColor: '#1cb0f63a',
+    borderColor: '#1cb0f6',
+    borderWidth: 1,
+    paddingVertical: 12, paddingHorizontal: 20, borderRadius: 8,
+    flexDirection: 'row',
+    width: '100%',
+    justifyContent: 'center',
+  },
+  goalDiffButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   // Estilo para a unidade 'cm' ao lado do NumberSlider
 
       // --- FIM DOS NOVOS ESTILOS ---

@@ -3,7 +3,7 @@ import { Log } from '@/models/log';
 import { Treino } from '@/models/treino';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av'; // Changed from expo-video
+import { ResizeMode, Video } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Platform, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';

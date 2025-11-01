@@ -101,6 +101,9 @@ export default function HomeScreen() {
             const { getTreinosByIds } = require('../../services/treinoService');
             userTreinos = await getTreinosByIds(fichaAtiva.treinos);
             setTreinos(userTreinos);
+            // >>> INÍCIO DA MODIFICAÇÃO: Cache da ficha e treinos em background <<<
+            const { cacheFichaCompleta } = require('../../services/offlineCacheService');
+            await cacheFichaCompleta(fichaAtiva, userTreinos);
           } else {
             setTreinos([]);
           }

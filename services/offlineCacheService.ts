@@ -1,5 +1,6 @@
+import { Log } from '@/models/log';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ficha } from '../models/ficha';
 import { Treino } from '../models/treino';
 
@@ -90,6 +91,21 @@ export const getCachedActiveWorkoutLog = async (): Promise<Log | null> => {
         return logJson ? JSON.parse(logJson) : null;
     } catch (error) {
         console.error("[Cache] Erro ao recuperar o log do treino ativo:", error);
+        return null;
+    }
+};
+
+/**
+ * Recupera um treino específico do cache do AsyncStorage.
+ * @param treinoId O ID do treino a ser recuperado.
+ * @returns O objeto de treino ou null se não for encontrado.
+ */
+export const getCachedTreinoById = async (treinoId: string): Promise<Treino | null> => {
+    try {
+        const treinoJson = await AsyncStorage.getItem(`${TREINOS_CACHE_KEY_PREFIX}${treinoId}`);
+        return treinoJson ? JSON.parse(treinoJson) : null;
+    } catch (error) {
+        console.error(`[Cache] Erro ao recuperar o treino ${treinoId} do cache:`, error);
         return null;
     }
 };

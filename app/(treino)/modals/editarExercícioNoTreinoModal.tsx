@@ -195,7 +195,7 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
                 <View style={styles.bilateralInfoCard}>
                   <View style={styles.barbellIconContainer}>
                     <Image
-                      source={require('../../../assets/images/Exercícios/ilustração_Barra.png')}
+                      source={require('../../../assets/images/Exercicios/ilustracaoBarra.png')}
                       style={styles.barbellImage}
                       resizeMode="contain"
                     />

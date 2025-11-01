@@ -290,51 +290,46 @@ export default function OngoingWorkoutScreen() {
           setCompletedSets(proximaSerieIndex);
   
         } else if (user) {
-          // 2. Se não há cache, busca os dados do Firestore (comportamento original)
-          const treinoData = await getTreinoById(treinoId);
-          if (!treinoData || !treinoData.exercicios || treinoData.exercicios.length === 0) {
-            Alert.alert("Treino Vazio", "Adicione exercícios para poder iniciá-lo.", [{ text: "OK", onPress: () => router.back() }]);
-            return;
-          }
-  
-          const startTime = new Date();
-          const exerciciosInicializados = treinoData.exercicios.map(ex => ({
-            ...ex, // Corrigido: `ex` em vez de `treinoData`
-            series: ex.series.map(s => ({ ...s, concluido: false }))
-          }));
-          const treinoComExercicios = { ...treinoData, exercicios: exerciciosInicializados };
-          setTreino(treinoComExercicios);
-          setHorarioInicio(startTime);
-  
-          // Cria o log no Firestore para obter um ID
-          const newLogId = await addLog({
-            usuarioId: user.uid, // Corrigido: `user.uid`
-            treino: { ...treinoData, id: treinoId, fichaId: fichaId as string },
-            exercicios: exerciciosInicializados,
-            horarioInicio: startTime,
-            status: 'em_andamento',
-            cargaAcumulada: 0,
-          }) ?? null;
-  
-          setActiveLogId(newLogId);
-  
-          // Salva o log recém-criado no cache local
-          if (newLogId) {
-            await cacheActiveWorkoutLog({
-              id: newLogId,
+            // 2. Se não há cache, busca os dados do Firestore (comportamento original)
+            const treinoData = await getTreinoById(treinoId);
+            if (!treinoData || !treinoData.exercicios || treinoData.exercicios.length === 0) {
+              Alert.alert("Treino Vazio", "Adicione exercícios para poder iniciá-lo.", [{ text: "OK", onPress: () => router.back() }]);
+              return;
+            }
+    
+            const startTime = new Date();
+            const exerciciosInicializados = treinoData.exercicios.map(ex => ({
+              ...ex,
+              series: ex.series.map(s => ({ ...s, concluido: false }))
+            }));
+            const treinoComExercicios = { ...treinoData, exercicios: exerciciosInicializados };
+            setTreino(treinoComExercicios);
+            setHorarioInicio(startTime);
+    
+            // Cria um ID local para o log, que será usado para o cache.
+            // O log só será enviado para o Firestore no final do treino.
+            const localLogId = `local_${Date.now()}`;
+            setActiveLogId(localLogId);
+    
+            // Cria e salva o log localmente no cache
+            const localLog: Log = {
+              id: localLogId,
               usuarioId: user.uid,
-              treino: treinoComExercicios,
+              treino: { ...treinoComExercicios, id: treinoId, fichaId: fichaId as string },
+              exercicios: exerciciosInicializados,
               horarioInicio: startTime,
               status: 'em_andamento',
               cargaAcumulada: 0,
-              exercicios: exerciciosInicializados,
+              // Adiciona propriedades que podem estar faltando para conformar com a interface Log
               exerciciosFeitos: [],
+              horarioFim: undefined,
               observacoes: undefined,
-              nomeTreino: undefined
-            });
-          }
-        } else if (user) {
+              nomeTreino: treinoData.nome,
+            };
+    
+            await cacheActiveWorkoutLog(localLog);
         }
+
         if (user) {
           const { getLogsByUsuarioId } = require('../../services/logService');
           const logs = await getLogsByUsuarioId(user.uid);
@@ -475,14 +470,24 @@ export default function OngoingWorkoutScreen() {
       } else {
         // FIM DO TREINO
         const horarioFim = new Date();
+        const isLocalLog = activeLogId?.startsWith('local_');
+
         try {
           if (activeLogId) {
-            // Agora sim, salva o log final no Firestore
-            await addLog({ horarioFim, status: 'concluido', cargaAcumulada: newTotalLoad, exercicios: updatedExercicios }, activeLogId);
+            // Se o log era local, o ID real será gerado pelo Firestore.
+            // Se já tinha um ID do Firestore (treino pausado e retomado), ele será atualizado.
+            const finalLogData = {
+              horarioFim,
+              status: 'concluido' as const,
+              cargaAcumulada: newTotalLoad,
+              exercicios: updatedExercicios
+            };
+            const finalLogId = await addLog(finalLogData, isLocalLog ? undefined : activeLogId);
+
             // Limpa o cache local
             await cacheActiveWorkoutLog(null);
 
-            router.replace({ pathname: './treinoCompleto', params: { logId: activeLogId } });
+            router.replace({ pathname: './treinoCompleto', params: { logId: finalLogId } });
           }
         } catch (error) {
           console.error("Failed to save workout log:", error);

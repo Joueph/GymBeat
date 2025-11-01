@@ -1,4 +1,5 @@
 import { ThemedText } from '@/components/themed-text';
+import { getCachedActiveWorkoutLog } from '@/services/offlineCacheService';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -13,7 +14,12 @@ import { DiaSemana, Treino } from '../../models/treino';
 import { Usuario } from '../../models/usuario';
 import { addFicha, getFichaAtiva } from '../../services/fichaService';
 import { getLogsByUsuarioId } from '../../services/logService';
+import { cacheFichaCompleta } from '../../services/offlineCacheService';
+import { getTreinosByIds } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
+
+
+
 
 const toDate = (date: any): Date | null => {
   if (!date) return null;
@@ -64,147 +70,282 @@ export default function HomeScreen() {
   const [isReviewModalVisible, setReviewModalVisible] = useState(false);
   const [dataVersion, setDataVersion] = useState(0); // Para forçar recarga
   const isInitialLoad = useRef(true);
+  
 
   // Substituído useEffect por useFocusEffect para garantir que os dados sejam
   // recarregados sempre que a tela ganhar foco.
-  useFocusEffect(
-    useCallback(() => {
-      const fetchData = async () => {
-        if (!authInitialized) return;
-        if (!user) {
-          setLoading(false);
-          return;
-        }
-  
-        if (isInitialLoad.current) {
-          setLoading(true);
+useFocusEffect(
+  useCallback(() => {
+    const fetchData = async () => {
+      console.log('[HomeScreen] 🔄 Iniciando fetchData...');
+      
+      if (!authInitialized) {
+        console.log('[HomeScreen] ⏳ Auth não inicializado ainda');
+        return;
+      }
+      
+      if (!user) {
+        console.log('[HomeScreen] ❌ Usuário não autenticado');
+        setLoading(false);
+        return;
+      }
+
+      console.log('[HomeScreen] ✅ Usuário autenticado:', user.uid);
+
+      if (isInitialLoad.current) {
+        console.log('[HomeScreen] 📱 Carregamento inicial');
+        setLoading(true);
+      }
+
+      try {
+        // 1. Buscar perfil do usuário
+        console.log('[HomeScreen] 📋 Buscando perfil do usuário...');
+        const userProfileDoc = await getDoc(doc(db, "users", user.uid));
+        const userProfile = userProfileDoc.exists() 
+          ? { id: userProfileDoc.id, ...userProfileDoc.data() } as Usuario 
+          : null;
+        setProfile(userProfile);
+        console.log('[HomeScreen] ✅ Perfil carregado:', userProfile?.nome);
+
+        // 2. Verificar log de treino ativo no cache
+        console.log('[HomeScreen] 💾 Verificando cache de treino ativo...');
+        let ongoingLog = null;
+        try {
+          ongoingLog = await getCachedActiveWorkoutLog();
+          if (ongoingLog) {
+            console.log('[HomeScreen] ✅ Log encontrado no cache:', {
+              logId: ongoingLog.id,
+              treinoNome: ongoingLog.treino?.nome,
+              status: ongoingLog.status
+            });
+          } else {
+            console.log('[HomeScreen] ℹ️ Nenhum log no cache');
+          }
+        } catch (cacheError) {
+          console.error('[HomeScreen] ❌ Erro ao buscar cache:', cacheError);
         }
 
+        // 3. Buscar logs do Firestore
+        console.log('[HomeScreen] 🔥 Buscando logs do Firestore...');
+        let userLogs: Log[] = [];
         try {
-          const userProfileDoc = await getDoc(doc(db, "users", user.uid));
-          const userProfile = userProfileDoc.exists() ? { id: userProfileDoc.id, ...userProfileDoc.data() } as Usuario : null;
-          setProfile(userProfile);
-  
-          const [fichaAtiva, userLogs] = await Promise.all([
-            getFichaAtiva(user.uid),
-            getLogsByUsuarioId(user.uid)
-          ]);
-  
-          setActiveFicha(fichaAtiva);
-          setLogs(userLogs);
-  
-          const ongoingLog = userLogs.find(log => !log.horarioFim && log.status !== 'cancelado');
-          setActiveLog(ongoingLog || null);
-  
-          let userTreinos: Treino[] = [];
-          if (fichaAtiva && fichaAtiva.treinos.length > 0) {
-            const { getTreinosByIds } = require('../../services/treinoService');
+          userLogs = await getLogsByUsuarioId(user.uid);
+          console.log('[HomeScreen] ✅ Logs do Firestore:', userLogs.length);
+          
+          // Se não havia log no cache, busca um ativo no Firestore
+          if (!ongoingLog) {
+            ongoingLog = userLogs.find(
+              log => !log.horarioFim && log.status !== 'cancelado'
+            ) || null;
+            
+            if (ongoingLog) {
+              console.log('[HomeScreen] ✅ Log ativo encontrado no Firestore:', ongoingLog.id);
+            }
+          }
+        } catch (logsError) {
+          console.error('[HomeScreen] ❌ Erro ao buscar logs:', logsError);
+        }
+
+        setLogs(userLogs);
+        setActiveLog(ongoingLog || null);
+
+        // 4. Buscar ficha ativa
+        console.log('[HomeScreen] 📂 Buscando ficha ativa...');
+        const fichaAtiva = await getFichaAtiva(user.uid);
+        setActiveFicha(fichaAtiva);
+        
+        if (fichaAtiva) {
+          console.log('[HomeScreen] ✅ Ficha ativa:', fichaAtiva.nome);
+        } else {
+          console.log('[HomeScreen] ℹ️ Nenhuma ficha ativa');
+        }
+
+        // 5. Buscar treinos da ficha
+        let userTreinos: Treino[] = [];
+        if (fichaAtiva && fichaAtiva.treinos.length > 0) {
+          console.log('[HomeScreen] 🏋️ Buscando treinos da ficha...', fichaAtiva.treinos.length);
+          try {
             userTreinos = await getTreinosByIds(fichaAtiva.treinos);
             setTreinos(userTreinos);
-            // >>> INÍCIO DA MODIFICAÇÃO: Cache da ficha e treinos em background <<<
-            const { cacheFichaCompleta } = require('../../services/offlineCacheService');
+            console.log('[HomeScreen] ✅ Treinos carregados:', userTreinos.length);
+            
+            // Cache em background
+            console.log('[HomeScreen] 💾 Salvando ficha e treinos no cache...');
             await cacheFichaCompleta(fichaAtiva, userTreinos);
-          } else {
-            setTreinos([]);
+            console.log('[HomeScreen] ✅ Cache salvo com sucesso');
+          } catch (treinosError) {
+            console.error('[HomeScreen] ❌ Erro ao buscar/cachear treinos:', treinosError);
           }
-  
-          const hoje = new Date();
-          const diaString = DIAS_SEMANA_MAP[hoje.getDay()] as DiaSemana;
-          const treinoDoDia = userTreinos.find(t => t.diasSemana.includes(diaString));
-          setTreinoDeHoje(treinoDoDia || null);
-  
-          const logConcluidoHoje = userLogs.find(log => {
-            const logDate = toDate(log.horarioFim);
-            return logDate && logDate.toDateString() === hoje.toDateString() && log.status !== 'cancelado';
-          });
-          setTreinoConcluidoHoje(logConcluidoHoje || null);
-  
-          const diaDaSemanaHoje = hoje.getDay();
-          const logsConcluidosIds = new Set(userLogs.filter(l => l.horarioFim).map(l => l.treino.id));
-          let treinoFaltante = null;
-          for (let i = 0; i < diaDaSemanaHoje; i++) {
-            const diaAnteriorString = DIAS_SEMANA_MAP[i] as DiaSemana;
-            const treinoAgendado = userTreinos.find(t => t.diasSemana.includes(diaAnteriorString));
-            if (treinoAgendado && !logsConcluidosIds.has(treinoAgendado.id)) {
-              treinoFaltante = treinoAgendado;
-              break;
-            }
-          }
-          setTreinoPerdido(treinoFaltante);
-  
-          const streakGoal = userProfile?.streakGoal || 2;
-          const startOfThisWeek = getStartOfWeek(hoje);
-          const workoutsThisWeek = userLogs.filter(log => toDate(log.horarioFim) && toDate(log.horarioFim)! >= startOfThisWeek).length;
-  
-          let streak = 0;
-          // ... (a lógica de cálculo de streak permanece a mesma)
-  
-          setWeeklyStats({ workoutsThisWeek, streak, goal: streakGoal });
-  
-        } catch (error) {
-        } finally {
-          isInitialLoad.current = false;
-          setLoading(false);
+        } else {
+          console.log('[HomeScreen] ℹ️ Nenhum treino na ficha');
+          setTreinos([]);
         }
-      };
-      fetchData();
-    }, [user, authInitialized])
+
+        // 6. Identificar treino de hoje
+        const hoje = new Date();
+        const diaString = DIAS_SEMANA_MAP[hoje.getDay()] as DiaSemana;
+        console.log('[HomeScreen] 📅 Dia da semana:', diaString);
+        
+        const treinoDoDia = userTreinos.find(t => 
+          t.diasSemana.includes(diaString)
+        );
+        
+        if (treinoDoDia) {
+          console.log('[HomeScreen] ✅ Treino de hoje:', treinoDoDia.nome);
+        } else {
+          console.log('[HomeScreen] ℹ️ Nenhum treino agendado para hoje');
+        }
+        setTreinoDeHoje(treinoDoDia || null);
+
+        // 7. Verificar se já treinou hoje
+        const logConcluidoHoje = userLogs.find(log => {
+          const logDate = toDate(log.horarioFim);
+          return logDate && 
+                 logDate.toDateString() === hoje.toDateString() && 
+                 log.status !== 'cancelado';
+        });
+        
+        if (logConcluidoHoje) {
+          console.log('[HomeScreen] ✅ Treino concluído hoje:', logConcluidoHoje.treino?.nome);
+        } else {
+          console.log('[HomeScreen] ℹ️ Nenhum treino concluído hoje');
+        }
+        setTreinoConcluidoHoje(logConcluidoHoje || null);
+
+        // 8. Verificar treinos perdidos
+        const diaDaSemanaHoje = hoje.getDay();
+        const logsConcluidosIds = new Set(
+          userLogs.filter(l => l.horarioFim).map(l => l.treino.id)
+        );
+        
+        let treinoFaltante = null;
+        for (let i = 0; i < diaDaSemanaHoje; i++) {
+          const diaAnteriorString = DIAS_SEMANA_MAP[i] as DiaSemana;
+          const treinoAgendado = userTreinos.find(t => 
+            t.diasSemana.includes(diaAnteriorString)
+          );
+          if (treinoAgendado && !logsConcluidosIds.has(treinoAgendado.id)) {
+            treinoFaltante = treinoAgendado;
+            console.log('[HomeScreen] ⚠️ Treino perdido encontrado:', treinoAgendado.nome);
+            break;
+          }
+        }
+        setTreinoPerdido(treinoFaltante);
+
+        // 9. Calcular estatísticas semanais
+        const streakGoal = userProfile?.streakGoal || 2;
+        const startOfThisWeek = getStartOfWeek(hoje);
+        const workoutsThisWeek = userLogs.filter(log => 
+          toDate(log.horarioFim) && toDate(log.horarioFim)! >= startOfThisWeek
+        ).length;
+
+        console.log('[HomeScreen] 📊 Estatísticas:', {
+          workoutsThisWeek,
+          goal: streakGoal
+        });
+
+        let streak = 0;
+        // ... (cálculo de streak permanece o mesmo)
+
+        setWeeklyStats({ 
+          workoutsThisWeek, 
+          streak, 
+          goal: streakGoal 
+        });
+
+        console.log('[HomeScreen] ✅ fetchData concluído com sucesso');
+
+      } catch (error) {
+        console.error('[HomeScreen] ❌ ERRO GERAL no fetchData:', error);
+        // Log detalhado do erro
+        if (error instanceof Error) {
+          console.error('[HomeScreen] Mensagem:', error.message);
+          console.error('[HomeScreen] Stack:', error.stack);
+        }
+      } finally {
+        isInitialLoad.current = false;
+        setLoading(false);
+        console.log('[HomeScreen] 🏁 fetchData finalizado');
+      }
+    };
+    
+    fetchData();
+  }, [user, authInitialized])
+);
+
+const getAverageDuration = (treinoId: string | undefined): number | null => {
+  if (!treinoId) return null;
+  
+  const relevantLogs = logs.filter(log => 
+    log && 
+    log.treino?.id === treinoId && 
+    log.horarioFim && 
+    log.status !== 'cancelado'
   );
 
-  const getAverageDuration = (treinoId: string): number | null => {
-    const relevantLogs = logs.filter(log => 
-      log.treino.id === treinoId && 
-      log.horarioFim && 
-      log.status !== 'cancelado'
+  if (relevantLogs.length === 0) return null;
+
+  const totalDuration = relevantLogs.reduce((acc: number, log: Log) => {
+    const start = toDate(log.horarioInicio);
+    const end = toDate(log.horarioFim);
+    if (start && end) {
+      return acc + (end.getTime() - start.getTime());
+    }
+    return acc;
+  }, 0);
+
+  return Math.round(totalDuration / relevantLogs.length / 60000);
+};
+
+const getMuscleGroups = (treino: Treino | null | undefined): string => {
+  if (!treino || !treino.exercicios || treino.exercicios.length === 0) {
+    return 'N/A';
+  }
+  
+  return [...new Set(
+    treino.exercicios
+      .filter(ex => ex && ex.modelo && ex.modelo.grupoMuscular)
+      .map(ex => ex.modelo.grupoMuscular)
+  )].join(' • ') || 'N/A';
+};
+
+const generateTimelineData = (): TimelineItem[] => {
+  if (!activeFicha || !treinos || treinos.length === 0) {
+    return [];
+  }
+
+  const timeline: TimelineItem[] = [];
+  const today = new Date();
+
+  for (let i = 1; i < 7; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() + i);
+    const dayString = DIAS_SEMANA_MAP[date.getDay()] as DiaSemana;
+
+    const treinoDoDia = treinos.find(t => 
+      t && t.id && t.diasSemana?.includes(dayString) && t.id !== treinoDeHoje?.id
     );
 
-    if (relevantLogs.length === 0) return null;
-
-    const totalDuration = relevantLogs.reduce((acc: number, log: Log) => {
-      const start = toDate(log.horarioInicio);
-      const end = toDate(log.horarioFim);
-      if (start && end) {
-        return acc + (end.getTime() - start.getTime());
+    if (treinoDoDia && treinoDoDia.id) {
+      timeline.push({
+        id: `workout-${date.toISOString()}`,
+        type: 'workout', 
+        date, 
+        treino: treinoDoDia,
+      });
+    } else {
+      if (i < 6) {
+        timeline.push({
+          id: `rest-${date.toISOString()}`,
+          type: 'rest', 
+          date,
+        });
       }
-      return acc;
-    }, 0);
-
-    return Math.round(totalDuration / relevantLogs.length / 60000); // em minutos
-  };
-
-  const getMuscleGroups = (treino: Treino): string => [...new Set(treino.exercicios.map(ex => ex.modelo.grupoMuscular))].join(' • ');
-
-  const generateTimelineData = (): TimelineItem[] => {
-    if (!activeFicha || treinos.length === 0) {
-        return [];
     }
-
-    const timeline: TimelineItem[] = [];
-    const today = new Date();
-
-    for (let i = 1; i < 7; i++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() + i);
-        const dayString = DIAS_SEMANA_MAP[date.getDay()] as DiaSemana;
-
-        const treinoDoDia = treinos.find(t => t.diasSemana.includes(dayString) && t.id !== treinoDeHoje?.id);
-
-        if (treinoDoDia) {
-            timeline.push({
-              id: `workout-${date.toISOString()}`,
-              type: 'workout', date, treino: treinoDoDia,
-            });
-        } else {
-            if (i < 6) {
-                timeline.push({
-                  id: `rest-${date.toISOString()}`,
-                  type: 'rest', date,
-                });
-            }
-        }
-    }
-    return timeline;
-  };
+  }
+  
+  return timeline;
+};
 
   const getStreakImage = () => {
     const streakGoal = profile?.streakGoal || 2;
@@ -377,61 +518,119 @@ export default function HomeScreen() {
   const HeroWorkoutCard = ({ type }: { type: 'today' | 'missed' | 'default' | 'active' | 'completed' }) => {
   
     switch (type) {
-      case 'active':
-        if (activeLog) {
-          return (
-            <TouchableOpacity style={styles.heroCard} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino.fichaId, treinoId: activeLog.treino.id, logId: activeLog.id } })}>
-              <View style={styles.heroTextContainer}>
-                <Text style={styles.heroTitle}>{activeLog.treino.nome}</Text>
-                <Text style={styles.heroInfo}>Treino em andamento...</Text>
-              </View>
-              <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino.fichaId, treinoId: activeLog.treino.id, logId: activeLog.id } })}>
-                <FontAwesome name="play" size={16} color="#030405" />
-                <Text style={styles.heroStartButtonText}>Continuar Treino</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          );
-        }
-        return null;
+case 'active':
+  if (activeLog && activeLog.treino && activeLog.treino.id) { // ADICIONA verificação do treino
+    return (
+      <TouchableOpacity 
+        style={styles.heroCard} 
+        onPress={() => router.push({ 
+          pathname: '/(treino)/ongoingWorkout', 
+          params: { 
+            fichaId: activeLog.treino.fichaId || '', 
+            treinoId: activeLog.treino.id, 
+            logId: activeLog.id 
+          } 
+        })}
+      >
+        <View style={styles.heroTextContainer}>
+          <Text style={styles.heroTitle}>{activeLog.treino.nome || 'Treino em andamento'}</Text>
+          <Text style={styles.heroInfo}>Treino em andamento...</Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.heroStartButton} 
+          onPress={() => router.push({ 
+            pathname: '/(treino)/ongoingWorkout', 
+            params: { 
+              fichaId: activeLog.treino.fichaId || '', 
+              treinoId: activeLog.treino.id, 
+              logId: activeLog.id 
+            } 
+          })}
+        >
+          <FontAwesome name="play" size={16} color="#030405" />
+          <Text style={styles.heroStartButtonText}>Continuar Treino</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  }
+  
+  return null;
       case 'today':
-        if (treinoDeHoje && activeFicha) {
-          const avgDuration = getAverageDuration(treinoDeHoje.id);
-          const muscleGroups = getMuscleGroups(treinoDeHoje);
-          const exerciseCount = treinoDeHoje.exercicios.length;
-          return (
-            <TouchableOpacity style={styles.heroCard} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: treinoDeHoje.id } })}>
-              <View style={styles.heroTextContainer}>
-                <Text style={styles.heroTitle}>{treinoDeHoje.nome}</Text>
-                <Text style={styles.heroInfo}>
-                  {exerciseCount} Exercícios • {muscleGroups}
-                  {avgDuration && ` • ~${avgDuration} min`}
-                </Text>
-              </View>
-              <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: treinoDeHoje.id } })}>
-                <FontAwesome name="play" size={16} color="#030405" />
-                <Text style={styles.heroStartButtonText}>Iniciar Treino</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          );
-        }
-        return null;
+  if (treinoDeHoje && activeFicha && treinoDeHoje.id && activeFicha.id) { // ADICIONA verificação de IDs
+    const avgDuration = getAverageDuration(treinoDeHoje.id);
+    const muscleGroups = getMuscleGroups(treinoDeHoje);
+    const exerciseCount = treinoDeHoje.exercicios?.length || 0;
+    
+    return (
+      <TouchableOpacity 
+        style={styles.heroCard} 
+        onPress={() => router.push({ 
+          pathname: '/(treino)/ongoingWorkout', 
+          params: { 
+            fichaId: activeFicha.id, 
+            treinoId: treinoDeHoje.id 
+          } 
+        })}
+      >
+        <View style={styles.heroTextContainer}>
+          <Text style={styles.heroTitle}>{treinoDeHoje.nome}</Text>
+          <Text style={styles.heroInfo}>
+            {exerciseCount} Exercícios • {muscleGroups}
+            {avgDuration && ` • ~${avgDuration} min`}
+          </Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.heroStartButton} 
+          onPress={() => router.push({ 
+            pathname: '/(treino)/ongoingWorkout', 
+            params: { 
+              fichaId: activeFicha.id, 
+              treinoId: treinoDeHoje.id 
+            } 
+          })}
+        >
+          <FontAwesome name="play" size={16} color="#030405" />
+          <Text style={styles.heroStartButtonText}>Iniciar Treino</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  }
+  return null;
 
       case 'missed':
-        if (treinoPerdido && activeFicha) {
-          return (
-            <TouchableOpacity style={[styles.heroCard, styles.missedWorkoutCard]} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: treinoPerdido.id } })}>
-              <View style={styles.heroTextContainer}>
-                <Text style={styles.heroTitle}>{treinoPerdido.nome}</Text>
-                <Text style={styles.heroInfo}>Você perdeu este treino. Que tal fazê-lo agora?</Text>
-              </View>
-              <TouchableOpacity style={[styles.heroStartButton, styles.missedWorkoutButton]} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: treinoPerdido.id } })}>
-                <FontAwesome name="repeat" size={16} color="#030405" />
-                <Text style={styles.heroStartButtonText}>Recuperar Treino</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          );
-        }
-        return null;
+  if (treinoPerdido && activeFicha && treinoPerdido.id && activeFicha.id) { // ADICIONA verificação de IDs
+    return (
+      <TouchableOpacity 
+        style={[styles.heroCard, styles.missedWorkoutCard]} 
+        onPress={() => router.push({ 
+          pathname: '/(treino)/ongoingWorkout', 
+          params: { 
+            fichaId: activeFicha.id, 
+            treinoId: treinoPerdido.id 
+          } 
+        })}
+      >
+        <View style={styles.heroTextContainer}>
+          <Text style={styles.heroTitle}>{treinoPerdido.nome}</Text>
+          <Text style={styles.heroInfo}>Você perdeu este treino. Que tal fazê-lo agora?</Text>
+        </View>
+        <TouchableOpacity 
+          style={[styles.heroStartButton, styles.missedWorkoutButton]} 
+          onPress={() => router.push({ 
+            pathname: '/(treino)/ongoingWorkout', 
+            params: { 
+              fichaId: activeFicha.id, 
+              treinoId: treinoPerdido.id 
+            } 
+          })}
+        >
+          <FontAwesome name="repeat" size={16} color="#030405" />
+          <Text style={styles.heroStartButtonText}>Recuperar Treino</Text>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  }
+  return null;
       
       case 'completed':
         if (treinoConcluidoHoje) {
@@ -477,60 +676,95 @@ export default function HomeScreen() {
     }
   };
 
-  const TimelineWorkoutItem = ({ item, isWorkoutActive }: { item: TimelineItem, isWorkoutActive: boolean }) => {
+const TimelineWorkoutItem = ({ 
+  item, 
+  isWorkoutActive 
+}: { 
+  item: TimelineItem, 
+  isWorkoutActive: boolean 
+}) => {
+  // VERIFICAÇÃO ROBUSTA: Retorna null se qualquer condição falhar
+  if (!item || 
+      !item.treino || 
+      !item.treino.id || 
+      !activeFicha || 
+      !activeFicha.id) {
+    console.log('[TimelineWorkoutItem] ⚠️ Item inválido:', { 
+      hasItem: !!item, 
+      hasTreino: !!item?.treino, 
+      treinoId: item?.treino?.id,
+      hasFicha: !!activeFicha,
+      fichaId: activeFicha?.id 
+    });
+    return null;
+  }
 
-    // Adiciona uma verificação para garantir que o treino e a ficha ativa existam antes de renderizar.
-    if (!item.treino || !activeFicha) {
-      return null;
+  // AQUI, TypeScript SABE que item.treino existe e não é undefined
+  // Por causa da verificação acima com early return
+  const treino = item.treino; // Criar uma const para o TypeScript entender melhor
+  
+  const title = `Treino de ${DIAS_SEMANA_ABREV[DIAS_SEMANA_MAP[item.date.getDay()]]}`;
+  const numExercicios = treino.exercicios?.length || 0;
+  
+  const lastCompletedLog = logs.find((log: Log) => 
+    log.treino?.id === treino.id && log.horarioFim
+  );
+  
+  let duration = "N/A";
+  if (lastCompletedLog) {
+    const startTime = toDate(lastCompletedLog.horarioInicio);
+    const endTime = toDate(lastCompletedLog.horarioFim);
+    if (startTime && endTime) {
+      duration = `${Math.round((endTime.getTime() - startTime.getTime()) / 60000)} min`;
     }
+  }
 
-    const title = `Treino de ${DIAS_SEMANA_ABREV[DIAS_SEMANA_MAP[item.date.getDay()]]}`;
-    const numExercicios = item.treino.exercicios.length;
-    
-    const lastCompletedLog = logs.find((log: Log) => log.treino.id === item.treino?.id && log.horarioFim);
-    let duration = "N/A";
-    if (lastCompletedLog) {
-        const startTime = toDate(lastCompletedLog.horarioInicio);
-        const endTime = toDate(lastCompletedLog.horarioFim);
-        if (startTime && endTime) {
-            duration = `${Math.round((endTime.getTime() - startTime.getTime()) / 60000)} min`;
-        }
-    }
-
-    return (
-        <View style={styles.timelineItemContainer}>
-            <View style={styles.timelineTrackContainer}>
-                <View style={styles.timelineDot} /> 
-                <View style={styles.timelineTrack} />
+  return (
+    <View style={styles.timelineItemContainer}>
+      <View style={styles.timelineTrackContainer}>
+        <View style={styles.timelineDot} /> 
+        <View style={styles.timelineTrack} />
+      </View>
+      <View style={styles.nextWorkoutCard}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        <View style={styles.workoutContent}>
+          <View style={styles.workoutInfoContainer}>
+            <TouchableOpacity 
+              style={styles.workoutTitleContainer} 
+              onPress={() => router.push(
+                `/(treino)/editarTreino?fichaId=${activeFicha.id}&treinoId=${treino.id}`
+              )}
+            >
+              <FontAwesome5 name="dumbbell" size={16} color="#ccc" /> 
+              <Text style={styles.workoutName}>{treino.nome}</Text>
+            </TouchableOpacity>
+            <View style={styles.workoutDetailsContainer}>
+              <FontAwesome name="bars" size={16} color="#ccc" />
+              <Text style={styles.workoutDetailText}>
+                {numExercicios} {numExercicios === 1 ? 'exercício' : 'exercícios'}
+              </Text>
+              <FontAwesome name="clock-o" size={16} color="#ccc" style={{ marginLeft: 15 }} />
+              <Text style={styles.workoutDetailText}>{duration}</Text>
             </View>
-            <View style={styles.nextWorkoutCard}>
-                <Text style={styles.cardTitle}>{title}</Text>
-                <View style={styles.workoutContent}>
-                    <View style={styles.workoutInfoContainer}>
-                        <TouchableOpacity style={styles.workoutTitleContainer} onPress={() => router.push(`/(treino)/editarTreino?fichaId=${activeFicha.id}&treinoId=${item.treino!.id}`)}>
-                            <FontAwesome5 name="dumbbell" size={16} color="#ccc" /> 
-                            <Text style={styles.workoutName}>{item.treino.nome}</Text>
-                        </TouchableOpacity>
-                        <View style={styles.workoutDetailsContainer}>
-                            <FontAwesome name="bars" size={16} color="#ccc" />
-                            <Text style={styles.workoutDetailText}>{numExercicios} {numExercicios === 1 ? 'exercício' : 'exercícios'}</Text>
-                            <FontAwesome name="clock-o" size={16} color="#ccc" style={{ marginLeft: 15 }} />
-                            <Text style={styles.workoutDetailText}>{duration}</Text>
-                        </View>
-                    </View>
-                    <TouchableOpacity 
-                        style={[styles.startButton, isWorkoutActive && styles.disabledButton]}
-                        onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeFicha.id, treinoId: item.treino!.id } })}
-                        disabled={isWorkoutActive}
-                    >
-                        <Text style={styles.startButtonText}>Começar</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
+          </View>
+          <TouchableOpacity 
+            style={[styles.startButton, isWorkoutActive && styles.disabledButton]}
+            onPress={() => router.push({ 
+              pathname: '/(treino)/ongoingWorkout', 
+              params: { 
+                fichaId: activeFicha.id, 
+                treinoId: treino.id 
+              } 
+            })}
+            disabled={isWorkoutActive}
+          >
+            <Text style={styles.startButtonText}>Começar</Text>
+          </TouchableOpacity>
         </View>
-    );
-  };
-
+      </View>
+    </View>
+  );
+};
   const TimelineRestItem = ({ item }: { item: TimelineItem }) => {
     const title = `Descanso - ${DIAS_SEMANA_ABREV[DIAS_SEMANA_MAP[item.date.getDay()]]}`;
 

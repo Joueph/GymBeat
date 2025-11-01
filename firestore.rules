@@ -76,15 +76,22 @@ match /treinos/{treinoId} {
 // Regras para a Coleção de Logs
 // =================================================================
 match /logs/{logId} {
-  // ATUALIZADO: Permite a leitura se:
+  // Permite a leitura se:
   // 1. O usuário for o dono do log.
   // 2. O usuário for amigo do dono do log.
   // 3. O log tiver um 'projetoId' e o usuário for participante desse projeto.
-  allow read: if isOwner(resource.data.usuarioId) || isMutualFriend(resource.data.usuarioId) || 
+  allow read: if isOwner(resource.data.usuarioId) || 
+                 isMutualFriend(resource.data.usuarioId) || 
                  (resource.data.projetoId != null && isProjectParticipant(resource.data.projetoId));
+
+  // CORRIGIDO: Separar create de update/delete
+  // Para CREATE: verifica os dados que estão sendo enviados
+  allow create: if request.auth != null && 
+                   request.resource.data.usuarioId == request.auth.uid;
   
-  allow create: if isOwner(request.resource.data.usuarioId);
-  allow update, delete: if isOwner(resource.data.usuarioId);
+  // Para UPDATE e DELETE: verifica os dados existentes
+  allow update, delete: if request.auth != null && 
+                           resource.data.usuarioId == request.auth.uid;
 }
 
 // =================================================================

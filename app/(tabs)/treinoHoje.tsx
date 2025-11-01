@@ -11,7 +11,7 @@ import { Serie } from '../../models/exercicio';
 import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
-import { addFicha, getFichaAtiva, getFichasByUsuarioId, setFichaAtiva as setFichaAtivaService } from '../../services/fichaService';
+import { addFicha, getFichaAtiva, getFichasByUsuarioId, setFichaAtiva as setFichaAtivaService, } from '../../services/fichaService';
 import { getLogsByUsuarioId } from '../../services/logService';
 import { DiaSemana, getTreinosByIds } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
@@ -196,20 +196,33 @@ export default function MeusTreinosScreen() {
           setLoading(true);
         }
         try {
+          // 1. Verificar log de treino ativo no cache
+          let ongoingLog = null;
+          try {
+            const { getCachedActiveWorkoutLog } = require('../../services/offlineCacheService');
+            ongoingLog = await getCachedActiveWorkoutLog();
+          } catch (cacheError) {
+            console.error("Erro ao buscar log do cache:", cacheError);
+          }
+
+          // 2. Buscar dados do Firestore
           const [ativa, todas, userLogs] = await Promise.all([
             getFichaAtiva(user.uid),
             getFichasByUsuarioId(user.uid),
             getLogsByUsuarioId(user.uid)
           ]);
-  
+
           setFichaAtiva(ativa);
           setTodasAsFichas(todas);
           const sortedLogs = userLogs.sort((a, b) => (toDate(b.horarioFim)?.getTime() || 0) - (toDate(a.horarioFim)?.getTime() || 0));
           setLogs(sortedLogs);
   
-          const ongoingLog = userLogs.find(log => !log.horarioFim && log.status !== 'cancelado');
+          // 3. Se não encontrou log no cache, procura no Firestore
+          if (!ongoingLog) {
+            ongoingLog = userLogs.find(log => !log.horarioFim && log.status !== 'cancelado');
+          }
           setActiveLog(ongoingLog || null);
-  
+
           const hoje = new Date();
           const diaDaSemana = hoje.getDay();
           const inicioSemana = new Date(hoje);
@@ -366,13 +379,13 @@ export default function MeusTreinosScreen() {
               // Card para "Continuar Treino"
               <TouchableOpacity
                 style={styles.heroCard}
-                onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino.fichaId, treinoId: activeLog.treino.id, logId: activeLog.id } })}
+                onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino?.fichaId, treinoId: activeLog.treino?.id, logId: activeLog.id } })}
               >
                 <View style={styles.heroTextContainer}>
-                    <Text style={styles.heroTitle}>{activeLog.treino.nome}</Text>
+                    <Text style={styles.heroTitle}>{activeLog.treino?.nome}</Text>
                     <Text style={styles.heroInfo}>Treino em andamento...</Text>
                 </View>
-                <TouchableOpacity style={styles.startButton} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino.fichaId, treinoId: activeLog.treino.id, logId: activeLog.id } })}>
+                <TouchableOpacity style={styles.startButton} onPress={() => router.push({ pathname: '/(treino)/ongoingWorkout', params: { fichaId: activeLog.treino?.fichaId, treinoId: activeLog.treino?.id, logId: activeLog.id } })}>
                   <FontAwesome name="play" size={16} color="#030405" />
                   <Text style={styles.startButtonText}>Continuar Treino</Text>
                 </TouchableOpacity>

@@ -252,102 +252,183 @@ export default function OngoingWorkoutScreen() {
     setExerciseListVisible(true);
   }, []);
 
-  useEffect(() => {
-    const fetchTreino = async () => {
-      if (typeof treinoId !== 'string') {
-        Alert.alert("Erro", "ID do treino inválido.");
-        router.back();
-        return;
-      }
-  
-      try {
-        // 1. Tenta carregar o log do cache local primeiro
-        const cachedLog = await getCachedActiveWorkoutLog();
-        if (cachedLog && (cachedLog.treino.id === treinoId || logId === cachedLog.id)) {
-          // Se encontrou um log em cache para este treino, usa ele como fonte da verdade
-          setTreino(cachedLog.treino);
-          setHorarioInicio(toDate(cachedLog.horarioInicio));
-          setActiveLogId(cachedLog.id);
-          // A carga acumulada já deve estar correta no log em cache
-          setCargaAcumuladaTotal(cachedLog.cargaAcumulada || 0);
-  
-          // Encontra o ponto de partida
-          let proximoExercicioIndex = 0;
-          let proximaSerieIndex = 0;
-          let foundNext = false;
-          cachedLog.treino.exercicios.forEach((ex: Exercicio, exIndex: number) => {
-            if (!foundNext) {
-              const nextSetIndex = (ex.series as SerieComStatus[]).findIndex((s: SerieComStatus) => !s.concluido);
-              if (nextSetIndex !== -1) {
-                proximoExercicioIndex = exIndex;
-                proximaSerieIndex = nextSetIndex;
-                foundNext = true;
-              }
-            }
-          });
-  
-          setCurrentExerciseIndex(proximoExercicioIndex);
-          setCompletedSets(proximaSerieIndex);
-  
-        } else if (user) {
-            // 2. Se não há cache, busca os dados do Firestore (comportamento original)
-            const treinoData = await getTreinoById(treinoId);
-            if (!treinoData || !treinoData.exercicios || treinoData.exercicios.length === 0) {
-              Alert.alert("Treino Vazio", "Adicione exercícios para poder iniciá-lo.", [{ text: "OK", onPress: () => router.back() }]);
-              return;
-            }
-    
-            const startTime = new Date();
-            const exerciciosInicializados = treinoData.exercicios.map(ex => ({
-              ...ex,
-              series: ex.series.map(s => ({ ...s, concluido: false }))
-            }));
-            const treinoComExercicios = { ...treinoData, exercicios: exerciciosInicializados };
-            setTreino(treinoComExercicios);
-            setHorarioInicio(startTime);
-    
-            // Cria um ID local para o log, que será usado para o cache.
-            // O log só será enviado para o Firestore no final do treino.
-            const localLogId = `local_${Date.now()}`;
-            setActiveLogId(localLogId);
-    
-            // Cria e salva o log localmente no cache
-            const localLog: Log = {
-              id: localLogId,
-              usuarioId: user.uid,
-              treino: { ...treinoComExercicios, id: treinoId, fichaId: fichaId as string },
-              exercicios: exerciciosInicializados,
-              horarioInicio: startTime,
-              status: 'em_andamento',
-              cargaAcumulada: 0,
-              // Adiciona propriedades que podem estar faltando para conformar com a interface Log
-              exerciciosFeitos: [],
-              horarioFim: undefined,
-              observacoes: undefined,
-              nomeTreino: treinoData.nome,
-            };
-    
-            await cacheActiveWorkoutLog(localLog);
-        }
+useEffect(() => {
+  const fetchTreino = async () => {
+    if (typeof treinoId !== 'string') {
+      Alert.alert("Erro", "ID do treino inválido.");
+      router.back();
+      return;
+    }
 
+    try {
+      console.log('[OngoingWorkout] 🔄 Iniciando carregamento do treino...');
+      
+      // 1. Tenta carregar o log do cache local primeiro
+      const cachedLog = await getCachedActiveWorkoutLog();
+      
+      if (cachedLog && (cachedLog.treino.id === treinoId || logId === cachedLog.id)) {
+        console.log('[OngoingWorkout] ✅ Log encontrado no cache');
+        
+        setTreino(cachedLog.treino);
+        setHorarioInicio(toDate(cachedLog.horarioInicio));
+        setActiveLogId(cachedLog.id);
+        setCargaAcumuladaTotal(cachedLog.cargaAcumulada || 0);
+
+        // Encontra o próximo exercício/série não concluído
+        let proximoExercicioIndex = 0;
+        let proximaSerieIndex = 0;
+        let foundNext = false;
+        
+        cachedLog.treino.exercicios.forEach((ex: Exercicio, exIndex: number) => {
+          if (!foundNext) {
+            const nextSetIndex = (ex.series as SerieComStatus[]).findIndex(
+              (s: SerieComStatus) => !s.concluido
+            );
+            if (nextSetIndex !== -1) {
+              proximoExercicioIndex = exIndex;
+              proximaSerieIndex = nextSetIndex;
+              foundNext = true;
+            }
+          }
+        });
+        
+        setCurrentExerciseIndex(proximoExercicioIndex);
+        setCompletedSets(proximaSerieIndex);
+
+        // Tenta buscar dados adicionais (logs e perfil) com fallback para offline
         if (user) {
-          const { getLogsByUsuarioId } = require('../../services/logService');
-          const logs = await getLogsByUsuarioId(user.uid);
-          setUserLogs(logs);
-          // Busca o peso do usuário
-          const userProfile = await getUserProfile(user.uid);
-          if (userProfile && userProfile.peso) {
-            setUserWeight(userProfile.peso);
+          try {
+            console.log('[OngoingWorkout] 📊 Buscando logs do usuário...');
+            const { getLogsByUsuarioId } = require('../../services/logService');
+            const logs = await getLogsByUsuarioId(user.uid);
+            setUserLogs(logs);
+            console.log('[OngoingWorkout] ✅ Logs carregados:', logs.length);
+          } catch (logsError) {
+            console.warn('[OngoingWorkout] ⚠️ Erro ao buscar logs (pode estar offline):', logsError);
+            // Define array vazio se falhar - modo offline
+            setUserLogs([]);
+          }
+
+          try {
+            console.log('[OngoingWorkout] 👤 Buscando perfil do usuário...');
+            const userProfile = await getUserProfile(user.uid);
+            if (userProfile && userProfile.peso) {
+              setUserWeight(userProfile.peso);
+              console.log('[OngoingWorkout] ✅ Peso do usuário:', userProfile.peso);
+            }
+          } catch (profileError) {
+            console.warn('[OngoingWorkout] ⚠️ Erro ao buscar perfil (pode estar offline):', profileError);
+            // Define peso padrão se falhar - modo offline
+            setUserWeight(70); // Peso padrão como fallback
           }
         }
-      } catch (error) {
-        console.error("Failed to fetch workout:", error);
-        Alert.alert("Erro", "Não foi possível carregar o treino.");
-        router.back();
-      } finally { setLoading(false); }
-    };
-    fetchTreino();
-  }, [treinoId, fichaId, logId, user]);
+        
+        setLoading(false);
+        console.log('[OngoingWorkout] ✅ Treino carregado do cache com sucesso');
+        return; // Retorna aqui para evitar tentar buscar do Firestore
+      }
+
+      // 2. Se não há cache, busca do Firestore (requer conexão)
+      console.log('[OngoingWorkout] 🔥 Nenhum cache encontrado, buscando do Firestore...');
+      
+      if (!user) {
+        throw new Error("Usuário não autenticado");
+      }
+
+      const treinoData = await getTreinoById(treinoId);
+      
+      if (!treinoData || !treinoData.exercicios || treinoData.exercicios.length === 0) {
+        Alert.alert(
+          "Treino Vazio", 
+          "Adicione exercícios para poder iniciá-lo.", 
+          [{ text: "OK", onPress: () => router.back() }]
+        );
+        return;
+      }
+
+      console.log('[OngoingWorkout] ✅ Treino buscado do Firestore');
+
+      // Inicializa o treino
+      const startTime = new Date();
+      const exerciciosInicializados = treinoData.exercicios.map(ex => ({
+        ...ex,
+        series: ex.series.map(s => ({ ...s, concluido: false }))
+      }));
+      
+      const treinoComExercicios = { 
+        ...treinoData, 
+        exercicios: exerciciosInicializados 
+      };
+      
+      setTreino(treinoComExercicios);
+      setHorarioInicio(startTime);
+
+      const localLogId = `local_${Date.now()}`;
+      setActiveLogId(localLogId);
+
+      // Cria log local
+      const localLog: Log = {
+        id: localLogId,
+        usuarioId: user.uid,
+        treino: { 
+          ...treinoComExercicios, 
+          id: treinoId, 
+          fichaId: fichaId as string 
+        },
+        exercicios: exerciciosInicializados,
+        horarioInicio: startTime,
+        status: 'em_andamento',
+        cargaAcumulada: 0,
+        exerciciosFeitos: [],
+        horarioFim: undefined,
+        observacoes: undefined,
+        nomeTreino: treinoData.nome,
+      };
+      
+      await cacheActiveWorkoutLog(localLog);
+      console.log('[OngoingWorkout] ✅ Log local criado e salvo no cache');
+
+      // Busca dados adicionais com fallback
+      try {
+        const { getLogsByUsuarioId } = require('../../services/logService');
+        const logs = await getLogsByUsuarioId(user.uid);
+        setUserLogs(logs);
+      } catch (logsError) {
+        console.warn('[OngoingWorkout] ⚠️ Erro ao buscar logs:', logsError);
+        setUserLogs([]);
+      }
+
+      try {
+        const userProfile = await getUserProfile(user.uid);
+        if (userProfile && userProfile.peso) {
+          setUserWeight(userProfile.peso);
+        }
+      } catch (profileError) {
+        console.warn('[OngoingWorkout] ⚠️ Erro ao buscar perfil:', profileError);
+        setUserWeight(70); // Peso padrão
+      }
+
+    } catch (error) {
+      console.error("[OngoingWorkout] ❌ ERRO CRÍTICO ao carregar treino:", error);
+      
+      // Mensagem de erro mais clara para o usuário
+      if (error instanceof Error) {
+        console.error("[OngoingWorkout] Detalhes:", error.message);
+      }
+      
+      Alert.alert(
+        "Erro ao Carregar Treino", 
+        "Não foi possível carregar o treino. Verifique sua conexão com a internet e tente novamente.",
+        [{ text: "OK", onPress: () => router.back() }]
+      );
+    } finally {
+      setLoading(false);
+      console.log('[OngoingWorkout] 🏁 Carregamento finalizado');
+    }
+  };
+  
+  fetchTreino();
+}, [treinoId, fichaId, logId, user]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -473,25 +554,36 @@ export default function OngoingWorkoutScreen() {
         const isLocalLog = activeLogId?.startsWith('local_');
 
         try {
-          if (activeLogId) {
-            // Se o log era local, o ID real será gerado pelo Firestore.
-            // Se já tinha um ID do Firestore (treino pausado e retomado), ele será atualizado.
+          if (activeLogId && user) {
+            // CORRIGIDO: Sempre incluir usuarioId
             const finalLogData = {
               horarioFim,
               status: 'concluido' as const,
               cargaAcumulada: newTotalLoad,
-              exercicios: updatedExercicios
+              exercicios: updatedExercicios,
+              usuarioId: user.uid // Adiciona o usuarioId
             };
-            const finalLogId = await addLog(finalLogData, isLocalLog ? undefined : activeLogId);
+            
+            const finalLogId = await addLog(
+              finalLogData, 
+              isLocalLog ? undefined : activeLogId
+            );
 
             // Limpa o cache local
             await cacheActiveWorkoutLog(null);
 
-            router.replace({ pathname: './treinoCompleto', params: { logId: finalLogId } });
+            router.replace({ 
+              pathname: './treinoCompleto', 
+              params: { logId: finalLogId } 
+            });
           }
         } catch (error) {
           console.error("Failed to save workout log:", error);
-          Alert.alert("Erro", "Não foi possível salvar seu progresso, mas parabéns por concluir!", [{ text: "OK", onPress: () => router.back() }]);
+          Alert.alert(
+            "Erro", 
+            "Não foi possível salvar seu progresso, mas parabéns por concluir!", 
+            [{ text: "OK", onPress: () => router.back() }]
+          );
         }
         return;
       }
@@ -577,24 +669,36 @@ export default function OngoingWorkoutScreen() {
   };
 
   const handleBack = () => {
-    const exitWorkout = async () => {
-      if (activeLogId) {
-        try {
-          await addLog({ status: 'cancelado' }, activeLogId);
-          router.back();
-          await cacheActiveWorkoutLog(null); // Limpa o cache
-        } catch (error) {
-          console.error("Erro ao cancelar o log:", error);
-          Alert.alert("Erro", "Não foi possível cancelar o registro do treino, mas você pode sair.");
-          router.back();
-        }
-      } else {
+  const exitWorkout = async () => {
+    if (activeLogId && user) {
+      try {
+        // CORRIGIDO: Incluir usuarioId ao atualizar
+        await addLog({ 
+          status: 'cancelado',
+          usuarioId: user.uid // Adiciona o usuarioId
+        }, activeLogId);
+        
+        await cacheActiveWorkoutLog(null); // Limpa o cache
+        router.back();
+      } catch (error) {
+        console.error("Erro ao cancelar o log:", error);
+        Alert.alert("Erro", "Não foi possível cancelar o registro do treino, mas você pode sair.");
         router.back();
       }
-    };
-    Alert.alert("Sair do Treino?", "Seu progresso não será salvo e o treino será cancelado. Deseja continuar?",
-      [{ text: "Cancelar", style: "cancel" }, { text: "Sair", style: "destructive", onPress: exitWorkout }]);
+    } else {
+      router.back();
+    }
   };
+  
+  Alert.alert(
+    "Sair do Treino?", 
+    "Seu progresso não será salvo e o treino será cancelado. Deseja continuar?",
+    [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Sair", style: "destructive", onPress: exitWorkout }
+    ]
+  );
+};
 
   const { isDropsetSequence, dropsetGroup } = useMemo(() => {
     if (!treino || !treino.exercicios[currentExerciseIndex]) return { isDropsetSequence: false, dropsetGroup: [] };

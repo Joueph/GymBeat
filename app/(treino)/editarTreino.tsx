@@ -13,7 +13,7 @@ import { Exercicio, ExercicioModelo, Serie } from '../../models/exercicio';
 import { DiaSemana, Treino } from '../../models/treino';
 import { addTreinoToFicha, deleteTreino, getTreinoById, updateTreino } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
-import { EditarExercicioNoTreinoModal } from './modals/editarExercícioNoTreinoModal';
+import { EditarExercicioNoTreinoModal } from './modals/editarExercicioNoTreinoModal';
 import { SelectExerciseModal } from './modals/SelectExerciseModal';
 
 

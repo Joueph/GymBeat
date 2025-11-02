@@ -33,6 +33,13 @@ export const HistoricoCargaTreinoChart = ({ currentLog, allUserLogs, style, onDa
     const chartData = useMemo(() => {
         // --- INÍCIO DA CORREÇÃO ---
         // 1. Filtra TODOS os logs relevantes (incluindo o atual)
+
+        // DEBUG: Verifica se os logs recebidos são válidos
+        if (!allUserLogs || allUserLogs.length === 0) {
+            console.warn('[HistoricoCargaTreinoChart] Nenhum log de usuário recebido.');
+            return { labels: [], datasets: [{ data: [], colors: [] }], originalData: [], maxValue: 1, hasData: false };
+        }
+
         const allRelevantLogs = (allUserLogs || [])
             .filter(log => log.horarioInicio && log.treino.id === currentLog.treino.id && log.status !== 'cancelado')
             .sort((a, b) => toDate(a.horarioInicio)!.getTime() - toDate(b.horarioInicio)!.getTime()); // 2. Ordena cronologicamente

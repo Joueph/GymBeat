@@ -483,117 +483,167 @@ useEffect(() => {
     return () => clearInterval(interval);
   }, [isDoingExercise, exerciseStartTime, currentSet]);
 
-  const completeTheSet = async () => {
-    if (!treino || !user || !currentSet || !currentExercise) return;
+const completeTheSet = async () => {
+  if (!treino || !user || !currentSet || !currentExercise) return;
 
-    const oldTotalLoad = cargaAcumuladaTotal;
-    const { totalLoad: cargaDaSerie } = calculateLoadForSerie(currentSet, currentExercise, userWeight);
-    const newTotalLoad = oldTotalLoad + cargaDaSerie;
+  const oldTotalLoad = cargaAcumuladaTotal;
+  const { totalLoad: cargaDaSerie } = calculateLoadForSerie(currentSet, currentExercise, userWeight);
+  const newTotalLoad = oldTotalLoad + cargaDaSerie;
 
-    if (cargaDaSerie > 0) {
-      // Animação da carga da série no centro
-      setCargaSerieAnimacao({ key: Date.now(), carga: cargaDaSerie });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      
-      // Animação da carga total no header
-      setAnimatedLoadValue(oldTotalLoad);
-      setTimeout(() => {
-        setAnimatedLoadValue(newTotalLoad);
-      }, 1000);
-      setTimeout(() => {
-        setAnimatedLoadValue(null);
-      }, 2000);
-    }
+  if (cargaDaSerie > 0) {
+    // Animação da carga da série no centro
+    setCargaSerieAnimacao({ key: Date.now(), carga: cargaDaSerie });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
-    // Atualiza o estado da carga total
-    setCargaAcumuladaTotal(newTotalLoad);
+    // Animação da carga total no header
+    setAnimatedLoadValue(oldTotalLoad);
+    setTimeout(() => {
+      setAnimatedLoadValue(newTotalLoad);
+    }, 1000);
+    setTimeout(() => {
+      setAnimatedLoadValue(null);
+    }, 2000);
+  }
+  
+  // Atualiza o estado da carga total
+  setCargaAcumuladaTotal(newTotalLoad);
 
-    // **INÍCIO DA REATORAÇÃO**
-    // Marca a série como concluída no estado do treino
-    const updatedExercicios = [...treino.exercicios];
-    const exercicioParaAtualizarIndex = updatedExercicios.findIndex((ex: Exercicio) => ex.modeloId === currentExercise.modeloId);
-    if (exercicioParaAtualizarIndex !== -1) {
-      const serieAtualIndex = completedSets;
-      if ((updatedExercicios[exercicioParaAtualizarIndex].series as SerieComStatus[])[serieAtualIndex]) {
-        (updatedExercicios[exercicioParaAtualizarIndex].series as SerieComStatus[])[serieAtualIndex].concluido = true;
-      }
-      // Se for um bi-set, marca a série do parceiro também
-      if (isBiSet && (updatedExercicios[exercicioParaAtualizarIndex + 1]?.series as SerieComStatus[])[serieAtualIndex]) {
-        (updatedExercicios[exercicioParaAtualizarIndex + 1].series as SerieComStatus[])[serieAtualIndex].concluido = true;
-      }
-      setTreino({ ...treino, exercicios: updatedExercicios });
+  // Marca a série como concluída no estado do treino
+  const updatedExercicios = [...treino.exercicios];
+  const exercicioParaAtualizarIndex = updatedExercicios.findIndex((ex: Exercicio) => ex.modeloId === currentExercise.modeloId);
+  if (exercicioParaAtualizarIndex !== -1) {
+    const serieAtualIndex = completedSets;
+    if ((updatedExercicios[exercicioParaAtualizarIndex].series as SerieComStatus[])[serieAtualIndex]) {
+      (updatedExercicios[exercicioParaAtualizarIndex].series as SerieComStatus[])[serieAtualIndex].concluido = true;
     }
-    // **FIM DA REATORAÇÃO**
+    // Se for um bi-set, marca a série do parceiro também
+    if (isBiSet && (updatedExercicios[exercicioParaAtualizarIndex + 1]?.series as SerieComStatus[])[serieAtualIndex]) {
+      (updatedExercicios[exercicioParaAtualizarIndex + 1].series as SerieComStatus[])[serieAtualIndex].concluido = true;
+    }
+    setTreino({ ...treino, exercicios: updatedExercicios });
+  }
 
-    const newCompletedSets = completedSets + 1;
-    
-    // **MUDANÇA PRINCIPAL: Salva no cache local em vez do Firestore**
-    const updatedLogForCache: Log = {
-      id: activeLogId!,
-      usuarioId: user.uid,
-      treino: { ...treino, exercicios: updatedExercicios },
-      horarioInicio: horarioInicio!,
-      status: 'em_andamento',
-      cargaAcumulada: newTotalLoad,
-      exercicios: updatedExercicios,
-      exerciciosFeitos: [],
-      observacoes: undefined,
-      nomeTreino: undefined
-    };
-    await cacheActiveWorkoutLog(updatedLogForCache);
+  const newCompletedSets = completedSets + 1;
+  
+  // Salva no cache local
+  const updatedLogForCache: Log = {
+    id: activeLogId!,
+    usuarioId: user.uid,
+    treino: { ...treino, exercicios: updatedExercicios },
+    horarioInicio: horarioInicio!,
+    status: 'em_andamento',
+    cargaAcumulada: newTotalLoad,
+    exercicios: updatedExercicios,
+    exerciciosFeitos: [],
+    observacoes: undefined,
+    nomeTreino: treino.nome
+  };
+  await cacheActiveWorkoutLog(updatedLogForCache);
 
-    if (newCompletedSets >= currentExercise.series.length) {
-      const jump = isBiSet ? 2 : 1;
-      const nextIndex = currentExerciseIndex + jump;
-      if (nextIndex < treino.exercicios.length) {
-        setCurrentExerciseIndex(nextIndex);
-        setCompletedSets(0);
-      } else {
-        // FIM DO TREINO
-        const horarioFim = new Date();
-        const isLocalLog = activeLogId?.startsWith('local_');
-
-        try {
-          if (activeLogId && user) {
-            // CORRIGIDO: Sempre incluir usuarioId
-            const finalLogData = {
-              horarioFim,
-              status: 'concluido' as const,
-              cargaAcumulada: newTotalLoad,
-              exercicios: updatedExercicios,
-              usuarioId: user.uid // Adiciona o usuarioId
-            };
-            
-            const finalLogId = await addLog(
-              finalLogData, 
-              isLocalLog ? undefined : activeLogId
-            );
-
-            // Limpa o cache local
-            await cacheActiveWorkoutLog(null);
-
-            router.replace({ 
-              pathname: './treinoCompleto', 
-              params: { logId: finalLogId } 
-            });
-          }
-        } catch (error) {
-          console.error("Failed to save workout log:", error);
-          Alert.alert(
-            "Erro", 
-            "Não foi possível salvar seu progresso, mas parabéns por concluir!", 
-            [{ text: "OK", onPress: () => router.back() }]
-          );
-        }
-        return;
-      }
+  if (newCompletedSets >= currentExercise.series.length) {
+    const jump = isBiSet ? 2 : 1;
+    const nextIndex = currentExerciseIndex + jump;
+    if (nextIndex < treino.exercicios.length) {
+      setCurrentExerciseIndex(nextIndex);
+      setCompletedSets(0);
     } else {
-      setCompletedSets(newCompletedSets);
-    }
+      // FIM DO TREINO
+      console.log('[OngoingWorkout] 🎉 Treino finalizado!');
+      const horarioFim = new Date();
+      const isLocalLog = activeLogId?.startsWith('local_');
 
-    const restStartTimestamp = Date.now();
-    setRestStartTime(restStartTimestamp);
-    setIsResting(true);
+      try {
+        if (activeLogId && user) {
+          console.log('[OngoingWorkout] 💾 Salvando log final...');
+          
+          // ✅ CORREÇÃO: Criar objeto completo do log final
+          const finalTreinoId = treino.id || (treinoId as string);
+          const finalFichaId = treino.fichaId || (fichaId as string);
+
+          if (!finalTreinoId || !finalFichaId) {
+            console.error('[OngoingWorkout] ERRO CRÍTICO: Treino ID ou Ficha ID estão faltando ao finalizar o log.', { finalTreinoId, finalFichaId });
+            throw new Error('Não foi possível salvar o log: IDs de treino ou ficha ausentes.');
+          }
+
+          const finalLogData: Partial<Log> = {
+            usuarioId: user.uid, // ✅ SEMPRE incluir usuarioId
+            treino: {
+              ...treino,
+              id: finalTreinoId,
+              fichaId: finalFichaId,
+              exercicios: updatedExercicios
+            },
+            exercicios: updatedExercicios,
+            horarioInicio: horarioInicio!,
+            horarioFim: horarioFim,
+            status: 'concluido',
+            cargaAcumulada: newTotalLoad,
+            exerciciosFeitos: updatedExercicios
+              .filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido)),
+            nomeTreino: treino.nome
+          };
+
+          console.log('[OngoingWorkout] 📤 Dados do log final:', {
+            hasUsuarioId: !!finalLogData.usuarioId,
+            hasTreino: !!finalLogData.treino,
+            treinoId: finalLogData.treino?.id,
+            fichaId: finalLogData.treino?.fichaId,
+            isLocalLog
+          });
+
+          const finalLogId = await addLog(
+            finalLogData, 
+            isLocalLog ? undefined : activeLogId
+          );
+
+          console.log('[OngoingWorkout] ✅ Log salvo com sucesso:', finalLogId);
+
+          // Limpa o cache local
+          await cacheActiveWorkoutLog(null);
+          console.log('[OngoingWorkout] 🗑️ Cache limpo');
+
+          router.replace({ 
+            pathname: './treinoCompleto', 
+            params: { logId: finalLogId } 
+          });
+        }
+      } catch (error) {
+        console.error('[OngoingWorkout] ❌ Erro ao salvar log final:', error);
+        
+        // Log mais detalhado do erro
+        if (error instanceof Error) {
+          console.error('[OngoingWorkout] Mensagem:', error.message);
+          console.error('[OngoingWorkout] Stack:', error.stack);
+        }
+        
+        Alert.alert(
+          "Erro ao Salvar", 
+          "Não foi possível salvar seu progresso. Verifique sua conexão e tente novamente.", 
+          [
+            { 
+              text: "Tentar Novamente", 
+              onPress: () => {
+                // Tenta salvar novamente
+                completeTheSet();
+              }
+            },
+            { 
+              text: "Sair Mesmo Assim", 
+              style: "destructive",
+              onPress: () => router.back() 
+            }
+          ]
+        );
+      }
+      return;
+    }
+  } else {
+    setCompletedSets(newCompletedSets);
+  }
+
+  const restStartTimestamp = Date.now();
+  setRestStartTime(restStartTimestamp);
+  setIsResting(true);
   };
 
   const handleMainAction = () => {
@@ -669,37 +719,62 @@ useEffect(() => {
   };
 
   const handleBack = () => {
-  const exitWorkout = async () => {
-    if (activeLogId && user) {
-      try {
-        // CORRIGIDO: Incluir usuarioId ao atualizar
-        await addLog({ 
-          status: 'cancelado',
-          usuarioId: user.uid // Adiciona o usuarioId
-        }, activeLogId);
-        
-        await cacheActiveWorkoutLog(null); // Limpa o cache
-        router.back();
-      } catch (error) {
-        console.error("Erro ao cancelar o log:", error);
-        Alert.alert("Erro", "Não foi possível cancelar o registro do treino, mas você pode sair.");
+    const exitWorkout = async () => {
+      if (activeLogId && user && treino) {
+        try {
+          console.log('[OngoingWorkout] 🚪 Cancelando treino...');
+          
+          // ✅ CORREÇÃO: Criar objeto completo ao cancelar
+          const cancelLogData: Partial<Log> = {
+            usuarioId: user.uid, // ✅ SEMPRE incluir usuarioId
+            treino: {
+              ...treino,
+              id: treino.id || treinoId as string,
+              fichaId: treino.fichaId || fichaId as string,
+              exercicios: treino.exercicios
+            },
+            exercicios: treino.exercicios,
+            horarioInicio: horarioInicio!,
+            horarioFim: new Date(),
+            status: 'cancelado',
+            cargaAcumulada: cargaAcumuladaTotal,
+            nomeTreino: treino.nome
+          };
+          
+          console.log('[OngoingWorkout] 📤 Salvando cancelamento...');
+          await addLog(cancelLogData, activeLogId);
+          
+          await cacheActiveWorkoutLog(null); // Limpa o cache
+          console.log('[OngoingWorkout] ✅ Treino cancelado com sucesso');
+          
+          router.back();
+        } catch (error) {
+          console.error('[OngoingWorkout] ❌ Erro ao cancelar o log:', error);
+          
+          if (error instanceof Error) {
+            console.error('[OngoingWorkout] Mensagem:', error.message);
+          }
+          
+          Alert.alert(
+            "Erro", 
+            "Não foi possível cancelar o registro do treino, mas você pode sair.",
+            [{ text: "OK", onPress: () => router.back() }]
+          );
+        }
+      } else {
         router.back();
       }
-    } else {
-      router.back();
-    }
+    };
+    
+    Alert.alert(
+      "Sair do Treino?", 
+      "Seu progresso não será salvo e o treino será cancelado. Deseja continuar?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Sair", style: "destructive", onPress: exitWorkout }
+      ]
+    );
   };
-  
-  Alert.alert(
-    "Sair do Treino?", 
-    "Seu progresso não será salvo e o treino será cancelado. Deseja continuar?",
-    [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Sair", style: "destructive", onPress: exitWorkout }
-    ]
-  );
-};
-
   const { isDropsetSequence, dropsetGroup } = useMemo(() => {
     if (!treino || !treino.exercicios[currentExerciseIndex]) return { isDropsetSequence: false, dropsetGroup: [] };
     const series = treino.exercicios[currentExerciseIndex].series;

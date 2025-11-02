@@ -123,7 +123,16 @@ export default function TreinoCompletoScreen() {
                 const logSnap = await getDoc(logRef);
                 if (!logSnap.exists()) throw new Error("Log não encontrado.");
                 
+                // DEBUG: Log para verificar a estrutura do log concluído
+                console.log('[TreinoCompleto] Log data from Firestore:', logSnap.data());
+                
                 const completedLog = { id: logSnap.id, ...logSnap.data() } as Log;
+
+                // DEBUG: Log para verificar o objeto 'treino' dentro do log
+                if (!completedLog.treino) {
+                    console.error('[TreinoCompleto] ERRO: O log recuperado não possui a propriedade "treino".', completedLog);
+                }
+
                 setLog(completedLog);
 
                 const inicio = toDate(completedLog.horarioInicio);

@@ -77,60 +77,40 @@ export default function HomeScreen() {
 useFocusEffect(
   useCallback(() => {
     const fetchData = async () => {
-      console.log('[HomeScreen] 🔄 Iniciando fetchData...');
       
       if (!authInitialized) {
-        console.log('[HomeScreen] ⏳ Auth não inicializado ainda');
         return;
       }
       
       if (!user) {
-        console.log('[HomeScreen] ❌ Usuário não autenticado');
         setLoading(false);
         return;
       }
 
-      console.log('[HomeScreen] ✅ Usuário autenticado:', user.uid);
-
       if (isInitialLoad.current) {
-        console.log('[HomeScreen] 📱 Carregamento inicial');
         setLoading(true);
       }
 
       try {
         // 1. Buscar perfil do usuário
-        console.log('[HomeScreen] 📋 Buscando perfil do usuário...');
         const userProfileDoc = await getDoc(doc(db, "users", user.uid));
         const userProfile = userProfileDoc.exists() 
           ? { id: userProfileDoc.id, ...userProfileDoc.data() } as Usuario 
           : null;
         setProfile(userProfile);
-        console.log('[HomeScreen] ✅ Perfil carregado:', userProfile?.nome);
 
         // 2. Verificar log de treino ativo no cache
-        console.log('[HomeScreen] 💾 Verificando cache de treino ativo...');
         let ongoingLog = null;
         try {
           ongoingLog = await getCachedActiveWorkoutLog();
-          if (ongoingLog) {
-            console.log('[HomeScreen] ✅ Log encontrado no cache:', {
-              logId: ongoingLog.id,
-              treinoNome: ongoingLog.treino?.nome,
-              status: ongoingLog.status
-            });
-          } else {
-            console.log('[HomeScreen] ℹ️ Nenhum log no cache');
-          }
         } catch (cacheError) {
           console.error('[HomeScreen] ❌ Erro ao buscar cache:', cacheError);
         }
 
         // 3. Buscar logs do Firestore
-        console.log('[HomeScreen] 🔥 Buscando logs do Firestore...');
         let userLogs: Log[] = [];
         try {
           userLogs = await getLogsByUsuarioId(user.uid);
-          console.log('[HomeScreen] ✅ Logs do Firestore:', userLogs.length);
           
           // Se não havia log no cache, busca um ativo no Firestore
           if (!ongoingLog) {
@@ -139,7 +119,6 @@ useFocusEffect(
             ) || null;
             
             if (ongoingLog) {
-              console.log('[HomeScreen] ✅ Log ativo encontrado no Firestore:', ongoingLog.id);
             }
           }
         } catch (logsError) {
@@ -150,51 +129,32 @@ useFocusEffect(
         setActiveLog(ongoingLog || null);
 
         // 4. Buscar ficha ativa
-        console.log('[HomeScreen] 📂 Buscando ficha ativa...');
         const fichaAtiva = await getFichaAtiva(user.uid);
         setActiveFicha(fichaAtiva);
         
-        if (fichaAtiva) {
-          console.log('[HomeScreen] ✅ Ficha ativa:', fichaAtiva.nome);
-        } else {
-          console.log('[HomeScreen] ℹ️ Nenhuma ficha ativa');
-        }
-
         // 5. Buscar treinos da ficha
         let userTreinos: Treino[] = [];
         if (fichaAtiva && fichaAtiva.treinos.length > 0) {
-          console.log('[HomeScreen] 🏋️ Buscando treinos da ficha...', fichaAtiva.treinos.length);
           try {
             userTreinos = await getTreinosByIds(fichaAtiva.treinos);
             setTreinos(userTreinos);
-            console.log('[HomeScreen] ✅ Treinos carregados:', userTreinos.length);
             
             // Cache em background
-            console.log('[HomeScreen] 💾 Salvando ficha e treinos no cache...');
             await cacheFichaCompleta(fichaAtiva, userTreinos);
-            console.log('[HomeScreen] ✅ Cache salvo com sucesso');
           } catch (treinosError) {
             console.error('[HomeScreen] ❌ Erro ao buscar/cachear treinos:', treinosError);
           }
         } else {
-          console.log('[HomeScreen] ℹ️ Nenhum treino na ficha');
           setTreinos([]);
         }
 
         // 6. Identificar treino de hoje
         const hoje = new Date();
         const diaString = DIAS_SEMANA_MAP[hoje.getDay()] as DiaSemana;
-        console.log('[HomeScreen] 📅 Dia da semana:', diaString);
         
         const treinoDoDia = userTreinos.find(t => 
           t.diasSemana.includes(diaString)
         );
-        
-        if (treinoDoDia) {
-          console.log('[HomeScreen] ✅ Treino de hoje:', treinoDoDia.nome);
-        } else {
-          console.log('[HomeScreen] ℹ️ Nenhum treino agendado para hoje');
-        }
         setTreinoDeHoje(treinoDoDia || null);
 
         // 7. Verificar se já treinou hoje
@@ -204,45 +164,35 @@ useFocusEffect(
                  logDate.toDateString() === hoje.toDateString() && 
                  log.status !== 'cancelado';
         });
-        
-        if (logConcluidoHoje) {
-          console.log('[HomeScreen] ✅ Treino concluído hoje:', logConcluidoHoje.treino?.nome);
-        } else {
-          console.log('[HomeScreen] ℹ️ Nenhum treino concluído hoje');
-        }
         setTreinoConcluidoHoje(logConcluidoHoje || null);
 
         // 8. Verificar treinos perdidos
         const diaDaSemanaHoje = hoje.getDay();
         const logsConcluidosIds = new Set(
-          userLogs.filter(l => l.horarioFim).map(l => l.treino.id)
+          userLogs
+            .filter(l => l.horarioFim && l.treino && l.treino.id) // ✅ Verifica se treino existe
+            .map(l => l.treino.id)
         );
         
         let treinoFaltante = null;
         for (let i = 0; i < diaDaSemanaHoje; i++) {
           const diaAnteriorString = DIAS_SEMANA_MAP[i] as DiaSemana;
           const treinoAgendado = userTreinos.find(t => 
-            t.diasSemana.includes(diaAnteriorString)
+            t && t.id && t.diasSemana && t.diasSemana.includes(diaAnteriorString) // ✅ Verifica se treino é válido
           );
-          if (treinoAgendado && !logsConcluidosIds.has(treinoAgendado.id)) {
+          if (treinoAgendado && treinoAgendado.id && !logsConcluidosIds.has(treinoAgendado.id)) {
             treinoFaltante = treinoAgendado;
-            console.log('[HomeScreen] ⚠️ Treino perdido encontrado:', treinoAgendado.nome);
             break;
           }
         }
         setTreinoPerdido(treinoFaltante);
-
+        
         // 9. Calcular estatísticas semanais
         const streakGoal = userProfile?.streakGoal || 2;
         const startOfThisWeek = getStartOfWeek(hoje);
         const workoutsThisWeek = userLogs.filter(log => 
           toDate(log.horarioFim) && toDate(log.horarioFim)! >= startOfThisWeek
         ).length;
-
-        console.log('[HomeScreen] 📊 Estatísticas:', {
-          workoutsThisWeek,
-          goal: streakGoal
-        });
 
         let streak = 0;
         // ... (cálculo de streak permanece o mesmo)
@@ -252,8 +202,6 @@ useFocusEffect(
           streak, 
           goal: streakGoal 
         });
-
-        console.log('[HomeScreen] ✅ fetchData concluído com sucesso');
 
       } catch (error) {
         console.error('[HomeScreen] ❌ ERRO GERAL no fetchData:', error);
@@ -265,7 +213,6 @@ useFocusEffect(
       } finally {
         isInitialLoad.current = false;
         setLoading(false);
-        console.log('[HomeScreen] 🏁 fetchData finalizado');
       }
     };
     

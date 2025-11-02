@@ -290,8 +290,9 @@ export default function MeusTreinosScreen() {
     const completedLogs = logs.filter(log => log.status !== 'cancelado' && log.horarioFim);
 
     const logsByTreinoId = completedLogs.reduce((acc, log) => {
-        const treinoId = log.treino.id;
-        if (!acc[treinoId] || (toDate(log.horarioFim)?.getTime() || 0) > (toDate(acc[treinoId].horarioFim)?.getTime() || 0)) {
+        // CORREÇÃO: Garante que log.treino e log.treino.id existem antes de usá-los.
+        const treinoId = log.treino?.id;
+        if (treinoId && (!acc[treinoId] || (toDate(log.horarioFim)?.getTime() || 0) > (toDate(acc[treinoId].horarioFim)?.getTime() || 0))) {
             acc[treinoId] = log;
         }
         return acc;

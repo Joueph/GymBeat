@@ -57,8 +57,13 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
     // Encontra todos os logs concluídos para o mesmo treino do log inicial
     const relevantLogs = React.useMemo(() => {
         if (!initialLog) return [];
+        // CORREÇÃO: Garante que o log inicial e os logs comparados tenham um treino e um ID de treino válidos.
+        const initialTreinoId = initialLog.treino?.id;
+        if (!initialTreinoId) return [];
+
         return allUserLogs
-            .filter(l => l.treino.id === initialLog.treino.id && l.status === 'concluido')
+            // Filtra apenas logs que têm um ID de treino correspondente e estão concluídos.
+            .filter(l => l.treino?.id === initialTreinoId && l.status === 'concluido')
             .sort((a, b) => (toDate(a.horarioFim)?.getTime() || 0) - (toDate(b.horarioFim)?.getTime() || 0));
     }, [allUserLogs, initialLog]);
 

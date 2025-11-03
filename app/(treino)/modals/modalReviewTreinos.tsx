@@ -1,6 +1,6 @@
 import { Exercicio, Serie } from '@/models/exercicio';
 import { Log } from '@/models/log';
-import { calculateTotalVolume } from '@/utils/volumeUtils';
+import { calculateTotalVolume } from '@/utils/volumeUtils'; // CORREÇÃO: Adicionada a importação que faltava.
 import { FontAwesome } from '@expo/vector-icons';
 // import { VideoView as Video, useVideoPlayer } from 'expo-video'; // Removido
 import React, { useEffect } from 'react';

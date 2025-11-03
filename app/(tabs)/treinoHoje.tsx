@@ -1,3 +1,4 @@
+import { calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'; // Adicionei a importação do ScrollView
@@ -38,47 +39,11 @@ const toDate = (date: any): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
-// --- Funções de Cálculo de Volume ---
-const parseReps = (reps: any): number => {
-  if (typeof reps === 'number') return reps;
-  if (typeof reps === 'string') {
-    const numbers = reps.match(/\d+/g);
-    if (numbers && numbers.length > 0) {
-      if (numbers.length >= 2) {
-        const num1 = Number(numbers[0]);
-        const num2 = Number(numbers[1]);
-        return Math.round((num1 + num2) / 2);
-      }
-      return Number(numbers[0]);
-    }
-  }
-  return 0;
-};
-
-const calculateVolume = (log: Log): number => {
-  // Prioriza o uso da carga acumulada salva no log, se existir.
-  if (log.cargaAcumulada && typeof log.cargaAcumulada === 'number' && log.cargaAcumulada > 0) {
-    return log.cargaAcumulada;
-  }
-
-  // Fallback: recalcula o volume se o campo não existir (para logs antigos).
-  return (log.exercicios || []).reduce((totalVolume, exercicio) => {
-      const exercicioVolume = (exercicio.series as SerieComStatus[])
-          .filter(s => s.concluido)
-          .reduce((serieVolume, serie) => {
-              const reps = serie.isTimeBased ? 1 : parseReps(serie.repeticoes);
-              const peso = serie.peso || 0;
-              return serieVolume + (reps * peso);
-          }, 0);
-      return totalVolume + exercicioVolume;
-  }, 0);
-};
-
 // Componente LogItem permanece o mesmo
 const LogItem = ({ log, onPress }: { log: Log; onPress: (log: Log) => void }) => {
   // **INÍCIO DA CORREÇÃO**
   // Implementação do JSX para o componente LogItem
-  const volumeTotal = calculateVolume(log);
+  const volumeTotal = log.cargaAcumulada || calculateTotalVolume(log.exercicios, 70, true);
   const dataFim = toDate(log.horarioFim);
   const isCanceled = log.status === 'cancelado';
 
@@ -106,7 +71,7 @@ const LogItem = ({ log, onPress }: { log: Log; onPress: (log: Log) => void }) =>
 };
 
 const HistoricWorkoutCard = ({ log, onPress }: { log: Log; onPress: (log: Log) => void }) => {
-    const volumeTotal = calculateVolume(log);
+    const volumeTotal = log.cargaAcumulada || calculateTotalVolume(log.exercicios, 70, true);
     const dataFim = toDate(log.horarioFim);
     let durationText = 'N/A';
 

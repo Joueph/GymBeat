@@ -1,5 +1,5 @@
 import { Exercicio, Serie } from '@/models/exercicio';
-import { calculateLoadForSerie } from '@/utils/volumeUtils';
+import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { ResizeMode, Video } from 'expo-av'; // Changed from expo-video
 import * as FileSystem from 'expo-file-system/legacy';
@@ -671,15 +671,20 @@ const completeTheSet = async () => {
     }
   };
 
-  const handleSaveExerciseChanges = (newSeries: SerieEdit[], pesoBarra?: number) => {
+  const handleSaveExerciseChanges = async (newSeries: SerieEdit[], pesoBarra?: number) => {
     if (!treino || !exercicioSendoEditado) return;
+
+    // Cria uma cópia atualizada dos exercícios com as novas séries
     const updatedExercicios = [...treino.exercicios];
     const editedExerciseIndex = updatedExercicios.findIndex(ex => ex.modeloId === exercicioSendoEditado.modeloId);
+
     if (editedExerciseIndex === -1) {
       console.error("Não foi possível encontrar o exercício para atualizar.");
       setEditExerciseModalVisible(false);
       return;
     }
+
+    // Atualiza o exercício específico
     const updatedExercise = {
       ...exercicioSendoEditado,
       series: newSeries,
@@ -687,6 +692,8 @@ const completeTheSet = async () => {
     };
     updatedExercicios[editedExerciseIndex] = updatedExercise;
     const isLeaderOfBiSet = !updatedExercise.isBiSet && updatedExercicios[editedExerciseIndex + 1]?.isBiSet;
+
+    // Se for um bi-set, sincroniza as séries do exercício parceiro
     if (isLeaderOfBiSet) {
       const partnerExercise = { ...updatedExercicios[editedExerciseIndex + 1] };
       const oldPartnerSeries = partnerExercise.series;
@@ -697,17 +704,27 @@ const completeTheSet = async () => {
       partnerExercise.series = newPartnerSeries;
       updatedExercicios[editedExerciseIndex + 1] = partnerExercise;
     }
+
+    // Atualiza o estado do treino com os exercícios modificados
     setTreino(prevTreino => prevTreino ? { ...prevTreino, exercicios: updatedExercicios } : null);
+
     // **INÍCIO DA CORREÇÃO**
-    // Salva as alterações no log em cache local
+    // Recalcula a carga total acumulada com base em TODAS as séries concluídas
+    const novaCargaTotal = calculateTotalVolume(updatedExercicios, userWeight, true);
+    setCargaAcumuladaTotal(novaCargaTotal);
+
+    // Salva o log atualizado no cache local com a nova carga
     const updatedLogForCache: Partial<Log> = {
       id: activeLogId!,
       usuarioId: user!.uid,
-      treino: { ...treino, exercicios: updatedExercicios },
+      treino: { ...treino, exercicios: updatedExercicios }, // Garante que o treino dentro do log também está atualizado
       horarioInicio: horarioInicio!,
       exercicios: updatedExercicios,
+      cargaAcumulada: novaCargaTotal, // Salva a nova carga recalculada
     };
-    cacheActiveWorkoutLog(updatedLogForCache as Log);
+    await cacheActiveWorkoutLog(updatedLogForCache as Log);
+    // **FIM DA CORREÇÃO**
+
     setEditExerciseModalVisible(false);
     setExercicioSendoEditado(null);
   };
@@ -720,55 +737,14 @@ const completeTheSet = async () => {
 
   const handleBack = () => {
     const exitWorkout = async () => {
-      if (activeLogId && user && treino) {
-        try {
-          console.log('[OngoingWorkout] 🚪 Cancelando treino...');
-          
-          // ✅ CORREÇÃO: Criar objeto completo ao cancelar
-          const cancelLogData: Partial<Log> = {
-            usuarioId: user.uid, // ✅ SEMPRE incluir usuarioId
-            treino: {
-              ...treino,
-              id: treino.id || treinoId as string,
-              fichaId: treino.fichaId || fichaId as string,
-              exercicios: treino.exercicios
-            },
-            exercicios: treino.exercicios,
-            horarioInicio: horarioInicio!,
-            horarioFim: new Date(),
-            status: 'cancelado',
-            cargaAcumulada: cargaAcumuladaTotal,
-            nomeTreino: treino.nome
-          };
-          
-          console.log('[OngoingWorkout] 📤 Salvando cancelamento...');
-          await addLog(cancelLogData, activeLogId);
-          
-          await cacheActiveWorkoutLog(null); // Limpa o cache
-          console.log('[OngoingWorkout] ✅ Treino cancelado com sucesso');
-          
-          router.back();
-        } catch (error) {
-          console.error('[OngoingWorkout] ❌ Erro ao cancelar o log:', error);
-          
-          if (error instanceof Error) {
-            console.error('[OngoingWorkout] Mensagem:', error.message);
-          }
-          
-          Alert.alert(
-            "Erro", 
-            "Não foi possível cancelar o registro do treino, mas você pode sair.",
-            [{ text: "OK", onPress: () => router.back() }]
-          );
-        }
-      } else {
-        router.back();
-      }
+      // Limpa o cache do treino ativo sem salvar no Firestore.
+      await cacheActiveWorkoutLog(null);
+      router.back();
     };
     
     Alert.alert(
       "Sair do Treino?", 
-      "Seu progresso não será salvo e o treino será cancelado. Deseja continuar?",
+      "Seu progresso será perdido. Deseja continuar?",
       [
         { text: "Cancelar", style: "cancel" },
         { text: "Sair", style: "destructive", onPress: exitWorkout }

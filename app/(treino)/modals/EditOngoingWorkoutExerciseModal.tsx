@@ -79,11 +79,6 @@ export const EditExerciseModal = ({ visible, onClose, onSave, exercise }: EditEx
 
   return (
     <Modal animationType="slide" presentationStyle="pageSheet" visible={visible} onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        style={styles.keyboardAvoidingView}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <MenuProvider>
           <SafeAreaView style={styles.modalSafeArea}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Editar Exercício</Text>
@@ -104,110 +99,123 @@ export const EditExerciseModal = ({ visible, onClose, onSave, exercise }: EditEx
                 </View>
               </>
             )}
-            <DraggableFlatList
-              data={editingSeries}
-              style={{ width: '100%' }}
-              contentContainerStyle={styles.modalScrollViewContent}
-              keyExtractor={(item) => item.id!}
-              onDragEnd={({ data }) => { if (!exercise?.isBiSet) setEditingSeries(data); }}
-              renderItem={({ item, drag, isActive, getIndex }: DraggableRenderItemParams<SerieEdit>) => {
-                const itemIndex = getIndex();
-                if (itemIndex === undefined) return null;
-                const normalSeriesCount = editingSeries.slice(0, itemIndex + 1).filter(s => (s.type || 'normal') === 'normal').length;
-                const isBiSetFollower = exercise?.isBiSet ?? false;
-                const isTimeBased = item.isTimeBased;
-                return (
-                  <View style={{ marginLeft: item.type === 'dropset' ? 30 : 0, marginBottom: 10 }}>
-                    <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#1f1f1f' }]}>
-                      <TouchableOpacity onLongPress={!isBiSetFollower ? drag : undefined} style={{ paddingHorizontal: 10, opacity: isBiSetFollower ? 0.3 : 1 }} disabled={isActive || isBiSetFollower}>
-                        <FontAwesome5 name={(item.type || 'normal') === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" />
-                      </TouchableOpacity>
-                      <Text style={styles.setText}>{(item.type || 'normal') === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
-                      <TextInput style={styles.setInput} placeholder={isTimeBased ? "Tempo (s)" : "Reps"} placeholderTextColor="#888" value={String(item.repeticoes)} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].repeticoes = text; setEditingSeries(newSets); }} keyboardType={isTimeBased ? 'number-pad' : 'default'} />
-                      {exercise?.modelo?.caracteristicas?.isPesoCorporal ? (
-                        <View style={styles.bodyWeightContainer}>
-                          <Text style={styles.bodyWeightText}>Peso Corporal</Text>
+            <KeyboardAvoidingView
+              style={styles.keyboardAvoidingView}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+            >
+            <MenuProvider>
+              {/* A lista e o rodapé ficam dentro do KeyboardAvoidingView */}
+              <DraggableFlatList
+                data={editingSeries}
+                style={{ width: '100%' }}
+                contentContainerStyle={styles.modalScrollViewContent}
+                keyExtractor={(item) => item.id!}
+                onDragEnd={({ data }) => { if (!exercise?.isBiSet) setEditingSeries(data); }}
+                renderItem={({ item, drag, isActive, getIndex }: DraggableRenderItemParams<SerieEdit>) => {
+                  const itemIndex = getIndex();
+                  if (itemIndex === undefined) return null;
+                  const normalSeriesCount = editingSeries.slice(0, itemIndex + 1).filter(s => (s.type || 'normal') === 'normal').length;
+                  const isBiSetFollower = exercise?.isBiSet ?? false;
+                  const isTimeBased = item.isTimeBased;
+                  return (
+                    <View style={{ marginLeft: item.type === 'dropset' ? 30 : 0, marginBottom: 10 }}>
+                      <View style={[styles.setRow, { backgroundColor: isActive ? '#3a3a3a' : '#1f1f1f' }]}>
+                        <TouchableOpacity onLongPress={!isBiSetFollower ? drag : undefined} style={{ paddingHorizontal: 10, opacity: isBiSetFollower ? 0.3 : 1 }} disabled={isActive || isBiSetFollower}>
+                          <FontAwesome5 name={(item.type || 'normal') === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" />
+                        </TouchableOpacity>
+                        <Text style={styles.setText}>{(item.type || 'normal') === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
+                        <View style={styles.inputContainer}>
+                          <Text style={styles.inputLabel}>{isTimeBased ? "Tempo (s)" : "Repetições"}</Text>
+                          <TextInput style={styles.setInput} placeholder={isTimeBased ? "Tempo (s)" : "Reps"} placeholderTextColor="#888" value={String(item.repeticoes)} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].repeticoes = text; setEditingSeries(newSets); }} keyboardType={isTimeBased ? 'number-pad' : 'default'} />
                         </View>
-                      ) : (
-                        <TextInput 
-                          style={styles.setInput} 
-                          placeholder="kg" 
-                          placeholderTextColor="#888" 
-                          keyboardType="decimal-pad" 
-                          value={String(item.peso || '')} 
-                          onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = text as any; setEditingSeries(newSets); }} 
-                          onEndEditing={(e) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0; setEditingSeries(newSets); }}
-                        />
-                      )}
-                      <SetOptionsMenu isTimeBased={!!item.isTimeBased} isNormalSet={(item.type || 'normal') === 'normal'} onSelect={(action) => handleSetOption(action, itemIndex)} />
+                        {exercise?.modelo?.caracteristicas?.isPesoCorporal ? (
+                          <View style={styles.bodyWeightContainer}>
+                            <Text style={styles.bodyWeightText}>Peso Corporal</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.inputContainer}>
+                            <Text style={styles.inputLabel}>Peso (kg)</Text>
+                            <TextInput 
+                              style={styles.setInput} 
+                              placeholder="kg" 
+                              placeholderTextColor="#888" 
+                              keyboardType="decimal-pad" 
+                              editable={!isTimeBased}
+                              value={String(item.peso || '')} 
+                              onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = text as any; setEditingSeries(newSets); }} 
+                              onEndEditing={(e) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0; setEditingSeries(newSets); }}
+                            />
+                          </View>
+                        )}
+                        <SetOptionsMenu isTimeBased={!!item.isTimeBased} isNormalSet={(item.type || 'normal') === 'normal'} onSelect={(action) => handleSetOption(action, itemIndex)} />
+                      </View>
                     </View>
-                  </View>
-                );
-              }}
-              ListFooterComponent={
-                <>
-                  {!exercise?.isBiSet && (
-                    <TouchableOpacity style={styles.addSetButton} onPress={() => setEditingSeries([...editingSeries, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}>
-                      <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
-                    </TouchableOpacity>
-                  )}
-                </>
-              }
-            />
-            <View style={styles.modalFooter}>
-              {exercise?.modelo?.caracteristicas?.usaBarra && (
-                <View style={styles.barbellWeightCard}>
-                  <Text style={styles.barbellWeightLabel}>Peso da Barra</Text>
-                  <TextInput
-                    style={styles.barbellWeightInput}
-                    value={String(pesoBarra)}
-                    onChangeText={(text) => setPesoBarra(text as any)}
-                    onEndEditing={(e) => setPesoBarra(parseFloat(e.nativeEvent.text.replace(',', '.')) || 0)}
-                    keyboardType="decimal-pad"
-                    placeholder="kg"
-                    placeholderTextColor="#888"
-                  />
-                </View>
-              )}
-              {exercise?.modelo?.caracteristicas?.isPesoBilateral &&
-                !exercise?.modelo?.caracteristicas?.usaBarra &&
-                editingSeries.length > 0 && (
-                <View style={styles.bilateralInfoCard}>
-                  <View style={styles.dumbbellIconContainer}>
-                    <View style={styles.dumbbellWithWeight}>
-                      <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
-                      <Text style={styles.dumbbellWeightText}>{editingSeries[0].peso || 0} kg</Text>
-                    </View>
-                    <View style={styles.dumbbellWithWeight}>
-                      <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
-                      <Text style={styles.dumbbellWeightText}>{editingSeries[0].peso || 0} kg</Text>
-                    </View>
-                  </View>
-                </View>
-              )}
-              {exercise?.modelo?.caracteristicas?.usaBarra && editingSeries.length > 0 && (
-                <View style={styles.bilateralInfoCard}>
-                  <View style={styles.barbellIconContainer}>
-                    <Image
-                      source={require('../../../assets/images/Exercicios/ilustracaoBarra.png')}
-                      style={styles.barbellImage}
-                      resizeMode="contain"
+                  );
+                }}
+                ListFooterComponent={
+                  <>
+                    {!exercise?.isBiSet && (
+                      <TouchableOpacity style={styles.addSetButton} onPress={() => setEditingSeries([...editingSeries, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}>
+                        <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+                      </TouchableOpacity>
+                    )}
+                  </>
+                }
+              />
+              <View style={styles.modalFooter}>
+                {exercise?.modelo?.caracteristicas?.usaBarra && (
+                  <View style={styles.barbellWeightCard}>
+                    <Text style={styles.barbellWeightLabel}>Peso da Barra</Text>
+                    <TextInput
+                      style={styles.barbellWeightInput}
+                      value={String(pesoBarra)}
+                      onChangeText={(text) => setPesoBarra(text as any)}
+                      onEndEditing={(e) => setPesoBarra(parseFloat(e.nativeEvent.text.replace(',', '.')) || 0)}
+                      keyboardType="decimal-pad"
+                      placeholder="kg"
+                      placeholderTextColor="#888"
                     />
                   </View>
-                  <View style={styles.barbellWeightDistribution}>
-                    <Text style={styles.dumbbellWeightText}>{editingSeries[0].peso || 0} kg</Text>
-                    <Text style={styles.barbellCenterWeightText}>{pesoBarra || 0} kg</Text>
-                    <Text style={styles.dumbbellWeightText}>{editingSeries[0].peso || 0} kg</Text>
+                )}
+                {exercise?.modelo?.caracteristicas?.isPesoBilateral &&
+                  !exercise?.modelo?.caracteristicas?.usaBarra &&
+                  editingSeries.length > 0 && (
+                  <View style={styles.bilateralInfoCard}>
+                    <View style={styles.dumbbellIconContainer}>
+                      <View style={styles.dumbbellWithWeight}>
+                        <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
+                        <Text style={styles.dumbbellWeightText}>{editingSeries[0].peso || 0} kg</Text>
+                      </View>
+                      <View style={styles.dumbbellWithWeight}>
+                        <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
+                        <Text style={styles.dumbbellWeightText}>{editingSeries[0].peso || 0} kg</Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
-              )}
-              <TouchableOpacity style={styles.saveButton} onPress={handleSaveChanges}>
-                <Text style={styles.saveButtonText}>Salvar</Text>
-              </TouchableOpacity>
-            </View>
+                )}
+                {exercise?.modelo?.caracteristicas?.usaBarra && editingSeries.length > 0 && (
+                  <View style={styles.bilateralInfoCard}>
+                    <View style={styles.barbellIconContainer}>
+                      <Image
+                        source={require('../../../assets/images/Exercicios/ilustracaoBarra.png')}
+                        style={styles.barbellImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <View style={styles.barbellWeightDistribution}>
+                      <Text style={styles.dumbbellWeightText}>{editingSeries[0].peso || 0} kg</Text>
+                      <Text style={styles.barbellCenterWeightText}>{pesoBarra || 0} kg</Text>
+                      <Text style={styles.dumbbellWeightText}>{editingSeries[0].peso || 0} kg</Text>
+                    </View>
+                  </View>
+                )}
+                <TouchableOpacity style={styles.saveButton} onPress={handleSaveChanges}>
+                  <Text style={styles.saveButtonText}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
+            </MenuProvider>
+            </KeyboardAvoidingView>
           </SafeAreaView>
-        </MenuProvider>
-      </KeyboardAvoidingView>
     </Modal>
   );
 };
@@ -219,8 +227,18 @@ const styles = StyleSheet.create({
     modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
     modalScrollViewContent: { padding: 20, paddingBottom: 40 },
     setRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 5, borderRadius: 8, borderBottomWidth: 1, borderBottomColor: '#2f2f2f', height: 65 },
-    setText: { color: '#fff', fontWeight: 'bold', flex: 1 },
-    setInput: { backgroundColor: '#2c2c2e', flex: 1, color: '#fff', padding: 8, borderRadius: 5, textAlign: 'center', marginHorizontal: 5 },
+    setText: { color: '#fff', fontWeight: 'bold', flex: 0.8 },
+    inputContainer: {
+      flex: 1,
+      marginHorizontal: 5,
+    },
+    inputLabel: {
+      color: '#aaa',
+      fontSize: 10,
+      textAlign: 'center',
+      marginBottom: 2,
+    },
+    setInput: { backgroundColor: '#2c2c2e', color: '#fff', padding: 8, borderRadius: 5, textAlign: 'center' },
     addSetButton: { padding: 10, marginTop: 10, backgroundColor: '#2c2c2e', borderRadius: 8, width: '100%', alignItems: 'center' },
     addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },    editingExercisePreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1f1f1f', borderRadius: 12, padding: 10, marginHorizontal: 20, marginBottom: 20, borderWidth: 1, borderColor: '#ffffff1a', },
     modalFooter: { padding: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#222', backgroundColor: '#141414' },    

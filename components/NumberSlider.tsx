@@ -13,6 +13,7 @@ interface NumberSliderProps {
   initialValue?: number;
   displayValues?: string[];
   fontSizeConfig?: { selected: number; unselected: number };
+  validRange?: { min: number; max: number }; // NOVO: Para controlar a opacidade
 }
 
 export const NumberSlider: React.FC<NumberSliderProps> = ({
@@ -25,6 +26,7 @@ export const NumberSlider: React.FC<NumberSliderProps> = ({
   initialValue,
   displayValues,
   fontSizeConfig = { selected: 36, unselected: 20 }, // Valores padrão
+  validRange, // NOVO
 }) => {
   const flatListRef = useRef<FlatList>(null);
   const itemSize = 60; // Tamanho de cada item do slider
@@ -93,10 +95,16 @@ export const NumberSlider: React.FC<NumberSliderProps> = ({
         }}
         renderItem={({ item }) => {
           const isSelected = item === value;
+          // NOVO: Verifica se o item está dentro do range válido, se houver
+          const isValid = !validRange || (item >= validRange.min && item <= validRange.max);
+
           const distance = Math.abs(item - value);
           // AJUSTE: Fontes menores
           const fontSize = isSelected ? fontSizeConfig.selected : fontSizeConfig.unselected;
-          const opacity = isSelected ? 1 : Math.max(0.2, 1 - (distance / (vertical ? 5 : 3)));
+          // AJUSTE: Usa a validade para definir a opacidade
+          const baseOpacity = isSelected ? 1 : Math.max(0.2, 1 - (distance / (vertical ? 5 : 3)));
+          const opacity = isValid ? baseOpacity : 0.25;
+
           const scale = isSelected ? 1 : Math.max(0.6, 1 - (distance / (vertical ? 10 : 5)));
           const color = isSelected ? "#fff" : `rgba(255, 255, 255, ${opacity})`;
           const displayItem = displayValues ? displayValues[item - 1] : String(item);

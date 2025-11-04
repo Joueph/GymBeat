@@ -1,8 +1,8 @@
 import { FontAwesome } from '@expo/vector-icons';
-import { useNavigation, useRouter } from 'expo-router';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import React, { memo, useEffect, useLayoutEffect, useState } from 'react';
+import React, { memo, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { db } from '../../firebaseconfig';
@@ -192,82 +192,98 @@ export default function AmigosScreen() {
   const [friendRequests, setFriendRequests] = useState<Usuario[]>([]);
 
   useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 25, marginRight: 15 }}>
-          <TouchableOpacity onPress={() => setNotificationsModalVisible(true)}>
-            <FontAwesome name="bell" size={22} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setAddFriendModalVisible(true)}>
-            <FontAwesome name="plus" size={22} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      ),
-    });
+    if (navigation) {
+      navigation.setOptions({
+        headerRight: () => (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 25, marginRight: 15 }}>
+            <TouchableOpacity onPress={() => setNotificationsModalVisible(true)}>
+              <FontAwesome name="bell" size={22} color="#fff" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setAddFriendModalVisible(true)}>
+              <FontAwesome name="plus" size={22} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        ),
+      });
+    }
   }, [navigation, user]);
 
-  useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
+  const isInitialLoad = useRef(true);
 
-    setLoading(true);
-    const unsubscribe = onSnapshot(doc(db, "users", user.uid), async (userDoc) => {
-      if (userDoc.exists()) {
-        const userProfile = { id: userDoc.id, ...userDoc.data() } as Usuario;
-
-        if (userProfile.projetos && userProfile.projetos.length > 0) {
-            const projetosPromises = userProfile.projetos.map((id: string) => getDoc(doc(db, 'projetos', id)));
-            const projetosSnapshots = await Promise.all(projetosPromises);
-            const projetosData = projetosSnapshots
-                .filter(docSnap => docSnap.exists())
-                .map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Projeto));
-            setProjetos(projetosData);
-        } else {
-            setProjetos([]);
+  useFocusEffect(
+    useCallback(() => {
+      const fetchData = async () => {
+        if (!user) { // Assuming user is the primary indicator of auth status
+          return;
         }
-        
-        const amizadesMap = userProfile.amizades || {};
+        if (!user) {
+          setLoading(false);
+          return;
+        }
 
-        const requesterIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === false);
-        const requestProfiles = await Promise.all(requesterIds.map(id => getUserProfile(id)));
-        setFriendRequests(requestProfiles.filter((p): p is Usuario => p !== null));
+        if (isInitialLoad.current) {
+          setLoading(true);
+        }
 
-        const confirmedFriendIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === true);
-        
-        const friendsDataPromises = confirmedFriendIds.map(async (friendId) => {
-          const friendProfile = await getUserProfile(friendId);
-          if (friendProfile) {
-            const weekStart = getStartOfWeek(new Date());
-            const friendLogs = await getLogsByUsuarioId(friendId);
-            const weeklyLogs = friendLogs.filter(log => {
-                const logDate = toDate(log.horarioFim);
-                return logDate && logDate >= weekStart;
+        const unsubscribe = onSnapshot(doc(db, "users", user.uid), async (userDoc) => {
+          if (userDoc.exists()) {
+            const userProfile = { id: userDoc.id, ...userDoc.data() } as Usuario;
+
+            if (userProfile.projetos && userProfile.projetos.length > 0) {
+                const projetosPromises = userProfile.projetos.map((id: string) => getDoc(doc(db, 'projetos', id)));
+                const projetosSnapshots = await Promise.all(projetosPromises);
+                const projetosData = projetosSnapshots
+                    .filter(docSnap => docSnap.exists())
+                    .map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as Projeto));
+                setProjetos(projetosData);
+            } else {
+                setProjetos([]);
+            }
+            
+            const amizadesMap = userProfile.amizades || {};
+
+            const requesterIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === false);
+            const requestProfiles = await Promise.all(requesterIds.map(id => getUserProfile(id)));
+            setFriendRequests(requestProfiles.filter((p): p is Usuario => p !== null));
+
+            const confirmedFriendIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === true);
+            
+            const friendsDataPromises = confirmedFriendIds.map(async (friendId) => {
+              const friendProfile = await getUserProfile(friendId);
+              if (friendProfile) {
+                const weekStart = getStartOfWeek(new Date());
+                const friendLogs = await getLogsByUsuarioId(friendId);
+                const weeklyLogs = friendLogs.filter(log => {
+                    const logDate = toDate(log.horarioFim);
+                    return logDate && logDate >= weekStart;
+                });
+
+                const today = new Date().toDateString();
+                const lastTrainedDate = toDate(friendProfile.lastTrained);
+                const hasTrainedToday = lastTrainedDate ? lastTrainedDate.toDateString() === today : false;
+                
+                return { ...friendProfile, hasTrainedToday, weeklyLogs };
+              }
+              return null;
             });
 
-            const today = new Date().toDateString();
-            const lastTrainedDate = toDate(friendProfile.lastTrained);
-            const hasTrainedToday = lastTrainedDate ? lastTrainedDate.toDateString() === today : false;
-            
-            return { ...friendProfile, hasTrainedToday, weeklyLogs };
+            const friendsData = (await Promise.all(friendsDataPromises)).filter(Boolean) as FriendData[];
+            setFriends(friendsData);
+
+          } else {
+            setFriends([]);
+            setFriendRequests([]);
+            setProjetos([]);
           }
-          return null;
+          setLoading(false);
         });
 
-        const friendsData = (await Promise.all(friendsDataPromises)).filter(Boolean) as FriendData[];
-        setFriends(friendsData);
+        return () => unsubscribe();
+      };
 
-      } else {
-        setFriends([]);
-        setFriendRequests([]);
-        setProjetos([]);
-      }
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
+      fetchData();
+    }, [user])
+  );
 
   const handleJoinProject = () => {
       const match = projectCode.match(/\{([^}]+)\}/);
@@ -275,9 +291,9 @@ export default function AmigosScreen() {
       if (extractedId.trim()) {
           setJoinProjectModalVisible(false);
           router.push(`/(projetos)/${extractedId.trim()}`);
-      } else {
-          Alert.alert("Código Inválido", "Por favor, insira um código de projeto válido.");
-      }
+        } else {
+            Alert.alert("Código Inválido", "Por favor, insira um código de projeto válido.");
+        }
   };
 
   const handleAddFriend = async () => {

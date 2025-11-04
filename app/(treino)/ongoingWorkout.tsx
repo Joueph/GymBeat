@@ -5,12 +5,13 @@ import { ResizeMode, Video } from 'expo-av'; // Changed from expo-video
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react'; // Removido FlatList
+import LottieView from 'lottie-react-native';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'; // Removido FlatList
 import { ActivityIndicator, Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { Log } from '@/models/log';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
-import Animated, { FadeIn, FadeOut, FadeOutUp } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOutUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Treino } from '../../models/treino';
 import { addLog } from '../../services/logService';
@@ -35,6 +36,7 @@ interface SerieEdit extends Omit<Serie, 'id'> {
   id: string;
   type: 'normal' | 'dropset';
   showMenu?: boolean;
+  concluido?: boolean; // <-- ADICIONE ESTA LINHA
 }
 
 // A new component to manage each video player instance, now with WebP support
@@ -191,6 +193,7 @@ export default function OngoingWorkoutScreen() {
   const [exerciseTime, setExerciseTime] = useState(0);
   const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
   const [userWeight, setUserWeight] = useState<number>(0);
+  const animationRef = useRef<LottieView>(null);
   
   // Novo estado para a animação da carga total no header
   const [animatedLoadValue, setAnimatedLoadValue] = useState<number | null>(null);
@@ -773,6 +776,38 @@ const completeTheSet = async () => {
     return { totalNormalSeries: total, completedNormalSeriesCount: completedCount };
   }, [treino, currentExerciseIndex, completedSets]);
 
+  const lottieSource = useMemo(() => {
+    if (!currentExercise) return null;
+
+    const totalSeriesCount = currentExercise.series.filter(s => (s.type || 'normal') === 'normal').length;
+    const currentSetNumber = completedNormalSeriesCount; // Usa a contagem de séries normais
+
+    if (totalSeriesCount === 1) {
+        return require('../../assets/images/ongoingWorkout/Ultima-serie.json');
+    }
+
+    if (totalSeriesCount === 2) {
+        if (currentSetNumber === 1) {
+            return require('../../assets/images/ongoingWorkout/Apenas-duas-series.json');
+        } else { // currentSetNumber === 2
+            return require('../../assets/images/ongoingWorkout/Ultima-serie.json');
+        }
+    }
+
+    if (currentSetNumber === 1) {
+        return require('../../assets/images/ongoingWorkout/Primeira-serie.json');
+    } else if (currentSetNumber < totalSeriesCount - 1) {
+        return require('../../assets/images/ongoingWorkout/Serie-intermediaria.json');
+    } else { // currentSetNumber === totalSeriesCount
+        return require('../../assets/images/ongoingWorkout/Ultima-serie.json');
+    }
+  }, [currentExercise, completedNormalSeriesCount]);
+
+  const handleLottiePress = () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      animationRef.current?.play();
+  };
+
   const handleEditFromList = (exercise: Exercicio) => {
     setExerciseListVisible(false); // Fecha o modal da lista
     // Um pequeno atraso para garantir que a transição entre modais seja suave
@@ -803,18 +838,8 @@ const completeTheSet = async () => {
                 <FontAwesome name="close" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Treino Rolando</Text>
-            <View style={styles.headerIconContainer}>
-                {animatedLoadValue !== null ? (
-                <Animated.View style={styles.accumulatedLoadContainer} entering={FadeIn.duration(300)} exiting={FadeOut.duration(300)}>
-                    <FontAwesome5 name="weight-hanging" size={16} color="#fff" />
-                    <Text style={styles.accumulatedLoadText}>{Math.round(animatedLoadValue)} kg</Text>
-                </Animated.View>
-                ) : (
-                <TouchableOpacity onPress={() => setOverviewModalVisible(true)}>
-                    <FontAwesome name="bar-chart" size={18} color="#fff" />
-                </TouchableOpacity>
-                )}
-            </View>
+            {/* O botão de overview foi movido para o container de ações principal */}
+            <View style={styles.headerIconContainer} />
         </View>
         <View style={styles.content}>
           <View style={styles.timerContainer}>
@@ -849,23 +874,37 @@ const completeTheSet = async () => {
             </View>
             <View style={styles.actionsContainer}>
               <TouchableOpacity style={styles.actionButton} onPress={handleEdit}><FontAwesome name={isBiSetEditing ? "check" : "pencil"} size={24} color={isBiSetEditing ? "#1cb0f6" : "#fff"} /><Text style={[styles.actionButtonText, isBiSetEditing && { color: '#1cb0f6' }]}>Editar</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.mainActionButton} onPress={handleMainAction}>
-                <FontAwesome name={currentSet?.isTimeBased ? "play" : "check"} size={40} color="#0d181c" />
-                <Text style={styles.mainActionButtonText}>
-                  {currentSet?.isTimeBased ? 'Iniciar' : 'Concluir Série'}
-                </Text>
+              
+              {currentSet?.isTimeBased ? (
+                <TouchableOpacity style={styles.mainActionButton} onPress={handleMainAction}>
+                  <FontAwesome name="play" size={40} color="#0d181c" />
+                  <Text style={styles.mainActionButtonText}>Iniciar</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity onPress={handleLottiePress} style={styles.lottieButtonContainer}>
+                  <LottieView
+                    ref={animationRef}
+                    style={styles.lottieAnimation}
+                    source={lottieSource}
+                    autoPlay={false}
+                    loop={false}
+                    onAnimationFinish={completeTheSet}
+                  />
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity style={styles.actionButton} onPress={() => setOverviewModalVisible(true)}>
+                <FontAwesome name="bar-chart" size={24} color="#fff" /><Text style={styles.actionButtonText}>Resumo</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.actionButton} onPress={handleShowList}><FontAwesome name="list-ul" size={24} color="#fff" /><Text style={styles.actionButtonText}>Lista</Text></TouchableOpacity>
             </View>
           </View>
         </View>
         <OngoingWorkoutListModal
-            visible={isExerciseListVisible}
-            onClose={() => setExerciseListVisible(false)}
-            treino={treino}
-            currentExerciseIndex={currentExerciseIndex}
-            onEditExercise={handleEditFromList}
-        />
+          visible={isExerciseListVisible}
+          onClose={() => setExerciseListVisible(false)}
+          treino={treino} currentExerciseIndex={0} onEditExercise={function (exercise: Exercicio): void {
+            throw new Error('Function not implemented.');
+          } }        />
 
         <EditExerciseModal
           visible={isEditExerciseModalVisible}
@@ -955,7 +994,17 @@ const styles = StyleSheet.create({
     actionsContainer: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', width: '100%' },
     actionButton: { alignItems: 'center', padding: 10, minWidth: 60 },
     actionButtonText: { color: '#fff', marginTop: 8, fontSize: 12 },
-    mainActionButton: { backgroundColor: '#1cb0f6', width: 120, height: 120, borderRadius: 60, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#1cb0f6', shadowOpacity: 0.4, shadowRadius: 8 },
+    mainActionButton: { backgroundColor: '#1cb0f6', width: 120, height: 120, borderRadius: 60, justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#1cb0f6', shadowOpacity: 0.4, shadowRadius: 8,  },
+    lottieButtonContainer: {
+      width: 120, 
+      height: 120, 
+      alignItems: 'center', 
+      justifyContent: 'center'
+    },
+    lottieAnimation: {
+    width: 120,
+    height: 120,
+    },
     mainActionButtonText: { color: '#0d181c', fontWeight: 'bold', marginTop: 5, fontSize: 12 },
     modalSafeArea: { flex: 1, backgroundColor: '#141414' },
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' , marginBottom: 20 },

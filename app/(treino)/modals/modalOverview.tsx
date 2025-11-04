@@ -7,6 +7,7 @@ import { ResizeMode, Video } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Platform, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import Svg, { Circle } from 'react-native-svg'; // Import Svg and Circle
 
 // Flag para detecção do Expo Go
 const IS_EXPO_GO = !__DEV__ || Platform.OS === 'ios';
@@ -64,6 +65,42 @@ const VideoListItem = React.memo(({ uri, style }: { uri: string; style: any }) =
       />
     );
 });
+
+// New CircularProgressBar component
+const CircularProgressBar = ({ progress, completed, total }: { progress: number; completed: number; total: number }) => {
+  const radius = 40; // Radius of the circle
+  const strokeWidth = 8; // Thickness of the progress bar
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (progress / 100) * circumference;
+
+  return (
+    <View style={circularProgressStyles.container}>
+      <Svg width={radius * 2} height={radius * 2} viewBox={`0 0 ${radius * 2} ${radius * 2}`}>
+        <Circle
+          stroke="#333"
+          fill="none"
+          cx={radius}
+          cy={radius}
+          r={radius - strokeWidth / 2}
+          strokeWidth={strokeWidth}
+        />
+        <Circle
+          stroke="#1cb0f6"
+          fill="none"
+          cx={radius}
+          cy={radius}
+          r={radius - strokeWidth / 2}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${radius} ${radius})`} // Start from top
+        />
+      </Svg>
+      <View style={circularProgressStyles.textContainer}><Text style={circularProgressStyles.completedText}>{completed}</Text><Text style={circularProgressStyles.totalText}>/{total}</Text></View>
+    </View>
+  );
+};
 
 const ExerciseLoadItem = React.memo(({ 
     exercise, 
@@ -355,34 +392,28 @@ export const WorkoutOverviewModal = ({
                     keyExtractor={keyExtractor}
                     renderItem={renderItem}
                     contentContainerStyle={styles.listContentContainer}
-                    removeClippedSubviews={false}
-                    maxToRenderPerBatch={5}
-                    updateCellsBatchingPeriod={50}
-                    initialNumToRender={3}
                     ListHeaderComponent={
                         <>
-                            <View style={styles.infoCard}>
-                                <Text style={styles.infoCardTitle}>Duração do Treino</Text>
-                                <Text style={styles.durationValue}>{elapsedTime}</Text>
-                            </View>
+                            <View style={styles.topCardsContainer}>
+                                <View style={[styles.infoCard, styles.halfWidthCard]}>                                    <Text style={styles.infoCardTitle}>Duração do Treino</Text>
+                                    <Text style={styles.durationValue}>{elapsedTime}</Text>
+                                </View>
 
-                            <View style={styles.infoCard}>
-                                <Text style={styles.infoCardTitle}>Progresso Geral</Text>
-                                <View style={styles.progressBarContainer}>
-                                    <View style={styles.progressBarBackground}>
-                                        <View 
-                                            style={[
-                                                styles.progressBarFill, 
-                                                { width: `${overallProgress.percentage}%` }
-                                            ]} 
+                                <View style={[styles.infoCard, styles.halfWidthCard]}>
+                                    <Text style={styles.infoCardTitle}>Progresso Geral</Text>
+                                    <View style={styles.circularProgressWrapper}>
+                                        <CircularProgressBar
+                                            progress={overallProgress.percentage}
+                                            completed={overallProgress.completed}
+                                            total={overallProgress.total}
                                         />
                                     </View>
                                     <Text style={styles.progressText}>
-                                        {overallProgress.completed}/{overallProgress.total} séries ({overallProgress.percentage}%)
+                                        {overallProgress.percentage}% concluído
                                     </Text>
                                 </View>
                             </View>
-
+                            
                             <View style={styles.infoCard}>
                                 <Text style={styles.infoCardTitle}>Carga Acumulada</Text>
                                 <Text style={styles.loadValue}>
@@ -405,19 +436,52 @@ export const WorkoutOverviewModal = ({
 }
 
 const styles = StyleSheet.create({
-    modalSafeArea: { flex: 1, backgroundColor: '#141414' },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222', marginBottom: 10 },
-    modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
-    listContentContainer: { paddingHorizontal: 15, paddingBottom: 30 },
-    infoCard: { backgroundColor: '#1C1C1E', borderRadius: 12, padding: 15, marginTop: 10, borderWidth: 1, borderColor: '#222' },
-    infoCardTitle: { color: '#aaa', fontSize: 14, marginBottom: 10 },
-    durationValue: { color: '#fff', fontSize: 28, fontWeight: 'bold', textAlign: 'center' },
-    loadValue: { color: '#fff', fontSize: 28, fontWeight: 'bold', textAlign: 'center', paddingVertical: 10 },
-    estimatedLoadLabel: { color: '#aaa', fontSize: 12, textAlign: 'center', marginTop: -5, marginBottom: 5, },
-    progressBarContainer: { paddingVertical: 5 },
-    progressBarBackground: { height: 8, backgroundColor: '#333', borderRadius: 4, overflow: 'hidden' },
-    progressBarFill: { height: '100%', backgroundColor: '#1cb0f6', borderRadius: 4 },
-    progressText: { color: '#fff', fontSize: 16, fontWeight: 'bold', textAlign: 'center', marginTop: 10 },
+    modalSafeArea: { flex: 1, backgroundColor: '#141414' }, // Existing
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222', marginBottom: 10 }, // Existing
+    modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' }, // Existing
+    listContentContainer: { paddingHorizontal: 15, paddingBottom: 30 }, // Existing
+    
+    // New styles for enqueued cards
+    topCardsContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 10,
+        gap: 10, // Space between cards
+    },
+    halfWidthCard: {
+        flex: 1, // Each card takes half the width
+        backgroundColor: '#1C1C1E',
+        borderRadius: 12,
+        padding: 15,
+        borderWidth: 1,
+        borderColor: '#222',
+        alignItems: 'center',    // Center content horizontally
+        justifyContent: 'center', // Center content vertically
+    },
+
+    infoCard: { // Existing, but now also used for the Carga Acumulada card
+        backgroundColor: '#1C1C1E',
+        borderRadius: 12,
+        padding: 15,
+        marginTop: 10, // Keep margin top for the Carga Acumulada card
+        borderWidth: 1,
+        borderColor: '#222',
+    },
+    infoCardTitle: { color: '#aaa', fontSize: 14, marginBottom: 10, textAlign: 'center' }, // Centered title
+    durationValue: { color: '#fff', fontSize: 28, fontWeight: 'bold', textAlign: 'center' }, // Existing
+    loadValue: { color: '#fff', fontSize: 28, fontWeight: 'bold', textAlign: 'center', paddingVertical: 10 }, // Existing
+    estimatedLoadLabel: { color: '#aaa', fontSize: 12, textAlign: 'center', marginTop: -5, marginBottom: 5, }, // Existing
+    
+    // Circular Progress Bar specific styles
+    circularProgressWrapper: {
+        marginVertical: 10, // Space around the circular progress bar
+    },
+    // Styles for the inner progress bar (inside each exercise item)
+    progressBarContainer: { paddingVertical: 5, marginBottom: 10 },
+    progressBarBackground: { height: 6, backgroundColor: '#333', borderRadius: 3, overflow: 'hidden' },
+    progressBarFill: { height: '100%', backgroundColor: '#1cb0f6', borderRadius: 3 },
+    progressText: { color: '#fff', fontSize: 12, fontWeight: 'bold', textAlign: 'center', marginTop: 8 },
+
     comparisonContainer: { marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#333' },
     comparisonLabel: { color: '#aaa', fontSize: 12, marginBottom: 5 },
     comparisonRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 5 },
@@ -477,4 +541,29 @@ const styles = StyleSheet.create({
     },
     historyStatLabel: { color: '#aaa', fontSize: 12, marginBottom: 5 },
     historyStatValue: { color: '#1cb0f6', fontSize: 16, fontWeight: 'bold' },
+});
+
+// Styles for the new CircularProgressBar component
+const circularProgressStyles = StyleSheet.create({
+  container: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  textContainer: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+  },
+  completedText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  totalText: {
+    color: '#aaa',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 2, // Align baseline
+  },
 });

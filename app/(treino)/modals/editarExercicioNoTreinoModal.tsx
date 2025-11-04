@@ -1,3 +1,4 @@
+import { RepetitionsDrawer } from '@/components/RepetitionsDrawer';
 import { Exercicio, Serie } from '@/models/exercicio';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -27,6 +28,9 @@ interface EditExerciseModalProps {
 export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercise }: EditExerciseModalProps) => {
   const [editingSeries, setEditingSeries] = useState<SerieEdit[]>([]);
   const [pesoBarra, setPesoBarra] = useState<number>(0);
+  // --- NOVOS ESTADOS PARA O DRAWER ---
+  const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
+  const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (exercise) {
@@ -70,6 +74,25 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
     }, 100);
   };
 
+  // --- NOVAS FUNÇÕES PARA O DRAWER ---
+  const handleRepetitionsSave = (newReps: string) => {
+    if (editingSetIndex === null) return;
+    
+    const newSets = [...editingSeries];
+    newSets[editingSetIndex].repeticoes = newReps;
+    setEditingSeries(newSets);
+    
+    // Fecha o drawer e reseta o índice
+    setIsRepDrawerVisible(false);
+    setEditingSetIndex(null);
+  };
+  
+  const getRepetitionsValue = () => {
+    if (editingSetIndex === null || !editingSeries[editingSetIndex]) {
+      return '8-12'; // Valor padrão
+    }
+    return editingSeries[editingSetIndex].repeticoes;
+  };
   const handleSaveChanges = () => {
     if (editingSeries.some(s => !s.repeticoes || String(s.repeticoes).trim() === '')) {
       Alert.alert("Erro", "Todas as séries devem ter repetições definidas.");
@@ -83,7 +106,9 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
     <Modal animationType="slide" presentationStyle="pageSheet" visible={visible} onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : "height"} 
+        // Adicionado keyboardVerticalOffset para ajustar o padding no iOS
+        keyboardVerticalOffset={Platform.OS === "ios" ? 60 : 0}
       >
         <MenuProvider>
           <SafeAreaView style={styles.modalSafeArea}>
@@ -106,9 +131,9 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
                 </View>
               </>
             )}
-            <DraggableFlatList
-              data={editingSeries}
-              style={{ width: '100%' }}
+            <View style={{ flex: 1 }}>
+              <DraggableFlatList
+              data={editingSeries} 
               contentContainerStyle={styles.modalScrollViewContent}
               keyExtractor={(item) => item.id!}
               onDragEnd={({ data }) => { if (!exercise?.isBiSet) setEditingSeries(data); }}
@@ -125,7 +150,24 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
                         <FontAwesome5 name={(item.type || 'normal') === 'normal' ? "dumbbell" : "arrow-down"} size={16} color="#888" />
                       </TouchableOpacity>
                       <Text style={styles.setText}>{(item.type || 'normal') === 'normal' ? `Série ${normalSeriesCount}` : 'Dropset'}</Text>
-                      <TextInput style={styles.setInput} placeholder={isTimeBased ? "Tempo (s)" : "Reps"} placeholderTextColor="#888" value={String(item.repeticoes)} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].repeticoes = text; setEditingSeries(newSets); }} keyboardType={isTimeBased ? 'number-pad' : 'default'} />
+                      
+                      {/* --- LÓGICA DE REPETIÇÕES ATUALIZADA --- */}
+                      <View style={styles.inputContainer}>
+                        <Text style={styles.inputLabel}>{isTimeBased ? "Tempo (s)" : "Repetições"}</Text>
+                        {isTimeBased ? (
+                          <TextInput style={styles.setInput} placeholder="Tempo (s)" placeholderTextColor="#888" value={String(item.repeticoes)} onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].repeticoes = text; setEditingSeries(newSets); }} keyboardType='number-pad' />
+                        ) : (
+                          <TouchableOpacity 
+                            style={styles.repButton}
+                            onPress={() => {
+                              setEditingSetIndex(itemIndex);
+                              setIsRepDrawerVisible(true);
+                            }}
+                          >
+                            <Text style={styles.repButtonText}>{String(item.repeticoes)}</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                       {exercise?.modelo?.caracteristicas?.isPesoCorporal ? (
                         <View style={styles.bodyWeightContainer}><Text style={styles.bodyWeightText}>Corporal</Text></View>
                       ) : (
@@ -134,11 +176,13 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
                           placeholder="kg" 
                           placeholderTextColor="#888" 
                           keyboardType="decimal-pad" 
-                          // Se for baseado em tempo, o peso é desabilitado e zerado
                           editable={!isTimeBased}
                           value={String(item.peso || '')} 
                           onChangeText={(text) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = text as any; setEditingSeries(newSets); }} 
                           onEndEditing={(e) => { const newSets = [...editingSeries]; newSets[itemIndex].peso = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0; setEditingSeries(newSets); }}
+                          // --- FIM DA ATUALIZAÇÃO ---
+
+                          // --- FIM DA ATUALIZAÇÃO ---
                         />
                       )}
                       <SetOptionsMenu
@@ -160,6 +204,7 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
                 </>
               }
             />
+            </View>
             <View style={styles.modalFooter}>
               {exercise?.modelo?.caracteristicas?.usaBarra && (
                 <View style={styles.barbellWeightCard}>
@@ -214,6 +259,17 @@ export const EditarExercicioNoTreinoModal = ({ visible, onClose, onSave, exercis
           </SafeAreaView>
         </MenuProvider>
       </KeyboardAvoidingView>
+
+      {/* --- ADIÇÃO DO COMPONENTE DRAWER --- */}
+      <RepetitionsDrawer
+        visible={isRepDrawerVisible}
+        onClose={() => {
+          setIsRepDrawerVisible(false);
+          setEditingSetIndex(null);
+        }}
+        onSave={handleRepetitionsSave}
+        initialValue={getRepetitionsValue()}
+      />
     </Modal>
   );
 };
@@ -223,9 +279,23 @@ const styles = StyleSheet.create({
     modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' , marginBottom: 20 },
     modalTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
     modalScrollViewContent: { padding: 20, paddingBottom: 40 },
-    setRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 5, borderRadius: 8, borderBottomWidth: 1, borderBottomColor: '#2f2f2f', height: 65 },
-    setText: { color: '#fff', fontWeight: 'bold', flex: 1 },
-    setInput: { backgroundColor: '#2c2c2e', flex: 1, color: '#fff', padding: 8, borderRadius: 5, textAlign: 'center', marginHorizontal: 5 },
+    setRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 5, borderRadius: 8, borderBottomWidth: 1, borderBottomColor: '#2f2f2f', height: 65 }, // Mantido
+    setText: { color: '#fff', fontWeight: 'bold', flex: 0.8 }, // Ajustado para dar espaço
+    inputContainer: {
+      flex: 1,
+      marginHorizontal: 5,
+    },
+    inputLabel: {
+      color: '#aaa',
+      fontSize: 10,
+      textAlign: 'center',
+      marginBottom: 2,
+    },
+    setInput: { 
+      backgroundColor: '#2c2c2e', 
+      color: '#fff', padding: 8, 
+      borderRadius: 5, textAlign: 'center' 
+    },
     addSetButton: { padding: 10, marginTop: 10, backgroundColor: '#2c2c2e', borderRadius: 8, width: '100%', alignItems: 'center' },
     addSetButtonText: { color: '#1cb0f6', fontWeight: 'bold' },
     editingExercisePreview: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1f1f1f', borderRadius: 12, padding: 10, marginHorizontal: 20, marginBottom: 20, borderWidth: 1, borderColor: '#ffffff1a', },
@@ -286,4 +356,17 @@ const styles = StyleSheet.create({
     },
     debugItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     debugText: { color: '#aaa', fontSize: 10 },
+    // --- NOVOS ESTILOS PARA O BOTÃO DE REPS ---
+    repButton: {
+      backgroundColor: '#2c2c2e',
+      padding: 8,
+      borderRadius: 5,
+      height: 38, // Altura para bater com o TextInput
+      justifyContent: 'center', // Centraliza o texto
+    },
+    repButtonText: {
+      color: '#fff',
+      textAlign: 'center',
+      fontWeight: '500',
+    },
 });

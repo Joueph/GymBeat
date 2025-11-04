@@ -16,7 +16,16 @@ export default function ProjetosLayout() {
       }}
     >
       <Stack.Screen name="[id]" options={{ title: 'Detalhes do Projeto' }} />
-      <Stack.Screen name="criar" options={{ title: 'Novo Projeto', presentation: 'modal' }} />
+      
+      {/* MUDANÇA AQUI: Alterado para 'transparentModal' e 'headerShown: false' */}
+      <Stack.Screen 
+        name="criar" 
+        options={{ 
+          title: 'Novo Projeto', 
+          presentation: 'transparentModal', 
+          headerShown: false 
+        }} 
+      />
     </Stack>
   );
 }

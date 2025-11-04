@@ -91,17 +91,24 @@ export const SetOptionsMenu = ({ onSelect, isTimeBased, isNormalSet }: SetOption
 // Estilos para o Popover (baseado na sua imagem)
 const menuStyles = {
   optionsContainer: {
-    backgroundColor: '#2c2c2e', // Fundo escuro
+    backgroundColor: '#2c2c2ef1', // Fundo escuro
     borderRadius: 12,          // Cantos arredondados
-    marginTop: 40,             // Deslocamento para baixo
     paddingVertical: 8,        // Espaçamento interno vertical
+    marginTop:40,
     width: 240,                // Largura (ajuste conforme preferir)
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 5,
     elevation: 8,
+    borderWidth: 1,
+    borderTopColor: '#444',
+    borderLeftColor: '#444',
+    borderRightColor: '#4444444a',
+    borderBottomColor: '#4444444a',
   },
+
+
 };
 
 // Estilos para os itens internos

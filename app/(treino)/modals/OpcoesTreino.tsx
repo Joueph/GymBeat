@@ -39,20 +39,9 @@ export default function OpcoesTreinoScreen() {
   }, [user]);
 
   const handleNavigation = (route: Href) => {
-    if (userFichas.length === 0) {
-      // Se não há fichas, cria uma primeiro
-      Alert.alert(
-        "Nenhuma Pasta Encontrada",
-        "Você precisa criar uma pasta antes de adicionar um treino. Deseja criar uma agora?",
-        [
-          { text: "Cancelar", style: "cancel" },
-          { text: "Criar Pasta", onPress: () => setNewFolderInputVisible(true) }
-        ]
-      );
-    } else {
-      setNextRoute(route);
-      setFolderModalVisible(true);
-    }
+    // Navega diretamente para a tela de edição de treino, sem forçar a seleção de uma pasta.
+    // O treino será criado como "avulso" (sem fichaId) por padrão.
+    router.push(route);
   };
 
   const handleSelectFicha = (fichaId: string) => {

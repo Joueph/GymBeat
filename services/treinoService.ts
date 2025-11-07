@@ -5,6 +5,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  orderBy,
   query,
   updateDoc,
   where,
@@ -78,9 +79,14 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
  */
 export const getTreinosByUsuarioId = async (userId: string): Promise<Treino[]> => {
   const treinosRef = collection(db, 'treinos');
-  const q = query(treinosRef, where('usuarioId', '==', userId));
+  const q = query(treinosRef, where('usuarioId', '==', userId), orderBy('ordem'));
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
+  const treinos = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
+  
+  // Fallback sort in case 'ordem' is not defined for some documents
+  treinos.sort((a, b) => (a.ordem ?? Infinity) - (b.ordem ?? Infinity));
+  
+  return treinos;
 };
 
 /**
@@ -154,6 +160,18 @@ export const updateTreino = async (treinoId: string, treinoData: Partial<Omit<Tr
 
   const treinoRef = doc(db, 'treinos', treinoId);
   await updateDoc(treinoRef, dataToUpdate);
+};
+
+/**
+ * Updates the order of multiple 'unassigned' workouts.
+ */
+export const updateTreinosOrdem = async (treinoIds: string[]): Promise<void> => {
+  const batch = writeBatch(db);
+  treinoIds.forEach((treinoId, index) => {
+    const treinoRef = doc(db, 'treinos', treinoId);
+    batch.update(treinoRef, { ordem: index });
+  });
+  await batch.commit();
 };
 
 /**

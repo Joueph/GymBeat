@@ -27,7 +27,6 @@ export default function TreinoLayout() {
           <Stack.Screen
             name="editarTreino"
             options={{
-              presentation: 'modal',
               headerShown: false,
               animation: 'slide_from_bottom',
             }}

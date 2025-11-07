@@ -1,17 +1,18 @@
 import { FontAwesome } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import { FichaMenuAction, FichaOptionsMenu } from '../../components/FichaOptionsMenu';
 
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 import { Ficha } from '../../models/ficha';
 import { Treino } from '../../models/treino';
 import { deleteFicha, getFichaAtiva, getFichasByUsuarioId, setFichaAtiva, updateFicha } from '../../services/fichaService';
-import { getTreinosByUsuarioId, updateTreino } from '../../services/treinoService';
+import { getTreinosByUsuarioId, updateTreino, updateTreinosOrdem } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 
 const DIAS_SEMANA_ORDEM: { [key: string]: number } = {
@@ -38,6 +39,7 @@ export default function MeusTreinosScreen() {
   const { user, initialized: authInitialized } = useAuth();
   const router = useRouter();
   const [folders, setFolders] = useState<Folder[]>([]);
+  const [refreshing, setRefreshing] = useState(false); // For background refresh when data already exists
   const [loading, setLoading] = useState(true);
 
   // Estado para a pasta expandida
@@ -45,68 +47,77 @@ export default function MeusTreinosScreen() {
 
   // Estado para a ficha ativa (para o tag "principal")
   const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
+  const isInitialMount = useRef(true); // To track if it's the very first mount of the component
 
+  const fetchData = useCallback(async (isBackgroundRefresh = false) => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    // Only show full-screen loading on the very first mount.
+    // For subsequent fetches (e.g., on focus), use the background refreshing indicator.
+    if (isInitialMount.current) {
+      setLoading(true);
+    } else if (isBackgroundRefresh) {
+      setRefreshing(true);
+    }
+
+    try {
+      const [todasAsFichasDoUsuario, todosOsTreinosDoUsuario, fichaAtivaDoUsuario] = await Promise.all([
+        getFichasByUsuarioId(user.id),
+        getTreinosByUsuarioId(user.id),
+        getFichaAtiva(user.id),
+      ]);
+
+      setActiveFicha(fichaAtivaDoUsuario); // Set active ficha
+
+      // Only set the default expanded folder on the very first mount
+      if (isInitialMount.current) {
+        if (fichaAtivaDoUsuario) {
+          setExpandedFolderId(fichaAtivaDoUsuario.id);
+        } else {
+          setExpandedFolderId('unassigned');
+        }
+      }
+
+      // Create folders based on user's fichas
+      const treinosMap = new Map(todosOsTreinosDoUsuario.map(t => [t.id, t]));
+      const fichaFolders: Folder[] = todasAsFichasDoUsuario.map((ficha: Ficha) => {
+        const treinosDaFicha = (ficha.treinos || [])
+          .map(treinoId => treinosMap.get(treinoId))
+          .filter((t): t is Treino => !!t); // Filter out undefined if a treino was deleted but still in the array
+        return { id: ficha.id, type: 'ficha', nome: ficha.nome, treinos: treinosDaFicha };
+      });
+
+      // Filter all workouts that don't have a fichaId for the "unassigned" folder.
+      const treinosAvulsos = todosOsTreinosDoUsuario.filter(
+        (treino) => !treino.fichaId
+      );
+
+      // Create the "Meus Treinos" (unassigned) folder.
+      const pastaAvulsa: Folder = { id: 'unassigned', type: 'unassigned', nome: 'Meus Treinos', treinos: treinosAvulsos };
+
+      // Add the "unassigned" folder to the list and sort it along with the others.
+      const allFolders = [...fichaFolders, pastaAvulsa];
+      allFolders.sort((a, b) => a.nome.localeCompare(b.nome));
+
+      setFolders(allFolders);
+    } catch (err) {
+      console.error("[treinoHoje] Erro ao carregar dados dos treinos:", err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      isInitialMount.current = false; // Mark initial mount as complete
+    }
+  }, [user, router]); // Dependencies for the fetch function itself
 
   useFocusEffect(
     useCallback(() => {
-      const fetchData = async () => {
-        if (!authInitialized) {
-          return;
-        }
-  
-        if (!user) { setLoading(false); return; }
-  
-        setLoading(true);
-        try {
-          const [todasAsFichasDoUsuario, todosOsTreinosDoUsuario, fichaAtivaDoUsuario] = await Promise.all([
-            getFichasByUsuarioId(user.id),
-            getTreinosByUsuarioId(user.id),
-            getFichaAtiva(user.id),
-          ]);
-  
-          // Se o usuário não tiver nenhum treino, redireciona para a tela de criação.
-          if (todosOsTreinosDoUsuario.length === 0) {
-            router.push('/(treino)/modals/OpcoesTreino');
-            return; // Interrompe a execução para evitar setar estados desnecessários
-          }
-
-          // Set active ficha
-          setActiveFicha(fichaAtivaDoUsuario);
-
-          // Define a pasta expandida padrão
-          if (fichaAtivaDoUsuario) {
-            setExpandedFolderId(fichaAtivaDoUsuario.id);
-          } else {
-            setExpandedFolderId('unassigned'); // Se não houver ficha principal, expande "Meus Treinos"
-          }
-
-          // Cria as pastas baseadas nas fichas do usuário
-          const fichaFolders: Folder[] = todasAsFichasDoUsuario.map((ficha: Ficha) => {
-            // Filtra os treinos que pertencem a esta ficha
-            const treinosDaFicha = todosOsTreinosDoUsuario.filter(
-              (treino) => treino.fichaId === ficha.id
-            );
-            return { id: ficha.id, type: 'ficha', nome: ficha.nome, treinos: treinosDaFicha };
-          });
-  
-          // Filtra todos os treinos que não têm um fichaId para a pasta de avulsos.
-          const treinosAvulsos = todosOsTreinosDoUsuario.filter(
-            (treino) => !treino.fichaId
-          );
-  
-          // Cria a pasta "Meus Treinos" (avulsos) e garante que ela sempre exista.
-          const pastaAvulsa: Folder = { id: 'unassigned', type: 'unassigned', nome: 'Meus Treinos', treinos: treinosAvulsos };
-  
-          setFolders([...fichaFolders, pastaAvulsa]);
-        } catch (err) {
-          console.error("Erro ao carregar dados dos treinos:", err);
-        } finally {
-          setLoading(false);
-        }
-      };
-  
-      fetchData();
-    }, [user, authInitialized])
+      if (authInitialized) {
+        fetchData(true); // Pass true to indicate a background refresh on focus
+      }
+    }, [authInitialized, fetchData])
   );
 
   const handleFichaAction = async (action: FichaMenuAction, folderId: string) => {
@@ -120,7 +131,7 @@ export default function MeusTreinosScreen() {
         try {
           // A função setFichaAtiva já retorna a ficha atualizada.
           const fichaAtualizada = await setFichaAtiva(user.id, folderId);
-          if (fichaAtualizada) {
+          if (fichaAtualizada) { // Check if fichaAtualizada is not null
             // Usamos o retorno da função para garantir que o tipo está correto.
             setActiveFicha(fichaAtualizada);
           }
@@ -139,8 +150,8 @@ export default function MeusTreinosScreen() {
           async (newName) => {
             if (newName && newName.trim() !== "") {
               await updateFicha(folderId, { nome: newName.trim() });
-              // Forçar recarregamento para ver a mudança
-              setFolders([]); 
+              // Refresh data in the background to show the change
+              fetchData(true);
             }
           },
           'plain-text',
@@ -155,8 +166,9 @@ export default function MeusTreinosScreen() {
       case 'delete':
         Alert.alert("Deletar Ficha", `Tem certeza que deseja deletar a ficha "${ficha.nome}"? Todos os treinos nela serão movidos para "Meus Treinos".`, [{ text: "Cancelar", style: "cancel" }, {
           text: "Deletar", style: "destructive", onPress: async () => {
-            const treinoIds = ficha.treinos.map(t => t.id);
-            await deleteFicha(folderId, treinoIds); setFolders([]);
+            const treinoIds = ficha.treinos.map(t => t.id); // Get IDs of workouts in this ficha
+            await deleteFicha(folderId, treinoIds);
+            fetchData(true); // Refresh data in the background
           }
         }]);
         break;
@@ -184,81 +196,72 @@ export default function MeusTreinosScreen() {
     });
   };
 
-  const handleDragEnd = async ({ data: newDisplayItems, from, to }: { data: DisplayItem[], from: number, to: number }) => {
-    // Encontra o item que foi arrastado a partir do estado original
-    const draggedItem = displayItems[from];
-    if (draggedItem.type !== 'workout') {
-      // Se não for um treino, não faz nada (não deveria acontecer)
-      return;
-    }
-  
-    // Encontra a nova pasta de destino
-    const newParentFolderItem = newDisplayItems.slice(0, to).reverse().find(d => d.type === 'folder');
-  
-    // 1. Impede que o treino seja solto fora de uma pasta
-    if (!newParentFolderItem) {
-      Alert.alert("Movimento Inválido", "Um treino deve sempre pertencer a uma pasta.");
-      // Não atualiza o estado, revertendo visualmente a ação.
-      return;
-    }
-  
-    // 2. Atualiza a UI otimistamente para a mudança ser instantânea
-    setFolders(prevFolders => {
-      const newFoldersState = JSON.parse(JSON.stringify(prevFolders)); // Deep copy para evitar mutação
-  
-      const originalParentFolder = newFoldersState.find((f: Folder) => f.treinos.some((t: Treino) => t.id === draggedItem.id)) as Folder | undefined;
-  
-      if (originalParentFolder) {
-        // Remove o treino da pasta original
-        originalParentFolder.treinos = originalParentFolder.treinos.filter((t: Treino) => t.id !== draggedItem.id);
-      }
-  
-      // Adiciona o treino à nova pasta
-      const targetFolder = newFoldersState.find((f: Folder) => f.id === newParentFolderItem.id) as Folder | undefined;
-      if (targetFolder) {
-        targetFolder.treinos.push(draggedItem.data as Treino);
-      }
-      
-      return newFoldersState;
-    });
-  
-    const treinoId = draggedItem.id;
-    // CORREÇÃO: Garante que o valor seja `null` para 'unassigned', e não `undefined`.
-    const targetFichaId = newParentFolderItem.id === 'unassigned' ? null : newParentFolderItem.id;
-  
-    try {
-      // 3. Atualiza o backend
-      // Primeiro, atualiza o documento do treino para refletir a nova ficha
-      await updateTreino(treinoId, { fichaId: targetFichaId ?? undefined });
+const handleDragEnd = async ({ data: newDisplayItems, from, to }: { data: DisplayItem[], from: number, to: number }) => {
+  const draggedItem = displayItems[from];
+  if (draggedItem.type !== 'workout' || !draggedItem.data) return;
 
-      // Encontra as fichas (documentos) originais para atualizar seus arrays de treinos
-      const originalParentFolderDoc = folders.find(f => f.treinos.some(t => t.id === draggedItem.id));
+  const originalParentFolderItem = displayItems.slice(0, from).reverse().find(d => d.type === 'folder');
+  const newParentFolderItem = newDisplayItems.slice(0, to).reverse().find(d => d.type === 'folder');
 
-      // Remove o treino da ficha antiga no Firestore
-      if (originalParentFolderDoc && originalParentFolderDoc.type === 'ficha') {
-        const treinosAtualizados = originalParentFolderDoc.treinos.filter(t => t.id !== treinoId).map(t => t.id);
-        await updateFicha(originalParentFolderDoc.id, { treinos: treinosAtualizados });
+  // 🚫 Caso o treino tenha sido solto fora de qualquer pasta
+  if (!newParentFolderItem?.id || !originalParentFolderItem?.id) {
+    // Retorna imediatamente o treino para o estado anterior (sem popup, sem reload)
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    setFolders(prev => [...prev]); // força re-render rápido
+    return;
+  }
+
+  const isReorder = originalParentFolderItem.id === newParentFolderItem.id;
+  const newFoldersState = JSON.parse(JSON.stringify(folders));
+
+  const originalFolderIndex = newFoldersState.findIndex((f: Folder) => f.id === originalParentFolderItem.id);
+  const targetFolderIndex = isReorder ? originalFolderIndex : newFoldersState.findIndex((f: Folder) => f.id === newParentFolderItem.id);
+
+  if (originalFolderIndex === -1 || targetFolderIndex === -1) return;
+
+  const workoutIndex = newFoldersState[originalFolderIndex].treinos.findIndex((t: Treino) => t.id === draggedItem.id);
+  const [workout] = newFoldersState[originalFolderIndex].treinos.splice(workoutIndex, 1);
+
+  if (isReorder) {
+    const targetIndex = newDisplayItems
+      .slice(0, to)
+      .filter(item => item.type === 'workout' && (item.data as Treino).fichaId === originalParentFolderItem.id)
+      .length;
+    newFoldersState[targetFolderIndex].treinos.splice(targetIndex, 0, workout);
+  } else {
+    newFoldersState[targetFolderIndex].treinos.push(workout);
+  }
+
+  setFolders(newFoldersState);
+
+  try {
+    if (isReorder) {
+      const reorderedWorkoutIds = newFoldersState[targetFolderIndex].treinos.map((t: Treino) => t.id);
+      if (newFoldersState[targetFolderIndex].type === 'ficha') {
+        await updateFicha(newFoldersState[targetFolderIndex].id, { treinos: reorderedWorkoutIds });
+      } else {
+        await updateTreinosOrdem(reorderedWorkoutIds);
+      }
+    } else {
+      const treinoId = draggedItem.id;
+      const newFichaId = newParentFolderItem.id === 'unassigned' ? null : newParentFolderItem.id;
+      await updateTreino(treinoId, { fichaId: newFichaId ?? undefined });
+
+      if ((originalParentFolderItem.data as Folder).type === 'ficha') {
+        const originalTreinoIds = newFoldersState[originalFolderIndex].treinos.map((t: Treino) => t.id);
+        await updateFicha(originalParentFolderItem.id, { treinos: originalTreinoIds });
       }
 
-      // Adiciona o treino à nova ficha no Firestore
-      if (targetFichaId) {
-        const targetFichaDoc = folders.find(f => f.id === targetFichaId);
-        if (targetFichaDoc) {
-          const treinosAtualizados = [...targetFichaDoc.treinos.map(t => t.id), treinoId];
-          await updateFicha(targetFichaId, { treinos: treinosAtualizados });
-        }
+      if (newFoldersState[targetFolderIndex].type === 'ficha') {
+        const targetTreinoIds = newFoldersState[targetFolderIndex].treinos.map((t: Treino) => t.id);
+        await updateFicha(newFoldersState[targetFolderIndex].id, { treinos: targetTreinoIds });
       }
-  
-      // A UI já foi atualizada otimistamente. Apenas confirmamos.
-      // Se a operação falhar, o bloco catch irá lidar com isso.
-  
-    } catch (error) {
-      console.error("Erro ao mover o treino:", error);
-      Alert.alert("Erro", "Não foi possível mover o treino. Tente novamente.");
-      // Em caso de erro, força o recarregamento para buscar o estado real do banco de dados.
-      setFolders([]);
     }
-  };
+  } catch (error) {
+    console.error("Erro ao mover/reordenar treino:", error);
+    setFolders(folders); // reverte visualmente sem quebrar
+  }
+};
 
   const displayItems = useMemo(() => {
     const items: DisplayItem[] = [];
@@ -284,7 +287,7 @@ export default function MeusTreinosScreen() {
     return <View style={styles.centeredContainer}><ActivityIndicator size="large" color="#00A6FF" /></View>;
   }
 
-  return (
+  return ( // Main render
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
         <View style={styles.headerContainer}>
@@ -294,67 +297,84 @@ export default function MeusTreinosScreen() {
           </TouchableOpacity>
         </View>
 
-        <DraggableFlatList
-          data={displayItems}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 15, paddingTop: 10 }}
-          onDragEnd={handleDragEnd}
-          renderItem={({ item, drag, isActive }: RenderItemParams<DisplayItem>) => {
-            if (item.type === 'folder') {
-              return (
-                <View
-                  // Adiciona uma key única para o wrapper para ajudar o React a identificar o item
-                  key={`folder-wrapper-${item.id}`}
-                  style={styles.folderWrapper}
-                >
-                  <TouchableOpacity style={styles.folderCard} onPress={() => handleFolderPress(item.id)}>
-                    <View style={styles.folderInfo}>
+        {refreshing && ( // Show a small indicator for background refresh
+          <ActivityIndicator size="small" color="#00A6FF" style={{ marginTop: 10, marginBottom: 10 }} />
+        )}
+
+        {folders.length === 0 && !loading && !refreshing ? ( // Show empty state if no folders and not loading/refreshing
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>Nenhum treino encontrado.</Text>
+            <Text style={styles.emptySubText}>Crie seu primeiro treino para começar!</Text>
+            <TouchableOpacity style={styles.addWorkoutButton} onPress={() => router.push('/(treino)/modals/OpcoesTreino')}>
+              <FontAwesome name="plus" size={18} color="#fff" />
+              <Text style={styles.addWorkoutButtonText}>Criar Treino</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <DraggableFlatList
+            data={displayItems}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingHorizontal: 15, paddingTop: 10 }}
+            onDragEnd={handleDragEnd}
+            renderItem={({ item, drag, isActive }: RenderItemParams<DisplayItem>) => {
+              if (item.type === 'folder') {
+                return (
+                  <View
+                    // Adiciona uma key única para o wrapper para ajudar o React a identificar o item
+                    key={`folder-wrapper-${item.id}`}
+                    style={styles.folderWrapper}
+                  >
+                    <TouchableOpacity style={styles.folderCard} onPress={() => handleFolderPress(item.id)}>
+                      <View style={styles.folderInfo}>
                       <FontAwesome name={item.isExpanded ? "arrow-up" : "arrow-down"} size={16} color="#555" />
                       <Text style={styles.folderName}>{(item.data as Folder).nome}</Text>
                       {item.isPrincipal && <Text style={styles.principalTag}>principal</Text>}
-                    </View>
+                      </View>
                     {(item.data as Folder).type === 'ficha' && (
                       <FichaOptionsMenu
                         isPrincipal={!!item.isPrincipal}
                         onSelect={(action) => handleFichaAction(action, item.id)}
-                      />
-                    )}
-                  </TouchableOpacity>
-                </View>
-              );
-            }
+                        />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              }
 
-            if (item.type === 'workout') {
-              return (
-                <ScaleDecorator key={`workout-decorator-${item.id}`}>
-                  <TouchableOpacity
-                    onLongPress={() => {
-                      // Adiciona o feedback tátil ao iniciar o arrasto
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      drag();
-                    }}
-                    disabled={isActive}
-                    style={[styles.workoutCard, { opacity: isActive ? 0.5 : 1 }]}
-                    onPress={() => router.push({ pathname: '/(treino)/editarTreino', params: { treinoId: item.id, fichaId: (item.data as Treino).fichaId, isModal: 'true', fromConfig: 'true' } })}
-                  >
-                    <View style={styles.workoutCardContent}>
-                      <Text style={styles.workoutCardTitle}>{(item.data as Treino).nome}</Text>
-                      <Text style={styles.workoutCardSubtitle}>
-                        {(item.data as Treino).diasSemana.length > 0
-                          ? (item.data as Treino).diasSemana.join(', ').toUpperCase()
-                          : 'Sem dia definido'}
-                      </Text>
-                    </View>
-                    <FontAwesome name="chevron-right" size={18} color="#555" />
-                  </TouchableOpacity>
-                </ScaleDecorator>
-              );
-            }
+              if (item.type === 'workout') {
+                const index = (displayItems.filter(i => i.type === 'workout' && i.id !== item.id && (i.data as Treino).fichaId === (item.data as Treino).fichaId).findIndex(i => i.id === item.id) + 1) || 0;
+                return (
+                  <Animated.View entering={FadeInUp.duration(300).delay(index * 50)}>
+                    <ScaleDecorator key={`workout-decorator-${item.id}`}>
+                      <TouchableOpacity
+                        onLongPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          drag();
+                        }}
+                        disabled={isActive}
+                        style={[styles.workoutCard, { opacity: isActive ? 0.5 : 1 }]}
+                        onPress={() => router.push({ pathname: '/(treino)/editarTreino', params: { treinoId: item.id, fichaId: (item.data as Treino).fichaId, isModal: 'true', fromConfig: 'true' } })}
+                      >
+                        <View style={styles.workoutCardContent}>
+                          <Text style={styles.workoutCardTitle}>{(item.data as Treino).nome}</Text>
+                          <Text style={styles.workoutCardSubtitle}>
+                            {(item.data as Treino).diasSemana.length > 0
+                              ? (item.data as Treino).diasSemana.join(', ').toUpperCase()
+                              : 'Sem dia definido'}
+                          </Text>
+                        </View>
+                        <FontAwesome name="chevron-right" size={18} color="#555" />
+                      </TouchableOpacity>
+                    </ScaleDecorator>
+                  </Animated.View>
+                );
+              }
 
-            return null;
-          }}
-          ListFooterComponent={<View style={{ height: 20 }} />}
-        />
+              return null;
+            }}
+            ListFooterComponent={<View style={{ height: 20 }} />}
+          />
+        )}
         <OngoingWorkoutFooter />
       </View>
     </GestureHandlerRootView>

@@ -1,4 +1,7 @@
 import { RepetitionsDrawer } from '@/components/RepetitionsDrawer';
+import { RestTimeDrawer } from '@/components/RestTimeDrawer';
+import { SetOptionsMenu } from '@/components/SetOptionsMenu';
+import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { Log } from '@/models/log';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
@@ -12,14 +15,13 @@ import {
   FlatList,
   Image,
   LayoutAnimation,
-  Modal,
   Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   UIManager,
-  View,
+  View
 } from 'react-native';
 import {
   GestureHandlerRootView,
@@ -27,7 +29,6 @@ import {
 import { MenuProvider } from 'react-native-popup-menu';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SetOptionsMenu } from '../../components/SetOptionsMenu';
 import { Treino } from '../../models/treino';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
 import { getTreinoById } from '../../services/treinoService';
@@ -71,6 +72,7 @@ const LoggedExerciseCard = ({
   onNotesChange,
   userWeight,
   onPesoBarraChange,
+  startRestTimer, // This prop is passed but its type needs to be updated
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -79,11 +81,14 @@ const LoggedExerciseCard = ({
   onNotesChange: (notes: string) => void;
   userWeight: number;
   onPesoBarraChange: (newPesoBarra: number) => void; // New prop
+  startRestTimer: (duration: number, isExercise: boolean, timedSetInfo?: { exerciseIndex: number, setIndex: number }) => void;
 }) => {
   const { VideoListItem } = require('./editarTreino');
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
   const [exerciseNotes, setExerciseNotes] = useState(item.notes || '');
+  const [isExerciseTimeDrawerVisible, setIsExerciseTimeDrawerVisible] = useState(false);
+
   const [isRestTimePickerVisible, setIsRestTimePickerVisible] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAdvancedOptionsVisible, setIsAdvancedOptionsVisible] = useState(false);
@@ -126,6 +131,12 @@ const LoggedExerciseCard = ({
           ...newSets[index],
           id: `set-${Date.now()}`,
         });
+      } else if (option === 'toggleTime') {
+        const currentSet = newSets[index];
+        currentSet.isTimeBased = !currentSet.isTimeBased;
+        currentSet.repeticoes = currentSet.isTimeBased ? '60' : '10'; // Default to 60s or 10 reps
+        if (currentSet.isTimeBased)
+          currentSet.peso = 0; // Reset weight for time-based sets
       } else if (option === 'addDropset') {
         const parentSet = newSets[index];
         newSets.splice(index + 1, 0, {
@@ -140,6 +151,13 @@ const LoggedExerciseCard = ({
     }, 100);
   };
 
+  const getRepetitionsValue = useCallback(() => {
+    if (editingSetIndex === null || !series[editingSetIndex]) {
+      return '10';
+    }
+    return String(series[editingSetIndex].repeticoes);
+  }, [editingSetIndex, series]);
+
   const handleRepetitionsSave = (newReps: string) => {
     if (editingSetIndex === null) return;
     const newSets = [...series];
@@ -149,17 +167,11 @@ const LoggedExerciseCard = ({
     setEditingSetIndex(null);
   };
 
-  const getRepetitionsValue = useCallback(() => {
-    if (editingSetIndex === null || !series[editingSetIndex]) {
-      return '10';
-    }
-    return series[editingSetIndex].repeticoes;
-  }, [editingSetIndex, series]);
-
-  const handleToggleComplete = (index: number, startRestTimer: (duration: number) => void) => {
+  const handleToggleComplete = (index: number, exerciseIndex: number) => {
     const newSeries = [...series];
-    const isCompleting = !newSeries[index].concluido;
-    newSeries[index].concluido = isCompleting;
+    const set = newSeries[index];
+    const isCompleting = !set.concluido;
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (isCompleting && newSeries[index].type === 'normal') {
@@ -169,21 +181,23 @@ const LoggedExerciseCard = ({
 
       if (!isLastNormalSet) {
         const nextSet = newSeries[index + 1];
-        if (!nextSet || nextSet.type !== 'dropset') {
-          startRestTimer(item.restTime || 60);
+        if (set.isTimeBased) {
+          const duration = parseInt(String(set.repeticoes), 10);
+          if (!isNaN(duration) && duration > 0) {
+            startRestTimer(duration, true, { exerciseIndex, setIndex: index });
+            return; // Don't complete the set locally, parent will do it.
+          }
+        } else {
+          if (!nextSet || nextSet.type !== 'dropset') {
+            startRestTimer(item.restTime || 60, false);
+          }
         }
       }
     }
+
+    newSeries[index].concluido = isCompleting;
     handleSeriesUpdate(newSeries);
   };
-
-  const REST_TIME_OPTIONS = [
-    { label: '30 seg', value: 30 },
-    { label: '1 min', value: 60 },
-    { label: '1 min 30 seg', value: 90 },
-    { label: '2 min', value: 120 },
-    { label: '2 min 30 seg', value: 150 },
-  ];
 
   const formatRestTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
@@ -236,37 +250,54 @@ const LoggedExerciseCard = ({
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>{setItem.isTimeBased ? 'Tempo (s)' : 'Reps'}</Text>
             <TouchableOpacity
-              style={styles.repButton}
+              style={[styles.repButton, setItem.isTimeBased && styles.timeBasedButton]}
               onPress={() => {
-                if (!setItem.isTimeBased) {
+                if (setItem.isTimeBased) {
+                  setEditingSetIndex(itemIndex);
+                  setIsExerciseTimeDrawerVisible(true);
+                } else {
                   setEditingSetIndex(itemIndex);
                   setIsRepDrawerVisible(true);
                 }
               }}
-              disabled={!!setItem.isTimeBased}
             >
-              <Text style={styles.repButtonText}>{String(setItem.repeticoes)}</Text>
+              {setItem.isTimeBased && <FontAwesome name="clock-o" size={16} color="#fff" />}
+              <Text style={[styles.repButtonText, setItem.isTimeBased && { marginLeft: 8 }]}>
+                {setItem.isTimeBased
+                  ? formatRestTime(parseInt(String(setItem.repeticoes), 10) || 0)
+                  : String(setItem.repeticoes)}
+              </Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.xText}>x</Text>
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Peso (kg)</Text>
-            <TextInput
-              style={styles.setInput}
-              placeholder="kg"
-              placeholderTextColor="#888"
-              keyboardType="decimal-pad"
-              value={String(setItem.peso || '')}
-              onChangeText={text => {
-                const newSets = [...series];
-                newSets[itemIndex].peso = parseFloat(text.replace(',', '.')) || 0;
-                handleSeriesUpdate(newSets);
-              }}
-            />
-          </View>
+          <Text style={styles.xText}>x</Text>          
+          {item.modelo.caracteristicas?.isPesoCorporal ? (
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Peso</Text>
+              <View style={[styles.setInput, styles.bodyWeightContainer]}>
+                <Text style={styles.bodyWeightText}>Corporal</Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Peso (kg)</Text>
+              <TextInput
+                style={styles.setInput}
+                placeholder="kg"
+                placeholderTextColor="#888"
+                keyboardType="decimal-pad"
+                editable={!setItem.isTimeBased}
+                value={String(setItem.peso || '')}
+                onChangeText={text => {
+                  const newSets = [...series];
+                  newSets[itemIndex].peso = parseFloat(text.replace(',', '.')) || 0;
+                  handleSeriesUpdate(newSets);
+                }}
+              />
+            </View>
+          )}
           <TouchableOpacity
             style={styles.checkboxContainer}
-            onPress={() => handleToggleComplete(itemIndex, () => {})}
+            onPress={() => handleToggleComplete(itemIndex, 0)} // TODO: Pass correct exerciseIndex
           >
             <FontAwesome name={setItem.concluido ? 'check-square' : 'square-o'} size={24} color={setItem.concluido ? '#1cb0f6' : '#aaa'} />
           </TouchableOpacity>
@@ -280,7 +311,7 @@ const LoggedExerciseCard = ({
     );
   };
 
-  const exerciseVolume = calculateTotalVolume([{ ...item, series }], userWeight, true);
+  const exerciseVolume = calculateTotalVolume([{ ...item, series: series }], userWeight, true);
 
   return (
     <View style={styles.exercicioCard}>
@@ -463,39 +494,15 @@ const LoggedExerciseCard = ({
         </View>
       )}
 
-      <Modal
-        animationType="slide"
-        transparent={true}
+      <RestTimeDrawer
         visible={isRestTimePickerVisible}
-        onRequestClose={() => setIsRestTimePickerVisible(false)}
-      >
-        <View style={styles.centeredView}>
-          <View style={styles.modalView}>
-            <Text style={styles.modalTitle}>Tempo de Descanso</Text>
-            {REST_TIME_OPTIONS.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.modalOptionButton,
-                  (item.restTime || 60) === option.value && styles.modalOptionButtonSelected,
-                ]}
-                onPress={() => {
-                  onRestTimeChange(option.value);
-                  setIsRestTimePickerVisible(false);
-                }}
-              >
-                <Text style={styles.modalOptionText}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={[styles.modalOptionButton, { marginTop: 15, backgroundColor: '#555' }]} 
-              onPress={() => setIsRestTimePickerVisible(false)}
-            >
-              <Text style={styles.modalOptionText}>Cancelar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
+        onClose={() => setIsRestTimePickerVisible(false)}
+        onSave={(newRestTime) => {
+          onRestTimeChange(newRestTime);
+          setIsRestTimePickerVisible(false);
+        }}
+        initialValue={item.restTime || 60}
+      />
       <RepetitionsDrawer
         visible={isRepDrawerVisible}
         onClose={() => {
@@ -504,6 +511,18 @@ const LoggedExerciseCard = ({
         }}
         onSave={handleRepetitionsSave}
         initialValue={getRepetitionsValue()}
+      />
+      <TimeBasedSetDrawer
+        visible={isExerciseTimeDrawerVisible}
+        onClose={() => setIsExerciseTimeDrawerVisible(false)}
+        onSave={(newDuration: number) => {
+          if (editingSetIndex !== null) {
+            const newSets = [...series];
+            newSets[editingSetIndex].repeticoes = String(newDuration);
+            handleSeriesUpdate(newSets);
+          }
+        }}
+        initialValue={editingSetIndex !== null ? parseInt(String(series[editingSetIndex]?.repeticoes), 10) || 60 : 60}
       />
     </View>
   );
@@ -530,9 +549,14 @@ export default function LoggingDuringWorkoutScreen() {
   const [isResting, setIsResting] = useState(false);
   const [restCountdown, setRestCountdown] = useState(0);
   const [maxRestTime, setMaxRestTime] = useState(0);
+  // Novos estados para o timer do exercício
+  const [isDoingExercise, setIsDoingExercise] = useState(false);
+  const [exerciseCountdown, setExerciseCountdown] = useState(0);
+  const [maxExerciseTime, setMaxExerciseTime] = useState(0);
+  const [setBeingTimed, setSetBeingTimed] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const progress = useSharedValue(0);
   const scrollY = useSharedValue(0); // Restaurado
-
+  
   // Efeito para carregar do cache ou inicializar um novo treino
   useEffect(() => {
     const loadWorkout = async () => {
@@ -651,44 +675,6 @@ export default function LoggingDuringWorkoutScreen() {
     }
   }, [loggedExercises, userWeight]);
 
-  // Efeito para o timer de descanso
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined;
-    if (isResting) {
-      // Inicia a animação da barra de progresso
-      progress.value = withTiming(1, { duration: restCountdown * 1000 });
-
-      // Inicia o contador regressivo
-      interval = setInterval(() => {
-        setRestCountdown((prev) => {
-          const newTime = prev - 1;
-          if (newTime <= 0) {
-            clearInterval(interval);
-            setIsResting(false);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            return 0;
-          }
-          // Feedback tátil para os últimos segundos
-          if (newTime <= 3 && newTime >= 1) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }
-          return newTime;
-        });
-      }, 1000);
-    } else {
-      // Garante que tudo seja resetado quando não estiver descansando
-      cancelAnimation(progress);
-      progress.value = 0;
-      setRestCountdown(0);
-    }
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [isResting]);
-
   // Efeito para salvar o estado no cache
   useEffect(() => {
     if (!activeLogId || !user || !startTime) return;
@@ -701,6 +687,7 @@ export default function LoggingDuringWorkoutScreen() {
         diasSemana: [],
         intervalo: { min: 1, seg: 0 }, // Default interval
         exercicios: loggedExercises,
+        ordem: 0
       };
 
       const log: Log = {
@@ -725,21 +712,101 @@ export default function LoggingDuringWorkoutScreen() {
   }, [loggedExercises, workoutName, startTime, totalLoad, activeLogId, user]);
 
 
-  const startRestTimer = (duration: number) => {
-    // Se um timer já estiver rodando, cancela a animação anterior
-    if (isResting) {
-      cancelAnimation(progress);
+  const startTimer = (
+    duration: number,
+    isExerciseTimer: boolean,
+    timedSetInfo?: { exerciseIndex: number; setIndex: number }
+  ) => {
+    // Cancela qualquer timer que esteja rodando
+    cancelAnimation(progress);
+    setIsResting(false);
+    setIsDoingExercise(false);
+
+    if (isExerciseTimer && timedSetInfo) {
+      setExerciseCountdown(duration);
+      setMaxExerciseTime(duration);
+      setSetBeingTimed(timedSetInfo);
+      setIsDoingExercise(true);
+    } else {
+      setRestCountdown(duration);
+      setMaxRestTime(duration);
+      setIsResting(true);
     }
-    setRestCountdown(duration);
-    setMaxRestTime(duration);
-    setIsResting(true);
-    progress.value = 0; // Reseta a barra de progresso para o início
+    progress.value = 0; // Reseta a barra de progresso
   };
+
+  // Efeito unificado para ambos os timers
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+
+    if (isResting || isDoingExercise) {
+      const duration = isDoingExercise ? exerciseCountdown : restCountdown;
+      progress.value = withTiming(1, { duration: duration * 1000 });
+
+      interval = setInterval(() => {
+        if (isDoingExercise) {
+          setExerciseCountdown((prev) => {
+            const newTime = prev - 1;
+            if (newTime <= 0) {
+              clearInterval(interval);
+              setIsDoingExercise(false);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              // Marca a série como concluída e inicia o descanso
+              if (setBeingTimed) {
+                const { exerciseIndex, setIndex } = setBeingTimed;
+                const updatedExercises = [...loggedExercises];
+                const exercise = updatedExercises[exerciseIndex];
+                (exercise.series as SerieEdit[])[setIndex].concluido = true;
+                setLoggedExercises(updatedExercises);
+                // Inicia o timer de descanso
+                startTimer(exercise.restTime || 60, false);
+              }
+              return 0;
+            }
+            if (newTime <= 3 && newTime >= 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            return newTime;
+          });
+        } else { // isResting
+          setRestCountdown((prev) => {
+            const newTime = prev - 1;
+            if (newTime <= 0) {
+              clearInterval(interval);
+              setIsResting(false);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              return 0;
+            }
+            if (newTime <= 3 && newTime >= 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            return newTime;
+          });
+        }
+      }, 1000);
+    } else {
+      // Garante que tudo seja resetado quando nenhum timer estiver ativo
+      cancelAnimation(progress);
+      progress.value = 0;
+      setRestCountdown(0);
+      setExerciseCountdown(0);
+      setSetBeingTimed(null);
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+    };
+  }, [isResting, isDoingExercise, setBeingTimed]);
+
 
   const handleSkipRest = () => {
     setIsResting(false);
-    setRestCountdown(0);
+    setIsDoingExercise(false); // Também para o timer de exercício
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  };
+
+  const handleUpdateExerciseSeries = (exerciseIndex: number, newSeries: SerieEdit[]) => {
+    const updatedExercises = [...loggedExercises];
+    updatedExercises[exerciseIndex].series = newSeries;
+    setLoggedExercises(updatedExercises);
   };
 
   const animatedProgressStyle = useAnimatedStyle(() => {
@@ -753,27 +820,6 @@ export default function LoggingDuringWorkoutScreen() {
       // Este handler será usado no onScroll da FlatList
     };
   }, []);
-
-  const handleToggleSetComplete = (exerciseIndex: number, setIndex: number) => {
-    // Esta função agora centraliza a lógica de completar a série e iniciar o timer
-    const exercise = loggedExercises[exerciseIndex];
-    const series = exercise.series as SerieEdit[];
-    const isCompleting = !series[setIndex].concluido;
-    series[setIndex].concluido = isCompleting;
-
-    // Atualiza o estado
-    const updatedExercises = [...loggedExercises];
-    updatedExercises[exerciseIndex].series = series;
-    setLoggedExercises(updatedExercises);
-
-    // Lógica para iniciar o timer
-    if (isCompleting && series[setIndex].type === 'normal') {
-      const nextSet = series[setIndex + 1];
-      if (!nextSet || nextSet.type !== 'dropset') {
-        startRestTimer(exercise.restTime || 60);
-      }
-    }
-  };
 
   const handleBack = () => {
     router.back();
@@ -856,36 +902,11 @@ export default function LoggingDuringWorkoutScreen() {
   };
 
   const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
-    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
     const s = (seconds % 60).toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
+    return `${m}:${s}`;
   };
 
-  const handleUpdateExerciseSeries = (exerciseIndex: number, newSeries: SerieEdit[]) => {
-    const updatedExercises = [...loggedExercises];
-    const oldSeries = updatedExercises[exerciseIndex].series as SerieEdit[];
-
-    // If a set was added or removed, just update the series and skip the diff logic
-    if (newSeries.length !== oldSeries.length) {
-      updatedExercises[exerciseIndex].series = newSeries.map(s => ({ ...s, concluido: s.concluido || false }));
-      setLoggedExercises(updatedExercises);
-      return;
-    }
-
-    // Detecta qual série foi alterada (completada/descompletada)
-    for (let i = 0; i < newSeries.length; i++) {
-      if (i < oldSeries.length && newSeries[i].concluido !== oldSeries[i].concluido) {
-        // A série na posição 'i' foi alterada.
-        handleToggleSetComplete(exerciseIndex, i);
-        return; // Sai para evitar re-renderizações múltiplas
-      }
-    }
-
-    // Se não foi uma mudança de 'concluido', apenas atualiza as séries (ex: reordenar)
-    updatedExercises[exerciseIndex].series = newSeries.map(s => ({ ...s, concluido: s.concluido || false }));
-    setLoggedExercises(updatedExercises);
-  };
 
   const handleRemoveExercise = (exerciseIndex: number) => {
     setLoggedExercises(prev => prev.filter((_, index) => index !== exerciseIndex));
@@ -1035,6 +1056,7 @@ export default function LoggingDuringWorkoutScreen() {
                                       setLoggedExercises(updatedExercises);
                                     }}
                                     onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
+                                    startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
                                   />
                                 )}
                                 ListFooterComponent={
@@ -1081,15 +1103,19 @@ export default function LoggingDuringWorkoutScreen() {
                                                         userWeight={userWeight}
                                                       />
                                                     </SafeAreaView>                  
-                          {isResting && (
+                          {(isResting || isDoingExercise) && (
                             <View style={styles.restTimerOverlay}>
                               <View style={styles.restTimerProgressContainer}>
                                 <Animated.View style={[styles.restTimerProgressBar, animatedProgressStyle]} />
                               </View>
                               <View style={styles.restTimerContent}>
                                 <View>
-                                  <Text style={styles.restTimerLabel}>Descanso</Text>
-                                  <Text style={styles.restTimerValue}>{formatTime(restCountdown)}</Text>
+                                  <Text style={styles.restTimerLabel}>
+                                    {isDoingExercise ? 'Exercício' : 'Descanso'}
+                                  </Text>
+                                  <Text style={styles.restTimerValue}>
+                                    {formatTime(isDoingExercise ? exerciseCountdown : restCountdown)}
+                                  </Text>
                                 </View>
                                 <TouchableOpacity style={styles.skipButton} onPress={handleSkipRest}>
                                   <FontAwesome name="forward" size={20} color="#fff" />
@@ -1111,7 +1137,7 @@ export default function LoggingDuringWorkoutScreen() {
                   
                   
                   
-                  const styles = StyleSheet.create({
+const styles = StyleSheet.create({
   headerRightContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1260,6 +1286,10 @@ export default function LoggingDuringWorkoutScreen() {
   repButtonText: {
     color: '#fff', textAlign: 'center', fontSize: 16
   },
+  timeBasedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   xText: { color: '#888', fontSize: 14, marginHorizontal: 10 },
   addSetButton: {
     padding: 15,
@@ -1312,6 +1342,17 @@ export default function LoggingDuringWorkoutScreen() {
     justifyContent: 'center',
     alignItems: 'center',
   },
+    bodyWeightContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 42, // Match the height of repButton
+  },
+  bodyWeightText: {
+    color: '#ccc',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+
   notesContainer: {
     flexDirection: 'row',
     alignItems: 'center',

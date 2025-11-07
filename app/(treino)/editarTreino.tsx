@@ -363,6 +363,7 @@ export default function EditarTreinoScreen() {
           exercicios: [],
           diasSemana: [],
           intervalo: { min: 1, seg: 30 },
+          ordem: 0, // Add default order
         });
       } else {
         // Criando um novo treino
@@ -374,6 +375,7 @@ export default function EditarTreinoScreen() {
           exercicios: [],
           diasSemana: [],
           intervalo: { min: 1, seg: 30 },
+          ordem: 0, // Add default order
         });
       }
       setLoading(false);

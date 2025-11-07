@@ -4,6 +4,7 @@ export type DiaSemana = 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab';
 
 export interface Treino {
   id: string;
+  ordem: number;
   usuarioId: string;
   nome: string;
   diasSemana: DiaSemana[];

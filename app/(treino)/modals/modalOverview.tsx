@@ -12,9 +12,9 @@ import Svg, { Circle } from 'react-native-svg'; // Import Svg and Circle
 // Flag para detecção do Expo Go
 const IS_EXPO_GO = !__DEV__ || Platform.OS === 'ios';
 
-// Adiciona a propriedade 'concluido' à interface Serie localmente
+// Adiciona a propriedade 'conclido' à interface Serie localmente
 interface SerieComStatus extends Serie {
-  concluido?: boolean;
+  conclido?: boolean;
 }
 
 // VideoListItem simplificado para Expo Go
@@ -109,6 +109,7 @@ const ExerciseLoadItem = React.memo(({
     userWeight,
     userLogs,
     treinoId,
+    onEdit,
 }: { 
     exercise: Exercicio; 
     isCurrent: boolean; 
@@ -116,6 +117,7 @@ const ExerciseLoadItem = React.memo(({
     userWeight: number;
     userLogs: Log[];
     treinoId: string;
+    onEdit: (exercise: Exercicio) => void;
 }) => {
     const [isExpanded, setIsExpanded] = useState(false);
 
@@ -136,7 +138,7 @@ const ExerciseLoadItem = React.memo(({
             };
 
             const relevantLogs = userLogs
-                .filter(log => log?.treino?.id === treinoId && log.status === 'concluido')
+                .filter(log => log?.treino?.id === treinoId && log.status === 'conclido')
                 .sort((a, b) => {
                     const dateA = toDate(a.horarioInicio);
                     const dateB = toDate(b.horarioInicio);
@@ -176,7 +178,7 @@ const ExerciseLoadItem = React.memo(({
             return <Text style={styles.chartEmptyText}>Nenhuma série disponível.</Text>;
         }
         
-        const completedSeries = (exercise.series as SerieComStatus[]).filter(s => s?.concluido === true);
+        const completedSeries = (exercise.series as SerieComStatus[]).filter(s => s?.conclido === true);
         const totalSeries = exercise.series.length;
         let normalSeriesCounter = 0;
 
@@ -217,7 +219,7 @@ const ExerciseLoadItem = React.memo(({
                             return (
                                 <View key={serie.id || `serie-${index}`} style={rowStyle}>
                                     <Text style={styles.seriesDetailText}>
-                                        {isDropset ? ' | Drop:' : `Série ${normalSeriesCounter}:`}
+                                        {isDropset ? <Text> | Drop:</Text> : `Série ${normalSeriesCounter}:`}
                                     </Text>
                                     <Text style={styles.seriesDetailCalculation}>{calculationString}</Text>
                                 </View>
@@ -225,6 +227,12 @@ const ExerciseLoadItem = React.memo(({
                         })}
                     </>
                 )}
+                {/* Botão de Editar Exercício */}
+                <TouchableOpacity style={styles.editButton} onPress={() => onEdit(exercise)}>
+                    <FontAwesome name="pencil" size={16} color="#1cb0f6" />
+                    <Text style={styles.editButtonText}>Editar Exercício</Text>
+                </TouchableOpacity>
+
                 {historyStats && (
                     <View style={styles.historyStatsContainer}>
                         <Text style={styles.historyStatsTitle}>Histórico (últimos {historyStats.count} treinos):</Text>
@@ -259,7 +267,8 @@ const ExerciseLoadItem = React.memo(({
                 onPress={toggleExpanded}
                 activeOpacity={0.7}
             >
-                {exercise?.modelo?.imagemUrl ? (
+                {/* ADICIONADO: Verificação para evitar erro se o modelo ou a imagem não existirem */}
+                {exercise.modelo?.imagemUrl ? (
                     <VideoListItem uri={exercise.modelo.imagemUrl} style={styles.exerciseImagePlaceholder} />
                 ) : <View style={styles.exerciseImagePlaceholder} />}
                 <View style={styles.exerciseInfo}>
@@ -296,6 +305,7 @@ interface WorkoutOverviewModalProps {
     userLogs: Log[];
     horarioInicio: Date | null;
     userWeight: number;
+    onEditExercise: (exercise: Exercicio) => void;
 }
 
 export const WorkoutOverviewModal = ({
@@ -307,6 +317,7 @@ export const WorkoutOverviewModal = ({
     userLogs,
     horarioInicio,
     userWeight,
+    onEditExercise,
 }: WorkoutOverviewModalProps) => {
     const [elapsedTime, setElapsedTime] = useState('00:00');
 
@@ -324,7 +335,7 @@ export const WorkoutOverviewModal = ({
         treino.exercicios.forEach(ex => {
             if (ex.series) {
                 totalSeries += ex.series.length;
-                completedSeries += (ex.series as SerieComStatus[]).filter(s => s?.concluido === true).length;
+                completedSeries += (ex.series as SerieComStatus[]).filter(s => s?.conclido === true).length;
             }
         });
         
@@ -367,6 +378,7 @@ export const WorkoutOverviewModal = ({
             userWeight={userWeight}
             userLogs={userLogs || []}
             treinoId={treino.id}
+            onEdit={onEditExercise}
         />
     ), [currentExerciseIndex, userWeight, userLogs, treino.id]);
 
@@ -395,7 +407,8 @@ export const WorkoutOverviewModal = ({
                     ListHeaderComponent={
                         <>
                             <View style={styles.topCardsContainer}>
-                                <View style={[styles.infoCard, styles.halfWidthCard]}>                                    <Text style={styles.infoCardTitle}>Duração do Treino</Text>
+                                <View style={[styles.infoCard, styles.halfWidthCard]}>                                    
+                                    <Text style={styles.infoCardTitle}>Duração do Treino</Text>
                                     <Text style={styles.durationValue}>{elapsedTime}</Text>
                                 </View>
 
@@ -481,6 +494,14 @@ const styles = StyleSheet.create({
     progressBarBackground: { height: 6, backgroundColor: '#333', borderRadius: 3, overflow: 'hidden' },
     progressBarFill: { height: '100%', backgroundColor: '#1cb0f6', borderRadius: 3 },
     progressText: { color: '#fff', fontSize: 12, fontWeight: 'bold', textAlign: 'center', marginTop: 8 },
+    editButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginTop: 20,
+    },
+    editButtonText: { color: '#1cb0f6', fontSize: 14, fontWeight: 'bold' },
 
     comparisonContainer: { marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#333' },
     comparisonLabel: { color: '#aaa', fontSize: 12, marginBottom: 5 },

@@ -121,4 +121,26 @@ export interface EstatisticasOnboarding {
    * NOTA: Você pode adicionar mais campos aqui para os outros
    * 25 steps, se eles coletarem dados que não estão listados acima.
    */
+
+  /**
+   * Pergunta: Você já possui uma ficha de treino?
+   */
+  possuiFicha?: boolean | null;
+
+  /**
+   * Pergunta: Deseja receber uma ficha recomendada?
+   */
+  desejaFichaRecomendada?: boolean | null;
+
+  /**
+    * O usuário aceitou a ficha recomendada?
+    */
+  acceptedFicha?: boolean;
+
+  /**
+   * A ficha que foi recomendada para o usuário.
+   */
+  recommendedFicha?: any; // FichaModelo
+
+  recommendedTreinos?: any[]; // TreinoModelo[]
 }

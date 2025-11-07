@@ -14,14 +14,14 @@ interface SerieEdit extends Omit<Serie, 'id'> {
   repeticoes: any;
   id: string;
   type: 'normal' | 'dropset';
-  isTimeBased?: boolean;
-  concluido?: boolean; // <-- ADICIONE ESTA LINHA
+  isTimeBased?: boolean; 
+  concluido: boolean;
 }
 
 interface EditExerciseModalProps {
   visible: boolean;
   onClose: () => void;
-  onSave: (updatedSeries: SerieEdit[], pesoBarra?: number) => void;
+  onSave: (updatedSeries: SerieEdit[], pesoBarra?: number) => void | Promise<void>;
   exercise: Exercicio | null;
 }
 
@@ -35,7 +35,7 @@ export const EditExerciseModal = ({ visible, onClose, onSave, exercise }: EditEx
   useEffect(() => {
     if (exercise) {
       const seriesCopy = JSON.parse(JSON.stringify(exercise.series)).map((s: any, index: number) => ({ // <-- ALTERE 'Serie' PARA 'any'
-        ...s, // Isso agora preservará 'concluido'
+        ...s,
         id: s.id || `set-${Date.now()}-${index}`,
       }));
       setEditingSeries(seriesCopy);
@@ -66,10 +66,17 @@ export const EditExerciseModal = ({ visible, onClose, onSave, exercise }: EditEx
       } else if (option === 'delete') {
         newSets.splice(index, 1);
       } else if (option === 'copy') {
-        newSets.splice(index + 1, 0, { ...newSets[index], id: `set-${Date.now()}` });
+        newSets.splice(index + 1, 0, { 
+          ...newSets[index], 
+          id: `set-${Date.now()}`,
+          concluido: false // Garante que a cópia não venha como concluída
+        });
       } else if (option === 'addDropset') {
         const parentSet = newSets[index];
-        newSets.splice(index + 1, 0, { id: `set-${Date.now()}`, repeticoes: parentSet.repeticoes, peso: (parentSet.peso ?? 10) * 0.7, type: 'dropset' });
+        newSets.splice(index + 1, 0, {
+          id: `set-${Date.now()}`, repeticoes: parentSet.repeticoes, peso: (parentSet.peso ?? 10) * 0.7, type: 'dropset',
+          concluido: false
+        });
       }
       setEditingSeries(newSets);
     }, 100); // 100ms é geralmente suficiente para a animação de fechamento.
@@ -202,7 +209,12 @@ const getRepetitionsValue = () => {
               ListFooterComponent={
                 <>
                   {!exercise?.isBiSet && (
-                    <TouchableOpacity style={styles.addSetButton} onPress={() => setEditingSeries([...editingSeries, { id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' }])}>
+                    <TouchableOpacity style={styles.addSetButton} onPress={() => setEditingSeries([...editingSeries, { 
+                      id: `set-${Date.now()}`, 
+                      repeticoes: '8-12', 
+                      peso: 10, 
+                      type: 'normal', 
+                      concluido: false }])}>
                       <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
                     </TouchableOpacity>
                   )}
@@ -278,7 +290,7 @@ const getRepetitionsValue = () => {
         onClose={() => {
           setIsRepDrawerVisible(false);
           setEditingSetIndex(null);
-        }}
+        }} 
         onSave={handleRepetitionsSave}
         initialValue={getRepetitionsValue()}
       />

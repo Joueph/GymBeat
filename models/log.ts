@@ -15,4 +15,5 @@ export interface Log {
   horarioFim?: any;
   lastInterval?: number | null; // Adicione esta linha
   cargaAcumulada?: number;
+  fichaId?: string; // add this
 }

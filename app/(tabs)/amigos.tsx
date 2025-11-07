@@ -5,6 +5,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import React, { memo, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 import { db } from '../../firebaseconfig';
 import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
@@ -225,7 +226,7 @@ export default function AmigosScreen() {
           setLoading(true);
         }
 
-        const unsubscribe = onSnapshot(doc(db, "users", user.uid), async (userDoc) => {
+        const unsubscribe = onSnapshot(doc(db, "users", user.id), async (userDoc) => {
           if (userDoc.exists()) {
             const userProfile = { id: userDoc.id, ...userDoc.data() } as Usuario;
 
@@ -342,7 +343,7 @@ export default function AmigosScreen() {
   const handleAcceptRequest = async (requesterId: string) => {
     if (!user) return;
     try {
-      await acceptFriendRequest(user.uid, requesterId);
+      await acceptFriendRequest(user.id, requesterId);
       Alert.alert("Amizade Aceita!", "Vocês agora são amigos.");
     } catch (error) {
       console.error("Erro ao aceitar pedido:", error);
@@ -353,7 +354,7 @@ export default function AmigosScreen() {
   const handleRejectRequest = async (requesterId: string) => {
     if (!user) return;
     try {
-      await rejectFriendRequest(user.uid, requesterId);
+      await rejectFriendRequest(user.id, requesterId);
       Alert.alert("Pedido Recusado", "O pedido de amizade foi recusado.");
     } catch (error) {
       console.error("Erro ao recusar pedido:", error);
@@ -416,6 +417,7 @@ export default function AmigosScreen() {
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={<View style={styles.centered}><Text style={styles.emptyText}>Adicione amigos para vê-los aqui!</Text></View>}
       />
+      <OngoingWorkoutFooter />
       
       {/* Modal de Opções: Criar ou Entrar em Projeto */}
       <Modal visible={isAddOptionsModalVisible} transparent={true} animationType="fade" onRequestClose={() => setAddOptionsModalVisible(false)}>

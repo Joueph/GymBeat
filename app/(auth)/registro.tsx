@@ -110,8 +110,8 @@ const StreakGoalItem = ({
 
 export default function CadastroScreen() { 
   const router = useRouter();
-  const netInfo = useNetInfo(); // Hook para verificar a conexão
-  const TOTAL_FORM_STEPS = 20; // Agora são 20
+  const netInfo = useNetInfo();
+  const TOTAL_FORM_STEPS = 22; // Aumentado para 22
   
   const [onboardingStep, setOnboardingStep] = useState(0); // 0: Welcome, 1-25: Form steps
 
@@ -207,17 +207,21 @@ export default function CadastroScreen() {
       case 10: return nivel !== null; // "Nível" (antigo case 7)
       // --- STEPS REORDENADOS ---
       case 11: return streakGoal >= 2 && streakGoal <= 7; // Meta de treinos (CORRETO)
-      case 12: return weeksStreakGoal > 0; // Meta de semanas (CORRETO)
-      case 13: return genero !== null; // Gênero (CORRETO)
-      case 14: return diaNascimento > 0 && mesNascimento > 0 && anoNascimento > 1920; // Data de Nascimento
-      case 15: return altura > 0; // Altura
+      case 12: return weeksStreakGoal > 0;
+      case 13: return genero !== null;
+      case 14: return diaNascimento > 0 && mesNascimento > 0 && anoNascimento > 1920;
+      case 15: return altura > 0;
       case 16: return peso > 0; // Peso
-      case 17: return true; // Tela de processamento
-      case 18: return true; // Tela de recomendação
-      case 19: return nome.trim().length > 0; // Nome
-      case 20: return isCredentialsValid; // Credenciais
+      // --- NOVOS STEPS ---
+      case 17: return onboardingData.possuiFicha !== undefined; // "Já possui ficha?"
+      case 18: return onboardingData.desejaFichaRecomendada !== undefined; // "Deseja recomendação?"
+      // --- FIM NOVOS STEPS ---
+      case 19: return true; // Tela de processamento
+      case 20: return true; // Tela de recomendação
+      case 21: return nome.trim().length > 0; // Nome
+      case 22: return isCredentialsValid; // Credenciais
       default:
-        return true;
+        return false; // Default para passos não mapeados
     }
   };
 
@@ -341,11 +345,22 @@ export default function CadastroScreen() {
       setOnboardingStep(s => s + 1);
       // Inicia a recomendação em background
       handleRecommendation();
+      setOnboardingStep(17); // Vai para "Já possui ficha?"
       return;
     }
 
 
     // Esta lógica agora executa IMEDIATAMENTE, sem esperar o salvamento
+    // Lógica de navegação após "Deseja recomendação?" (step 18)
+    if (onboardingStep === 18) {
+      if (onboardingData.desejaFichaRecomendada) {
+        setOnboardingStep(19); // Vai para a tela de processamento
+        handleRecommendation(); // Inicia a recomendação AQUI
+      } else {
+        setOnboardingStep(21); // Pula para a tela de nome/foto
+      }
+      return;
+    }
     if (onboardingStep < TOTAL_FORM_STEPS) {
       setAnimationDirection('forward');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -392,10 +407,22 @@ export default function CadastroScreen() {
         return;
       }
       // Se vindo do 6, ou qualquer outro passo, avança normalmente
-      if (onboardingStep === 18) { // Se o usuário está na tela de recomendação
+      if (onboardingStep === 20) { // Se o usuário está na tela de recomendação
         // Se ele clicar em "próximo" (usar este treino), marcamos como aceito
         setAcceptedFicha(true);
-        setOnboardingStep(s => s + 1); // Vai para a tela de nome
+        setOnboardingStep(21); // Vai para a tela de nome
+        return;
+      }
+
+      // Lógica de navegação após "Já possui ficha?" (step 17)
+      if (onboardingStep === 17) {
+        if (onboardingData.possuiFicha) {
+          // Se tem ficha, pula a recomendação e vai para a tela de nome/foto
+          setOnboardingStep(21);
+        } else {
+          // Se não tem, vai para a pergunta se deseja uma recomendação
+          setOnboardingStep(18);
+        }
         return;
       }
       setOnboardingStep(s => s + 1);
@@ -449,9 +476,19 @@ export default function CadastroScreen() {
         return;
       }
 
-      if (onboardingStep === 19) { // Vindo da tela de nome
+      if (onboardingStep === 21) { // Vindo da tela de nome
+        // Se o usuário pulou a recomendação, volta para a pergunta correspondente
+        if (onboardingData.possuiFicha) {
+          setOnboardingStep(17); // Volta para "Já possui ficha?"
+          return;
+        }
+        if (onboardingData.desejaFichaRecomendada === false) {
+          setOnboardingStep(18); // Volta para "Deseja recomendação?"
+          return;
+        }
+
         // Volta para a tela de recomendação
-        setOnboardingStep(18);
+        setOnboardingStep(20);
         return;
       }
       // --- FIM NOVA LÓGICA CONDICIONAL ---
@@ -1054,7 +1091,7 @@ case 15: // Altura
           </>
         );
         
-      case 17: // Tela de Processamento da Recomendação
+      case 19: // Tela de Processamento da Recomendação
         return (
           <View style={styles.stepContentWrapper}>
             <Text style={[styles.mainTitle, { textAlign: 'center', fontSize: 28, marginBottom: 20 }]}>
@@ -1069,7 +1106,7 @@ case 15: // Altura
           </View>
         );
 
-      case 18: // Tela de Apresentação da Ficha Recomendada
+      case 20: // Tela de Apresentação da Ficha Recomendada
         if (!recommendedFicha) return <ActivityIndicator color="#fff" />;
         const DIAS_SEMANA_ARRAY: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
         const originalDays = new Set(recommendedTreinos.flatMap(t => t.diasSemana));
@@ -1155,7 +1192,7 @@ case 15: // Altura
             })}
           </ScrollView>
         );
-      case 19: // Nome e Foto
+      case 21: // Nome e Foto
         return(
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <View style={styles.finalSummaryContainer}>
@@ -1174,7 +1211,7 @@ case 15: // Altura
             <TextInput placeholder="Seu nome" value={nome} onChangeText={setNome} style={styles.nameInput} placeholderTextColor="#555" />
           </ScrollView>
         );
-      case 20: // Credenciais
+      case 22: // Credenciais
         return (
           <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#ccc" />
@@ -1188,6 +1225,52 @@ case 15: // Altura
               {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.finalButtonText}>Finalizar Cadastro</Text>}
             </TouchableOpacity>
 
+          </ScrollView>
+        );
+
+      case 17: // NOVO: "Você já possui uma ficha de treino?"
+        const possuiFichaOptions = [
+          { key: 'Sim', value: true, text: 'Sim, já tenho uma', icon: 'checkmark-circle-outline' },
+          { key: 'Não', value: false, text: 'Não, preciso de uma', icon: 'close-circle-outline' },
+        ] as const;
+
+        return (
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {possuiFichaOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon} size={26} color="#fff" />}
+                  isSelected={onboardingData.possuiFicha === opt.value}
+                  onPress={() => setOnboardingData(prev => ({ ...prev, possuiFicha: opt.value }))}
+                  entering={FadeInUp.duration(400).delay(index * 100)}
+                />
+              ))}
+            </View>
+          </ScrollView>
+        );
+
+      case 18: // NOVO: "Deseja receber uma ficha recomendada?"
+        const desejaFichaOptions = [
+          { key: 'Sim', value: true, text: 'Sim, desejo receber uma ficha pré-configurada', icon: 'star-outline' },
+          { key: 'Não', value: false, text: 'Não, quero criar meus próprios treinos', icon: 'build-outline' },
+        ] as const;
+
+        return (
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.optionContainerVertical}>
+              {desejaFichaOptions.map((opt, index) => (
+                <OnboardingOption
+                  key={opt.key}
+                  text={opt.text}
+                  icon={<Ionicons name={opt.icon} size={26} color="#fff" />}
+                  isSelected={onboardingData.desejaFichaRecomendada === opt.value}
+                  onPress={() => setOnboardingData(prev => ({ ...prev, desejaFichaRecomendada: opt.value }))}
+                  entering={FadeInUp.duration(400).delay(index * 100)}
+                />
+              ))}
+            </View>
           </ScrollView>
         );
 
@@ -1268,12 +1351,14 @@ const getStepTitle = () => {
       case 14: return "Qual sua data de nascimento?";
       case 15: return "Qual sua altura?";
       case 16: return "E o seu peso?";
-      case 17: return ""; // Tela de processamento não tem título
-      case 18: return "Esta ficha é ideal para você";
-      case 19: return "Para finalizar, como podemos te chamar?";
-      case 20: return "Crie sua conta";
-      // Adicionar títulos para os steps 18-25
-      default: return "";
+      case 17: return "Você já possui uma ficha de treino?";
+      case 18: return "Deseja receber uma ficha recomendada para você?";
+      case 19: return ""; // Tela de processamento não tem título
+      case 20: return "Esta ficha é ideal para você";
+      case 21: return "Para finalizar, como podemos te chamar?";
+      case 22: return "Crie sua conta";
+      default:
+        return "";
     }
 }
     
@@ -1321,13 +1406,13 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
         {/* Rodapé com Botão "Avançar" */}
         {/* Oculta o botão no step 0 (tela de welcome) 
           e no step 17 (tela de credenciais), pois ele tem seu próprio botão "Finalizar Cadastro"
-        */}
-        {onboardingStep > 0 && ![20].includes(onboardingStep) && (
+        */} 
+        {onboardingStep > 0 && ![22].includes(onboardingStep) && (
           <View style={styles.footer}>
             {/* Mostra o botão na etapa 17 apenas quando o progresso for 100%, caso contrário, não mostra nada no rodapé. */}
-            {onboardingStep === 17 && recommendationProgress < 1 ? null : (
+            {onboardingStep === 19 && recommendationProgress < 1 ? null : (
               <>
-                {onboardingStep === 18 && (
+                {onboardingStep === 20 && (
                   <TouchableOpacity style={styles.secondaryButton} onPress={() => { setAcceptedFicha(false); handleNext(); }}>
                     <Text style={styles.secondaryButtonText}>Quero criar meu próprio treino</Text>
                   </TouchableOpacity>
@@ -1340,7 +1425,7 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
                   <Text style={styles.nextButtonText}>
                     {onboardingStep === TOTAL_FORM_STEPS ? "Finalizar Cadastro" :
                      [5, 6, 7].includes(onboardingStep) ? "Eu vou conseguir" :
-                     onboardingStep === 18 ? "Usar este treino" :
+                     onboardingStep === 20 ? "Usar este treino" :
                      "Próximo"}
                   </Text>
                 </TouchableOpacity>

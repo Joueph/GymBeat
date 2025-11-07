@@ -1,66 +1,77 @@
 import { Stack } from 'expo-router';
 import React from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MenuProvider } from 'react-native-popup-menu';
 
 export default function TreinoLayout() {
   return (
-    <MenuProvider>
-      <Stack
-      screenOptions={{
-        headerStyle: {
-          backgroundColor: '#141414',
-        },
-        headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
-        // A propriedade 'headerBackTitleVisible' não existe neste contexto, causando um erro de tipo.
-        // A forma correta de ocultar o texto do botão de voltar é definir 'headerBackTitle' como uma string vazia.
-        // Isso mantém o ícone (chevron) visível, mas remove o texto ao lado dele.
-        headerBackTitle: '',
-      }}>
-        <Stack.Screen
-          name="criatFicha"
-          options={{
-            title: 'Editar Ficha',
-          }}
-        />
-        <Stack.Screen
-          name="editarTreino"
-          options={{
-            // O título será dinâmico, então podemos deixar um padrão ou remover.
-            // Para manter a consistência, vamos deixar o título que já estava.
-            title: 'Editar Treino',
-          }}
-        />
-        <Stack.Screen
-          name="ongoingWorkout"
-          options={{
-            headerShown: false,
-          }}
-        />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <MenuProvider>
+        <Stack
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: '#141414',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+            },
+            headerBackTitle: '',
+          }}>
+          <Stack.Screen
+            name="criatFicha"
+            options={{
+              title: 'Editar Ficha',
+            }}
+          />
+          <Stack.Screen
+            name="editarTreino"
+            options={{
+              presentation: 'modal',
+              headerShown: false,
+              animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="modals/OpcoesTreino"
+            options={{
+              presentation: 'modal',
+              headerShown: false,
+              animation: 'slide_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="ongoingWorkout"
+            options={{
+              headerShown: false,
+            }}
+          />
 
-        <Stack.Screen
-          name="treinoCompleto"
-          options={{
-            headerShown: false,
-          }}
-        />
+          <Stack.Screen
+            name="treinoCompleto"
+            options={{
+              headerShown: false,
+            }}
+          />
 
-        {/* >>> ADICIONE A TELA QUE ESTÁ CAUSANDO O PROBLEMA AQUI <<<
-        Para a tela que está mostrando "(treino)" como título, encontre
-        o nome do arquivo .tsx correspondente e adicione uma entrada
-        para ela aqui com a opção 'headerShown: false'.
-      */}
-        {/* Exemplo para um arquivo chamado 'minhaTelaDeTreino.tsx':
-      <Stack.Screen
-        name="minhaTelaDeTreino" 
-        options={{
-          headerShown: false,
-        }}
-      />
-      */}
-      </Stack>
-    </MenuProvider>
+          <Stack.Screen
+            name="LoggingDuringWorkout"
+            options={{
+              animation: 'slide_from_bottom', // Animação de entrada
+              headerShown: false,
+              animationDuration: 400, // Duração da animação
+            }}
+          />
+
+          <Stack.Screen
+            name="workouts"
+            options={{
+              title: 'Planos de Treino',
+              headerBackTitle: 'Voltar',
+            }}
+          />
+        </Stack>
+      </MenuProvider>
+    </GestureHandlerRootView>
   );
 }

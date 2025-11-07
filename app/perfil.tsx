@@ -109,7 +109,7 @@ export default function PerfilScreen() {
         
         // Salva o token no perfil do usuário se for diferente do já salvo
         if (token && profile.expoPushToken !== token) {
-          await updateUserProfile(user.uid, { expoPushToken: token } as Partial<Usuario>);
+          await updateUserProfile(user.id, { expoPushToken: token } as Partial<Usuario>);
           setProfile(prev => ({ ...prev, expoPushToken: token }));
         }
       } catch (e) { console.error("Falha ao obter o token de notificação", e); }
@@ -122,8 +122,8 @@ export default function PerfilScreen() {
         setLoading(true);
         try {
           const [userProfile, userLogs] = await Promise.all([
-            getUserProfile(user.uid),
-            getLogsByUsuarioId(user.uid)
+            getUserProfile(user.id),
+            getLogsByUsuarioId(user.id)
           ]);
           if (userProfile) {
             setProfile(userProfile);
@@ -172,7 +172,7 @@ const handleUpdate = async () => {
       let finalPhotoURL = profile.photoURL;
       // Se uma nova imagem foi escolhida, faz o upload dela agora
       if (newPhotoURI) {
-        finalPhotoURL = await uploadImageAndGetURL(newPhotoURI, user.uid);
+        finalPhotoURL = await uploadImageAndGetURL(newPhotoURI, user.id);
       }
 
       // Começamos com um objeto limpo para garantir que não enviamos dados indesejados.
@@ -208,7 +208,7 @@ const handleUpdate = async () => {
         }
       }
 
-      await updateUserProfile(user.uid, dataToUpdate);
+      await updateUserProfile(user.id, dataToUpdate);
       setNewPhotoURI(null); // Limpa a URI temporária após o sucesso
       Alert.alert("Sucesso", "Perfil atualizado com sucesso!");
       setEditProfileModalVisible(false); // Fecha o modal
@@ -223,7 +223,7 @@ const handleUpdate = async () => {
     if (!user) return;
     try {
       // Salva as configurações no Firestore
-      await updateUserProfile(user.uid, { settings: newSettings } as Partial<Usuario>);
+      await updateUserProfile(user.id, { settings: newSettings } as Partial<Usuario>);
       setProfile(prev => ({ ...prev, settings: newSettings }));
 
       // Gerencia as notificações locais com base nas novas configurações

@@ -22,6 +22,7 @@ export interface ExercicioModelo {
 }
 
 export interface Serie {
+  concluido: boolean;
   id: string;
   repeticoes: string;
   peso?: number;

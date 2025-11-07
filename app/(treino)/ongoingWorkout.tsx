@@ -21,11 +21,12 @@ import { useAuth } from '../authprovider';
 import { EditExerciseModal } from './modals/EditOngoingWorkoutExerciseModal';
 import { OngoingWorkoutListModal } from './modals/listaOngoingWorkout';
 import { WorkoutOverviewModal } from './modals/modalOverview';
+import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 // **INÍCIO DA CORREÇÃO**
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
 // Adiciona a propriedade 'concluido' à interface Serie localmente
-interface SerieComStatus extends Serie {
+interface SerieComStatus extends Omit<Serie, 'concluido'> {
   id: string; // Garante que toda série tenha um ID
   concluido?: boolean;
 }
@@ -36,7 +37,7 @@ interface SerieEdit extends Omit<Serie, 'id'> {
   id: string;
   type: 'normal' | 'dropset';
   showMenu?: boolean;
-  concluido?: boolean; // <-- ADICIONE ESTA LINHA
+  concluido: boolean;
 }
 
 // A new component to manage each video player instance, now with WebP support
@@ -132,7 +133,8 @@ const ExerciseDisplayCard = memo(({
   return (
     <View style={styles.exerciseCardWrapper}>
       <TouchableOpacity style={[styles.exerciseCard, isPulsing && styles.pulsingBorder]} onPress={onPress}>
-        {exercise.modelo.imagemUrl && (
+        {/* ADICIONADO: Verificação para evitar erro se o modelo ou a imagem não existirem */}
+        {exercise.modelo?.imagemUrl && (
           <VideoListItem uri={exercise.modelo.imagemUrl} style={styles.exerciseVideo} />
         )}
         <View style={styles.exerciseInfoContainer}>
@@ -188,6 +190,8 @@ export default function OngoingWorkoutScreen() {
   const [cargaSerieAnimacao, setCargaSerieAnimacao] = useState<{ key: number; carga: number } | null>(null);
   const [userLogs, setUserLogs] = useState<Log[]>([]);
   const [isOverviewModalVisible, setOverviewModalVisible] = useState(false);
+  const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
   // Novos estados para o timer do exercício
   const [isDoingExercise, setIsDoingExercise] = useState(false);
   const [exerciseTime, setExerciseTime] = useState(0);
@@ -272,6 +276,13 @@ useEffect(() => {
       if (cachedLog && (cachedLog.treino.id === treinoId || logId === cachedLog.id)) {
         console.log('[OngoingWorkout] ✅ Log encontrado no cache');
         
+        // --- LOG ADICIONADO ---
+        cachedLog.treino.exercicios.forEach((ex: Exercicio, index: number) => {
+          if (!ex.modelo) {
+            console.error(`[OngoingWorkout - Cache] ERRO: Exercício no índice ${index} (ID: ${ex.modeloId}) está sem 'modelo'.`);
+          }
+        });
+        // --- FIM DO LOG ---
         setTreino(cachedLog.treino);
         setHorarioInicio(toDate(cachedLog.horarioInicio));
         setActiveLogId(cachedLog.id);
@@ -303,7 +314,7 @@ useEffect(() => {
           try {
             console.log('[OngoingWorkout] 📊 Buscando logs do usuário...');
             const { getLogsByUsuarioId } = require('../../services/logService');
-            const logs = await getLogsByUsuarioId(user.uid);
+            const logs = await getLogsByUsuarioId(user.id);
             setUserLogs(logs);
             console.log('[OngoingWorkout] ✅ Logs carregados:', logs.length);
           } catch (logsError) {
@@ -314,10 +325,15 @@ useEffect(() => {
 
           try {
             console.log('[OngoingWorkout] 👤 Buscando perfil do usuário...');
-            const userProfile = await getUserProfile(user.uid);
-            if (userProfile && userProfile.peso) {
-              setUserWeight(userProfile.peso);
-              console.log('[OngoingWorkout] ✅ Peso do usuário:', userProfile.peso);
+            const userProfile = await getUserProfile(user.id);
+            if (userProfile) {
+              if (userProfile.peso) {
+                setUserWeight(userProfile.peso);
+                console.log('[OngoingWorkout] ✅ Peso do usuário:', userProfile.peso);
+              }
+              if (userProfile.workoutScreenType) {
+                setWorkoutScreenType(userProfile.workoutScreenType);
+              }
             }
           } catch (profileError) {
             console.warn('[OngoingWorkout] ⚠️ Erro ao buscar perfil (pode estar offline):', profileError);
@@ -351,6 +367,14 @@ useEffect(() => {
 
       console.log('[OngoingWorkout] ✅ Treino buscado do Firestore');
 
+      // --- LOG ADICIONADO ---
+      treinoData.exercicios.forEach((ex: Exercicio, index: number) => {
+        if (!ex.modelo) {
+          console.error(`[OngoingWorkout - Firestore] ERRO: Exercício no índice ${index} (ID: ${ex.modeloId}) está sem 'modelo'.`);
+        }
+      });
+      // --- FIM DO LOG ---
+
       // Inicializa o treino
       const startTime = new Date();
       const exerciciosInicializados = treinoData.exercicios.map(ex => ({
@@ -372,7 +396,7 @@ useEffect(() => {
       // Cria log local
       const localLog: Log = {
         id: localLogId,
-        usuarioId: user.uid,
+        usuarioId: user.id,
         treino: { 
           ...treinoComExercicios, 
           id: treinoId, 
@@ -394,7 +418,7 @@ useEffect(() => {
       // Busca dados adicionais com fallback
       try {
         const { getLogsByUsuarioId } = require('../../services/logService');
-        const logs = await getLogsByUsuarioId(user.uid);
+        const logs = await getLogsByUsuarioId(user.id);
         setUserLogs(logs);
       } catch (logsError) {
         console.warn('[OngoingWorkout] ⚠️ Erro ao buscar logs:', logsError);
@@ -402,9 +426,14 @@ useEffect(() => {
       }
 
       try {
-        const userProfile = await getUserProfile(user.uid);
-        if (userProfile && userProfile.peso) {
-          setUserWeight(userProfile.peso);
+        const userProfile = await getUserProfile(user.id);
+        if (userProfile) {
+          if (userProfile.peso) {
+            setUserWeight(userProfile.peso);
+          }
+          if (userProfile.workoutScreenType) {
+            setWorkoutScreenType(userProfile.workoutScreenType);
+          }
         }
       } catch (profileError) {
         console.warn('[OngoingWorkout] ⚠️ Erro ao buscar perfil:', profileError);
@@ -531,7 +560,7 @@ const completeTheSet = async () => {
   // Salva no cache local
   const updatedLogForCache: Log = {
     id: activeLogId!,
-    usuarioId: user.uid,
+    usuarioId: user.id,
     treino: { ...treino, exercicios: updatedExercicios },
     horarioInicio: horarioInicio!,
     status: 'em_andamento',
@@ -569,7 +598,7 @@ const completeTheSet = async () => {
           }
 
           const finalLogData: Partial<Log> = {
-            usuarioId: user.uid, // ✅ SEMPRE incluir usuarioId
+            usuarioId: user.id, // ✅ SEMPRE incluir usuarioId
             treino: {
               ...treino,
               id: finalTreinoId,
@@ -677,6 +706,8 @@ const completeTheSet = async () => {
   const handleSaveExerciseChanges = async (newSeries: SerieEdit[], pesoBarra?: number) => {
     if (!treino || !exercicioSendoEditado) return;
 
+    const seriesComConcluido = newSeries.map(s => ({...s, concluido: s.concluido || false}));
+    
     // Cria uma cópia atualizada dos exercícios com as novas séries
     const updatedExercicios = [...treino.exercicios];
     const editedExerciseIndex = updatedExercicios.findIndex(ex => ex.modeloId === exercicioSendoEditado.modeloId);
@@ -690,7 +721,7 @@ const completeTheSet = async () => {
     // Atualiza o exercício específico
     const updatedExercise = {
       ...exercicioSendoEditado,
-      series: newSeries,
+      series: seriesComConcluido,
       pesoBarra: pesoBarra, // Salva o peso da barra
     };
     updatedExercicios[editedExerciseIndex] = updatedExercise;
@@ -719,7 +750,7 @@ const completeTheSet = async () => {
     // Salva o log atualizado no cache local com a nova carga
     const updatedLogForCache: Partial<Log> = {
       id: activeLogId!,
-      usuarioId: user!.uid,
+      usuarioId: user!.id,
       treino: { ...treino, exercicios: updatedExercicios }, // Garante que o treino dentro do log também está atualizado
       horarioInicio: horarioInicio!,
       exercicios: updatedExercicios,
@@ -834,9 +865,14 @@ const completeTheSet = async () => {
           </Animated.View>
         )}
         <View style={styles.header}>
-            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                <FontAwesome name="close" size={24} color="#fff" />
-            </TouchableOpacity>
+            <View style={[styles.backButton, {flexDirection: 'row', alignItems: 'center', gap: 20}]}>
+              <TouchableOpacity onPress={handleBack}>
+                  <FontAwesome name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setSettingsModalVisible(true)}>
+                  <FontAwesome name="cog" size={22} color="#fff" />
+              </TouchableOpacity>
+            </View>
             <Text style={styles.headerTitle}>Treino Rolando</Text>
             {/* O botão de overview foi movido para o container de ações principal */}
             <View style={styles.headerIconContainer} />
@@ -911,7 +947,7 @@ const completeTheSet = async () => {
           onClose={() => setEditExerciseModalVisible(false)}
           exercise={exercicioSendoEditado}
           onSave={handleSaveExerciseChanges}
-        />
+          />
         <Modal visible={isExerciseDetailModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setExerciseDetailModalVisible(false)}>
           <SafeAreaView style={styles.modalSafeArea}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Detalhes do Exercício</Text><TouchableOpacity onPress={() => setExerciseDetailModalVisible(false)}><FontAwesome name="close" size={24} color="#fff" /></TouchableOpacity></View><View style={styles.detailModalContentWrapper}><ScrollView><View>{currentExercise?.modelo.imagemUrl && <VideoListItem uri={currentExercise.modelo.imagemUrl} style={styles.detailModalVideo} />}<Text style={styles.detailModalExerciseName}>{currentExercise?.modelo.nome}</Text></View><View style={styles.detailModalSeriesContainer}>{(() => { let normalSeriesCounter = 0; return currentExercise?.series.map((item, index) => { const isDropset = item.type === 'dropset'; if (!isDropset) normalSeriesCounter++; return (<View key={item.id || `serie-detail-${index}`} style={[styles.detailModalSetRow, isDropset && { marginLeft: 20 }]}><View style={styles.detailModalSetTitleContainer}>{isDropset && <FontAwesome5 name="arrow-down" size={14} color="#ccc" style={{ marginRight: 8 }} />}<Text style={styles.detailModalSetText}>{isDropset ? 'Dropset' : `Série ${normalSeriesCounter}`}</Text></View>{isDropset && <Text style={styles.dropsetTag}>DROPSET</Text>}<View style={styles.detailModalSetInfoContainer}><Text style={styles.detailModalSetInfo}>{item.repeticoes}</Text><Text style={styles.detailModalSetInfo}>{item.peso || 0} kg</Text></View></View>); }); })()}</View></ScrollView></View></SafeAreaView>
         </Modal>
@@ -925,7 +961,19 @@ const completeTheSet = async () => {
           userLogs={userLogs}
           horarioInicio={horarioInicio}
           userWeight={userWeight}
+          onEditExercise={(exerciseToEdit: Exercicio) => {
+            setOverviewModalVisible(false); // Fecha o modal de resumo
+            // Adiciona um pequeno atraso para a transição ser mais suave
+            setTimeout(() => openEditModalForExercise(exerciseToEdit), 300);
+          }}
         />}
+
+        <WorkoutSettingsModal
+          isVisible={isSettingsModalVisible}
+          onClose={() => setSettingsModalVisible(false)}
+          currentWorkoutScreenType={workoutScreenType}
+          onWorkoutScreenTypeChange={setWorkoutScreenType}
+        />
 
       </SafeAreaView>
     </GestureHandlerRootView>

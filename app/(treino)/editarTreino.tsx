@@ -1,33 +1,41 @@
-import { FontAwesome } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av'; // Changed from expo-video
+import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
+import { addTreino, deleteTreino, getTreinoById, updateTreino } from '@/services/treinoService';
+import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
+import { ResizeMode, Video } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Haptics from 'expo-haptics'; // ADICIONADO Haptics
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native'; // ADICIONADO Image
-import DraggableFlatList, { RenderItemParams, } from 'react-native-draggable-flatlist';
-import { GestureHandlerRootView, RectButton, Swipeable } from 'react-native-gesture-handler';
-import Animated, { FadeInLeft } from 'react-native-reanimated'; // ADICIONADO FadeInLeft
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
+import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Exercicio, ExercicioModelo, Serie } from '../../models/exercicio';
-import { DiaSemana, Treino } from '../../models/treino';
-import { addTreinoToFicha, deleteTreino, getTreinoById, updateTreino } from '../../services/treinoService';
+import { RepetitionsDrawer } from '../../components/RepetitionsDrawer';
+import { RestTimeDrawer } from '../../components/RestTimeDrawer'; // Importa o novo componente
+import { SetOptionsMenu } from '../../components/SetOptionsMenu';
+import { Log } from '../../models/log';
+import { Treino } from '../../models/treino';
+import { getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
 import { useAuth } from '../authprovider';
-import { EditarExercicioNoTreinoModal } from './modals/editarExercicioNoTreinoModal';
-import { SelectExerciseModal } from './modals/SelectExerciseModal';
+import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
 
+const DIAS_SEMANA_ORDEM = { 'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6 };
+const DIAS_SEMANA_ARRAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'] as const;
+type DiaSemana = typeof DIAS_SEMANA_ARRAY[number];
 
-// A interface Serie agora inclui um tipo para diferenciar séries normais de dropsets.
 interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
-  isBiSet?: boolean;
-  isTimeBased?: boolean;
-  showMenu?: boolean;
 }
-
-const DIAS_SEMANA: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
-// const EXERCICIOS_CACHE_KEY = 'exerciciosModelosCache'; // Removed for pagination
 
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
   const [localUri, setLocalUri] = useState<string | null>(null);
@@ -36,7 +44,7 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
   useEffect(() => {
     const manageMedia = async () => {
       if (!uri) return;
-      const fileName = uri.split('/').pop()?.split('?')[0]; // Ensure filename is clean
+      const fileName = uri.split('/').pop()?.split('?')[0];
       if (!fileName) return;
 
       const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
@@ -50,7 +58,7 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
           setLocalUri(localFileUri);
         } catch (e) {
           console.error("Erro ao baixar a mídia:", e);
-          setLocalUri(uri); // Fallback para a URL remota em caso de erro
+          setLocalUri(uri);
         }
       }
     };
@@ -63,12 +71,12 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
   }
 
   if (isWebP) {
-    return <Image source={{ uri: localUri }} style={style} />;
+    return <Image source={{ uri: localUri || uri }} style={style} />;
   }
 
   return (
     <Video
-      source={{ uri: localUri }}
+      source={{ uri: localUri || uri }}
       isMuted={true}
       isLooping={true}
       shouldPlay={true}
@@ -78,607 +86,1070 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
   );
 }
 
-const LeftActions = ({ onPress }: { onPress: () => void }) => {
-  // CORREÇÃO: O componente precisa retornar um elemento JSX.
-  // Adicionado um RectButton para a ação de editar, similar ao RightActions.
-  return (
-    <RectButton style={styles.editBox} onPress={onPress}>
-      <FontAwesome name="pencil" size={24} color="white" />
-    </RectButton>
-  );
+// Define uma interface para as props do componente para melhor tipagem
+interface ExerciseItemProps {
+  item: Exercicio;
+  drag: () => void;
+  isActive: boolean;
+  onUpdateExercise: (ex: Exercicio) => void;
+  onRemoveExercise: () => void;
+  exerciseIndex: number;
+  onOpenRepDrawer: (exerciseIndex: number, setIndex: number) => void;
+  onOpenRestTimeModal: (exerciseIndex: number) => void;
+  setIsEditing: (isEditing: boolean) => void;
+}
+
+const REST_TIME_OPTIONS = [
+  { label: '30 seg', value: 30 },
+  { label: '45 seg', value: 45 },
+  { label: '1 min', value: 60 },
+  { label: '1 min 30 seg', value: 90 },
+  { label: '2 min', value: 120 },
+  { label: '2 min 30 seg', value: 150 },
+  { label: '3 min', value: 180 },
+];
+
+const formatRestTime = (seconds: number) => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  if (minutes > 0 && remainingSeconds > 0) {
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+  return minutes > 0 ? `${minutes} min` : `${remainingSeconds} seg`;
 };
 
-// CORREÇÃO: Removida a declaração duplicada de 'RightActions'
-const RightActions = ({ onPress }: { onPress: () => void }) => {
+const ExerciseItem = ({
+  item,
+  drag,
+  isActive,
+  onUpdateExercise,
+  onRemoveExercise,
+  exerciseIndex,
+  onOpenRepDrawer,
+  onOpenRestTimeModal,
+  setIsEditing,
+}: ExerciseItemProps) => {
+  const [series, setSeries] = useState<SerieEdit[]>(
+    item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' }))
+  );
+
+  // Sincroniza o estado interno 'series' com as props que vêm do componente pai.
+  // Isso garante que a UI reflita as mudanças feitas no drawer de repetições.
+  useEffect(() => {
+    setSeries(item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' })));
+  }, [item.series]);
+
+  const handleSeriesUpdate = (newSeries: SerieEdit[]) => {
+    setSeries(newSeries);
+    onUpdateExercise({ ...item, series: newSeries });
+    setIsEditing(true); // Ativa o modo de edição imediatamente
+  };
+
+  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
+    setTimeout(() => {
+      const newSets = [...series];
+      if (option === 'delete') {
+        newSets.splice(index, 1);
+      } else if (option === 'copy') {
+        newSets.splice(index + 1, 0, { ...newSets[index], id: `set-${Date.now()}` });
+      } else if (option === 'addDropset') {
+        const parentSet = newSets[index];
+        newSets.splice(index + 1, 0, {
+          id: `set-${Date.now()}`,
+          repeticoes: parentSet.repeticoes,
+          peso: (parentSet.peso ?? 10) * 0.7,
+          type: 'dropset',
+          concluido: false,
+        });
+      } else if (option === 'toggleTime') {
+        newSets[index].isTimeBased = !newSets[index].isTimeBased;
+      }
+      handleSeriesUpdate(newSets);
+    }, 100);
+  };
+
+  const renderSetItem = (setItem: SerieEdit, index: number) => {
+    const normalSeriesCount = series.slice(0, index + 1).filter(s => s.type === 'normal').length;
+
+    return (
+      <View key={setItem.id} style={[styles.setRow, setItem.type === 'dropset' && styles.dropsetRow]}>
+        {setItem.type === 'dropset' ? (
+          <FontAwesome5 name="arrow-down" size={16} color="#888" style={styles.setIndicator} />
+        ) : (
+          <Text style={styles.setIndicator}>{normalSeriesCount}</Text>
+        )}
+        <View style={styles.inputGroup}>
+          {/* Substituído TextInput por um botão que abre o RepetitionsDrawer */}
+          <TouchableOpacity
+            style={styles.repButton}
+            onPress={() => {
+              if (!setItem.isTimeBased) onOpenRepDrawer(exerciseIndex, index);
+            }}
+          >
+            <Text style={styles.repButtonText}>{String(setItem.repeticoes)}</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.xText}>x</Text>
+        <View style={styles.inputGroup}>
+          {/* O rótulo de peso foi removido daqui */}
+          <TextInput
+            style={styles.setInput}
+            value={String(setItem.peso || '')}
+            onChangeText={text => {
+              const newSets = series.map((s, i) => 
+                i === index ? { ...s, peso: parseFloat(text.replace(',', '.')) || 0 } : s
+              );
+              handleSeriesUpdate(newSets);
+            }}
+            keyboardType="decimal-pad"
+          />
+        </View>
+        <SetOptionsMenu
+          isTimeBased={!!setItem.isTimeBased}
+          isNormalSet={setItem.type === 'normal'}
+          onSelect={action => handleSetOption(action, index)}
+        />
+      </View>
+    );
+  };
+
+  const renderSeriesHeader = () => (
+    <View style={styles.seriesHeader}>
+      <View style={styles.setIndicator} />
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Reps</Text>
+      </View>
+      <View style={styles.xText} />
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Peso (kg)</Text>
+      </View>
+      {/* Espaço para alinhar com o botão de opções */}
+      <View style={{ width: 40 }} />
+    </View>
+  );
+
   return (
-    <RectButton style={styles.deleteBox} onPress={onPress}>
-      <FontAwesome name="trash" size={24} color="white" />
-    </RectButton>
+    <ScaleDecorator>
+      <View style={[styles.exercicioCard, isActive && styles.activeCard]}>
+        <View style={styles.exercicioHeader}>
+          {/* ADICIONADO: Verificação para evitar erro se o modelo não existir */}
+          {item.modelo?.imagemUrl ? (
+            <VideoListItem uri={item.modelo.imagemUrl} style={styles.exerciseVideo} />
+          ) : (
+            <View style={[styles.exerciseVideo, { backgroundColor: '#333' }]} />
+          )}
+          <View style={styles.exerciseInfo}>
+            <Text style={styles.exercicioName}>{item.modelo?.nome}</Text>
+            <Text style={styles.muscleGroup}>{item.modelo?.grupoMuscular}</Text>
+          </View>
+          <TouchableOpacity onLongPress={drag} disabled={isActive} style={styles.dragHandle}>
+            <FontAwesome name="bars" size={20} color="#888" />
+          </TouchableOpacity>
+        </View>
+        {item && (
+          <View style={styles.notesContainer}>
+            <FontAwesome name="pencil" size={12} color="#fff" />
+            <TextInput
+              style={styles.notesInput}
+              placeholder="Anotações do exercício..."
+              placeholderTextColor="#888"
+              value={item.notes || ''}
+              onChangeText={(text) => onUpdateExercise({ ...item, notes: text })}
+              multiline
+            />
+          </View>
+        )}
+        <View style={styles.seriesContainer}>
+          {series.length > 0 && renderSeriesHeader()}
+          {series.map(renderSetItem)}
+        </View>
+        <TouchableOpacity
+          style={styles.addSetButton}
+          onPress={() => {
+            const lastSet = series[series.length - 1];
+            handleSeriesUpdate([
+              ...series,
+              {
+                id: `set-${Date.now()}`,
+                repeticoes: lastSet?.repeticoes || '10',
+                peso: lastSet?.peso || 10,
+                type: 'normal',
+                concluido: false,
+              },
+            ]);
+          }}
+        >
+          <FontAwesome name="plus" size={14} color="#1cb0f6" />
+          <Text style={styles.addSetButtonText}>Adicionar Série</Text>
+        </TouchableOpacity>
+        <View style={styles.exerciseActions}>
+          <TouchableOpacity style={styles.restTimerCard} onPress={() => onOpenRestTimeModal(exerciseIndex)}>
+            <FontAwesome name="clock-o" size={18} color="#fff" />
+            <Text style={styles.restTimerText}>{formatRestTime(item.restTime || 90)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.removeExerciseButton} onPress={onRemoveExercise}>
+            <FontAwesome name="trash" size={16} color="#ff3b30" />
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScaleDecorator>
   );
 };
-
 
 export default function EditarTreinoScreen() {
-  const router = useRouter();
-  const navigation = useNavigation();
   const { user } = useAuth();
-  const { fichaId, treinoId } = useLocalSearchParams();
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const { treinoId, fichaId, fromConfig } = params as { treinoId?: string; fichaId: string, fromConfig?: string };
 
-  const [treino, setTreino] = useState<Partial<Treino>>({ nome: '', diasSemana: [], intervalo: { min: 1, seg: 0 }, exercicios: [] });
+  const [treino, setTreino] = useState<Treino | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isModalVisible, setModalVisible] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isDaySelectorVisible, setDaySelectorVisible] = useState(false);
+  // Estados para controlar o RepetitionsDrawer
+  const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
+  const [isRestTimeModalVisible, setIsRestTimeModalVisible] = useState(false);
+  const [editingIndices, setEditingIndices] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
+  const [activeLog, setActiveLog] = useState<Log | null>(null);
 
-  const [isSelectExerciseModalVisible, setSelectExerciseModalVisible] = useState(false);
-  const [isExercicioModalVisible, setExercicioModalVisible] = useState(false);
-  const [exercicioSendoEditado, setExercicioSendoEditado] = useState<Exercicio | null>(null);
-  const [editingExercicioIndex, setEditingExercicioIndex] = useState<number | null>(null);
+  // Animation state
+  const editingProgress = useSharedValue(0);
 
-  const fetchTreinoData = useCallback(async () => {
-    if (!treinoId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const treinoData = await getTreinoById(treinoId as string);
-      if (treinoData) {
-        setTreino(treinoData);
-      }
-    } catch (error) {
-      Alert.alert("Erro", "Não foi possível carregar os dados do treino.");
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  }, [treinoId]);
+  useEffect(() => {
+    editingProgress.value = withTiming(isEditing ? 1 : 0, { duration: 300 });
+  }, [isEditing]);
 
   useFocusEffect(
     useCallback(() => {
-      fetchTreinoData();
-        }
-    , [fetchTreinoData])
+      const checkActiveWorkout = async () => {
+        const log = await getCachedActiveWorkoutLog();
+        setActiveLog(log);
+      };
+      checkActiveWorkout();
+    }, [])
   );
 
-  const handleDelete = async () => {
-    if (!treinoId || typeof treinoId !== 'string' || !fichaId || typeof fichaId !== 'string') return;
-
-    Alert.alert(
-      "Apagar Treino",
-      "Você tem certeza que deseja apagar este treino? Esta ação não pode ser desfeita.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Apagar",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await deleteTreino(treinoId, fichaId);
-              Alert.alert("Sucesso", "Treino apagado.");
-              router.back();
-            } catch (error) { Alert.alert("Erro", "Não foi possível apagar o treino."); }
-          },
-        },
-      ]
-    );
-  };
-  const handleSave = async () => {
-    if (!user || !fichaId || !treino.nome) {
-      Alert.alert("Erro", "O nome do treino é obrigatório.");
-      return;
+  useEffect(() => {
+    // Se for um novo treino (sem ID), já começa em modo de edição.
+    if (!treinoId) {
+      setIsEditing(true);
     }
+  }, [treinoId]);
+
+  useEffect(() => {
+    const loadTreino = async () => {
+      // --- LOG ADICIONADO ---
+      console.log('[editarTreino] Parâmetros recebidos:', JSON.stringify(params, null, 2));
+      // --- FIM DO LOG ---
+      if (treinoId) {
+        const fetchedTreino = await getTreinoById(treinoId as string);
+        // --- LOG ADICIONADO ---
+        console.log('[editarTreino] Treino carregado:', JSON.stringify(fetchedTreino, null, 2));
+        if (fetchedTreino && fetchedTreino.exercicios) {
+          fetchedTreino.exercicios.forEach((ex, index) => {
+            if (!ex.modelo) {
+              console.error(`[editarTreino] ERRO: Exercício no índice ${index} (ID: ${ex.modeloId}) veio sem 'modelo'.`);
+            }
+          });
+        }
+        // --- FIM DO LOG ---
+        setTreino(fetchedTreino ? { ...fetchedTreino, id: treinoId as string } : {
+          id: treinoId as string,
+          nome: 'Novo Treino',
+          usuarioId: user?.id || '',
+          fichaId: fichaId || undefined,
+          exercicios: [],
+          diasSemana: [],
+          intervalo: { min: 1, seg: 30 },
+        });
+      } else {
+        // Criando um novo treino
+        setTreino({
+          id: '',
+          nome: 'Novo Treino',
+          usuarioId: user?.id || '',
+          fichaId: fichaId || undefined, // Ensure fichaId is undefined if not provided
+          exercicios: [],
+          diasSemana: [],
+          intervalo: { min: 1, seg: 30 },
+        });
+      }
+      setLoading(false);
+    };
+    loadTreino();
+  }, [treinoId, fichaId, user]);
+
+  const handleClose = () => {
+    router.back();
+  };
+
+  const handleStartWorkout = () => {
+    if (!treino || !treino.id) return;    
+    const targetPath = user?.workoutScreenType === 'simplified' 
+      ? '/(treino)/ongoingWorkout' 
+      : '/(treino)/LoggingDuringWorkout';
+
+    router.push({ 
+        pathname: targetPath, 
+        params: { treinoId: treino.id, fichaId: treino.fichaId } 
+    });    
+  };
+
+
+  // Abre o drawer de repetições, guardando os índices do item a ser editado
+  const handleOpenRepDrawer = (exerciseIndex: number, setIndex: number) => {
+    setEditingIndices({ exerciseIndex, setIndex });
+    setIsRepDrawerVisible(true);
+  };
+
+  // Salva o novo valor de repetições e fecha o drawer
+  const handleRepetitionsSave = (newReps: string) => {
+    if (!editingIndices || !treino) return;
+
+    const { exerciseIndex, setIndex } = editingIndices;
+    const updatedExercicios = [...treino.exercicios];
+    const seriesToUpdate = [...updatedExercicios[exerciseIndex].series];
+
+    // Atualiza a repetição da série específica
+    seriesToUpdate[setIndex] = { ...seriesToUpdate[setIndex], repeticoes: newReps };
+    updatedExercicios[exerciseIndex] = { ...updatedExercicios[exerciseIndex], series: seriesToUpdate };
+
+    // Atualiza o estado do treino
+    if (!isEditing) setIsEditing(true);
+    setTreino({ ...treino, exercicios: updatedExercicios });
+
+    // Fecha o drawer e reseta os índices
+    setIsRepDrawerVisible(false);
+    setEditingIndices(null);
+  };
+
+  const handleOpenRestTimeModal = (exerciseIndex: number) => {
+    setEditingIndices({ exerciseIndex, setIndex: -1 }); // setIndex is not needed here
+    setIsRestTimeModalVisible(true);
+  };
+
+  const handleRestTimeSave = (newRestTime: number) => {
+    if (!editingIndices || !treino) return;
+    const { exerciseIndex } = editingIndices;
+    const updatedExercise = { ...treino.exercicios[exerciseIndex], restTime: newRestTime };
+    handleUpdateExercise(updatedExercise, exerciseIndex);
+    setIsRestTimeModalVisible(false);
+  };
+
+  // Obtém o valor inicial de repetições para passar ao drawer
+  const getRepetitionsValue = () => {
+    if (!editingIndices || !treino) return '10'; // Valor padrão
+
+    const { exerciseIndex, setIndex } = editingIndices;
+    const exercise = treino.exercicios[exerciseIndex];
+    return exercise?.series[setIndex]?.repeticoes || '10';
+  };
+
+  // Obtém o valor inicial do tempo de descanso para passar ao drawer
+  const getRestTimeValue = () => {
+    if (!editingIndices || !treino) return 90; // Valor padrão em segundos
+
+    const { exerciseIndex } = editingIndices;
+    const exercise = treino.exercicios[exerciseIndex];
+    return exercise?.restTime || 90;
+  };
+
+  const handleSave = async () => {
+    if (!treino) return;
     setIsSaving(true);
     try {
-      const treinoData = {
-        nome: treino.nome,
-        diasSemana: treino.diasSemana || [],
-        intervalo: treino.intervalo || { min: 1, seg: 0 },
-        exercicios: treino.exercicios || [],
-      };
-
-      if (treinoId) {
-        await updateTreino(treinoId as string, treinoData);
-      } else {
-        const newTreinoId = await addTreinoToFicha(fichaId as string, treinoData, user.uid);
-        // The new ID is not used here, but this fixes the potential type error if we were to set it to state.
+      if (treino.id && treino.id !== '') { // Se o treino tem um ID existente, atualiza.
+        await updateTreino(treino.id, treino);
+      } else { // Senão, cria um novo treino.
+        const newTreinoId = await addTreino(treino);
+        setTreino(prev => prev ? { ...prev, id: newTreinoId } : null); // Atualiza o ID no estado local
       }
-      Alert.alert("Sucesso", "Treino salvo com sucesso!");
-      router.back();
+      // After saving, return to "viewing" mode.
+      setIsEditing(false);
     } catch (error) {
-      Alert.alert("Erro", "Não foi possível salvar o treino.");
-      console.error(error);
+      console.error("Erro ao salvar treino:", error);
+      Alert.alert('Erro', 'Não foi possível salvar o treino.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  useLayoutEffect(() => {
-    // Só mostra o botão de apagar se estiver editando um treino existente
-    if (treinoId) {
-      navigation.setOptions({
-        headerRight: () => (
-          <TouchableOpacity onPress={handleDelete} style={{ marginRight: 15 }}><FontAwesome name="trash" size={24} color="#ff3b30" /></TouchableOpacity>
-        ),
-      });
-    }
-  }, [navigation, treinoId, handleDelete]);
-  const toggleDiaSemana = (dia: DiaSemana) => {
-    const currentDias = treino.diasSemana || [];
-    const newDias = currentDias.includes(dia)
-      ? currentDias.filter(d => d !== dia)
-      : [...currentDias, dia];
-    setTreino(prev => ({ ...prev, diasSemana: newDias }));
-  };
+  const handleAddExercises = (exerciciosSelecionados: ExercicioModelo[]) => {
+    if (!treino) return;
 
-  const handleIntervalChange = (unit: 'min' | 'seg', value: string) => {
-    const numValue = value === '' ? 0 : parseInt(value.replace(/[^0-9]/g, ''), 10);
-    if (isNaN(numValue) || numValue < 0) return; // Ensure non-negative numbers
-
-    setTreino(prev => ({
-        ...prev,
-        intervalo: {
-            min: prev?.intervalo?.min ?? 1, // Default to 1 if undefined
-            seg: prev?.intervalo?.seg ?? 0,
-            [unit]: numValue
-        }
-    }));
-  };
-
-  const openAddExercicioModal = () => {
-    setSelectExerciseModalVisible(true);
-    // The useEffect for activeSearchTerm and isModalVisible will handle the initial load
-    setSelectExerciseModalVisible(true);
-  };
-
-  const openExercicioModal = (modelo: ExercicioModelo) => {
-    setSelectExerciseModalVisible(false);
-    const newExercise: Exercicio = {
-      modelo: modelo,
+    const novosExercicios: Exercicio[] = exerciciosSelecionados.map(modelo => ({
       modeloId: modelo.id,
-      series: [{ id: `set-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal', isTimeBased: false }],
+      modelo: modelo,
+      series: [{ id: `set-${Date.now()}`, repeticoes: '10', peso: 10, type: 'normal', concluido: false }],
       isBiSet: false,
-    };
-    setExercicioSendoEditado(newExercise);
-    setEditingExercicioIndex(null); // Ensure we are in "add" mode
-    setExercicioModalVisible(true);
+      notes: '', // Adiciona a propriedade 'notes' obrigatória
+      restTime: 90, // Default rest time in seconds
+    }));
+
+    if (!isEditing) setIsEditing(true);
+    setTreino(prev => prev ? { ...prev, exercicios: [...prev.exercicios, ...novosExercicios] } : null);
+    setModalVisible(false);
   };
 
-const handleSaveExercicio = (newSeries: SerieEdit[], pesoBarra?: number) => {
-    if (!exercicioSendoEditado || newSeries.length === 0 || newSeries.some(s => !s.repeticoes)) {
-      Alert.alert("Erro", "O exercício deve ter pelo menos uma série e todas as séries devem ter repetições definidas.");
-      return;
-    }
+  const handleUpdateExercise = (updatedExercise: Exercicio, index: number) => {
+    if (!treino) return;
+    const newExercicios = [...treino.exercicios];
+    if (!isEditing) setIsEditing(true);
+    newExercicios[index] = updatedExercise;
+    setTreino({ ...treino, exercicios: newExercicios });
+  };
 
-    const updatedExercise: Exercicio = {
-      ...exercicioSendoEditado,
-      series: newSeries,
-      pesoBarra: pesoBarra,
-    };
-
-    const updatedExercicios = [...(treino.exercicios || [])];
-
-    if (editingExercicioIndex !== null) {
-      updatedExercicios[editingExercicioIndex] = updatedExercise;
-
-      const nextExercicio = updatedExercicios[editingExercicioIndex + 1];
-      const isLeaderOfBiSet = !updatedExercise.isBiSet && nextExercicio?.isBiSet;
-
-      if (isLeaderOfBiSet) {
-        const targetSeriesCount = updatedExercise.series.length;
-        let partnerSeries = [...nextExercicio.series];
-
-        while (partnerSeries.length < targetSeriesCount) {
-          const lastSerie = partnerSeries.length > 0 ? partnerSeries[partnerSeries.length - 1] : { id: `set-sync-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' as const };
-          partnerSeries.push({ ...lastSerie, id: `set-sync-${Date.now()}-${partnerSeries.length}`, isTimeBased: lastSerie.isTimeBased });
+  const handleRemoveExercise = (index: number) => {
+    if (!treino) return;
+    const exerciseName = treino.exercicios[index]?.modelo?.nome || 'este exercício';
+    Alert.alert(
+      "Apagar Exercício",
+      `Tem certeza que deseja apagar "${exerciseName}" do seu treino?`,
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Apagar",
+          style: "destructive",
+          onPress: () => {
+            if (!isEditing) setIsEditing(true);
+            const newExercicios = [...treino.exercicios];
+            newExercicios.splice(index, 1);
+            setTreino({ ...treino, exercicios: newExercicios });
+          }
         }
-        if (partnerSeries.length > targetSeriesCount) {
-          partnerSeries = partnerSeries.slice(0, targetSeriesCount);
-        }
-        updatedExercicios[editingExercicioIndex + 1] = { ...nextExercicio, series: partnerSeries };
-      }
-    } else {
-      updatedExercicios.push(updatedExercise);
-    }
-
-    setTreino(prev => ({ ...prev, exercicios: updatedExercicios }));
-
-    setExercicioModalVisible(false);
-    setExercicioSendoEditado(null);
-    setEditingExercicioIndex(null);
-  };
-  
-  const removeExercicio = (index: number) => {
-    setTreino(prev => ({ ...prev, exercicios: prev.exercicios?.filter((_, i) => i !== index) }));
-  };
-
-  const openEditExercicioModal = (exercicio: Exercicio, index: number) => {
-    setSelectExerciseModalVisible(false); // Close selection modal if open
-    setExercicioSendoEditado(exercicio);
-    setEditingExercicioIndex(index);
-    setExercicioModalVisible(true);
-  };
-
-  const handleToggleBiSet = (index: number) => {
-    if (index === 0) return; // Não pode ser bi-set com um exercício inexistente
-  
-    const updatedExercicios = [...(treino.exercicios || [])];
-    const currentExercicio = { ...updatedExercicios[index] }; // Exercício que está sendo marcado como bi-set
-    const previousExercicio = updatedExercicios[index - 1]; // Exercício principal do bi-set
-  
-    // Alterna o estado do bi-set
-    currentExercicio.isBiSet = !currentExercicio.isBiSet;
-  
-    // Se o exercício foi MARCADO como bi-set, sincroniza as séries
-    if (currentExercicio.isBiSet && previousExercicio) {
-      const targetSeriesCount = previousExercicio.series.length;
-      let currentSeries = [...currentExercicio.series];
-  
-      if (currentSeries.length > targetSeriesCount) {
-        // Se tem mais séries, corta as excedentes
-        currentSeries = currentSeries.slice(0, targetSeriesCount);
-      } else if (currentSeries.length < targetSeriesCount) {
-        // Se tem menos séries, adiciona as que faltam
-        const seriesToAdd = targetSeriesCount - currentSeries.length;
-        const lastSerie = currentSeries.length > 0 
-          ? currentSeries[currentSeries.length - 1] 
-          : { id: `set-new-${Date.now()}`, repeticoes: '8-12', peso: 10, type: 'normal' as const };
-        
-        for (let i = 0; i < seriesToAdd; i++) {
-          currentSeries.push({ ...lastSerie, id: `set-new-${Date.now()}-${i}`, isTimeBased: lastSerie.isTimeBased });
-        }
-      }
-      currentExercicio.series = currentSeries;
-    }
-  
-    updatedExercicios[index] = currentExercicio;
-    setTreino(prev => ({ ...prev, exercicios: updatedExercicios }));
-    // CORRIGIDO: Usa a importação de Haptics
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  };
-
-  const totalSets = useMemo(() => {
-    return (item: Exercicio) => {
-      if (Array.isArray(item.series)) {
-        // New structure: count only 'normal' series for the main display
-        return item.series.filter(s => (s.type || 'normal') === 'normal').length;
-      }
-      // Old structure or fallback
-      return (item as any).series || 0;
-    };
-  }, []);
-
-  if (loading) {
-    return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
-  }
-
-  const renderExercicioItem = ({ item, drag, isActive, getIndex }: RenderItemParams<Exercicio>) => {
-    const index = getIndex();
-    if (index === undefined) return null;
-
-    const isPartOfBiSet = item.isBiSet;
-    const isPreviousBiSet = index > 0 && treino.exercicios?.[index - 1]?.isBiSet;
-
-    return (
-      <View>
-        {index > 0 && (
-          <TouchableOpacity
-            style={[styles.biSetLinker, isPreviousBiSet && { opacity: 0.5 }]}
-            onPress={() => handleToggleBiSet(index)}
-            disabled={isPreviousBiSet}
-          >
-            <FontAwesome name="link" size={20} color={isPartOfBiSet ? '#1cb0f6' : '#666'} />
-            {isPartOfBiSet && (
-              // CORRIGIDO: Usa a importação de FadeInLeft
-              <Animated.View entering={FadeInLeft.duration(400)}>
-                <Text style={styles.biSetLabel}>Bi-set</Text>
-              </Animated.View>
-            )}
-          </TouchableOpacity>
-        )}
-        <Swipeable
-          renderLeftActions={() => <LeftActions onPress={() => openEditExercicioModal(item, index)} />}
-          renderRightActions={() => <RightActions onPress={() => removeExercicio(index)} />}
-          overshootRight={false}
-          overshootLeft={false}
-        >
-          <TouchableOpacity
-            onLongPress={drag}
-            disabled={isActive}
-            style={[styles.exercicioCard, { backgroundColor: isActive ? '#3a3a3a' : '#222' }]}
-          >
-            <View style={{flex: 1}}>
-                <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
-                <Text style={styles.exercicioDetails} numberOfLines={1}>
-                  {totalSets(item)}x{' '}
-                  {item.series[0]?.isTimeBased 
-                    ? `${item.series[0]?.repeticoes}s` 
-                    : `${item.series[0]?.repeticoes} reps`
-                  }
-                  {item.series.filter(s => s.type === 'dropset').length > 0 &&
-                    ` + ${item.series.filter(s => s.type === 'dropset').length} drop`
-                  }
-                </Text>
-            </View>
-            {/* Oculta o ícone de reordenação se for o último item de um bi-set */}
-            <TouchableOpacity disabled={isPartOfBiSet}>
-              <FontAwesome 
-                name="bars" 
-                size={20} 
-                color="#666" 
-                style={{ marginLeft: 15, opacity: isPartOfBiSet ? 0.5 : 1 }} />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </Swipeable>
-      </View>
+      ]
     );
   };
 
+  const handleToggleDay = (day: DiaSemana) => {
+    if (!treino) return;
+    const currentDays = treino.diasSemana || [];
+    const newDays = currentDays.includes(day)
+      ? currentDays.filter(d => d !== day)
+      : [...currentDays, day];
+
+    // Sort the days
+    newDays.sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]);
+
+    if (!isEditing) setIsEditing(true);
+    setTreino({ ...treino, diasSemana: newDays });
+  };
+
+  const handleDeleteTreino = async () => {
+    if (!treino || !treino.id) {
+      Alert.alert("Erro", "Este treino ainda não foi salvo e não pode ser deletado.");
+      router.back(); // Apenas volta se for um treino novo e não salvo
+      return;
+    }
+
+    Alert.alert(
+      "Apagar Treino",
+      `Tem certeza que deseja apagar permanentemente o treino "${treino.nome}"? Esta ação não pode ser desfeita.`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Apagar", style: "destructive", onPress: async () => {
+            try {
+              // Garante que o fichaId seja uma string antes de chamar a função
+              if (typeof treino.fichaId === 'string') {
+                await deleteTreino(treino.id, treino.fichaId);
+              }
+              Alert.alert("Sucesso", "O treino foi apagado.");
+              router.back();
+            } catch (error) { console.error("Erro ao apagar treino:", error); Alert.alert('Erro', 'Não foi possível apagar o treino.'); }
+          }
+        }
+      ]
+    );
+  };
+  const renderItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<Exercicio>) => {
+    const index = getIndex();
+    if (typeof index !== 'number') {
+      return null;
+    }
+    return (
+      <ExerciseItem
+        item={item}
+        exerciseIndex={index} // Passa o índice do exercício
+        onOpenRepDrawer={handleOpenRepDrawer} // Passa a função para abrir o drawer
+        drag={drag}
+        onOpenRestTimeModal={handleOpenRestTimeModal}
+        isActive={isActive}
+        onUpdateExercise={(ex) => handleUpdateExercise(ex, index)}
+        onRemoveExercise={() => handleRemoveExercise(index)} setIsEditing={setIsEditing}      />
+    );
+  }, [treino]);
+
+  const viewingStyle = useAnimatedStyle(() => {
+    return {
+      opacity: 1 - editingProgress.value,
+      transform: [{ translateY: editingProgress.value * -20 }],
+    };
+  });
+
+  const editingStyle = useAnimatedStyle(() => {
+    return {
+      opacity: editingProgress.value,
+      transform: [{ translateY: (1 - editingProgress.value) * 20 }],
+    };
+  });
+
+  const HeaderTitle = ({ text, style }: { text: string, style: any }) => (
+    <Animated.View style={[styles.headerTitleContainer, style]}>
+      <Text style={styles.headerTitle}>{text}</Text>
+    </Animated.View>
+  );
+
+  if (loading) {
+    return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
+  }
+
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#030405' }}>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity onPress={handleClose} style={styles.backButton}>
+            <Ionicons name="chevron-back" size={28} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ height: 30, justifyContent: 'center' }}>
+            <Animated.View style={[styles.headerTitleContainer, viewingStyle]}>
+              <Text style={styles.headerTitle}>Visualizar Treino</Text>
+            </Animated.View>
+            <Animated.View style={[styles.headerTitleContainer, editingStyle]}>
+              <Text style={styles.headerTitle}>{treinoId ? 'Editar Treino' : 'Novo Treino'}</Text>
+            </Animated.View>
+          </View>
+        </View>
+        <View style={styles.headerRight}>
+          {isEditing ? (
+            // Botão de Edição
+            <Animated.View style={[styles.headerButtonWrapper, editingStyle]}>
+              <TouchableOpacity onPress={handleSave} disabled={isSaving}>
+                {isSaving ? <ActivityIndicator color="#1cb0f6" /> : (
+                  <Text style={styles.saveButtonText}>Salvar</Text>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          ) : (
+            // Botões de Visualização
+            <Animated.View style={[styles.headerButtonWrapper, viewingStyle]}>
+              <TouchableOpacity style={styles.configButton} onPress={() => setIsEditing(true)}>
+                <FontAwesome name="cog" size={22} color="#ccc" />
+              </TouchableOpacity>
+              
+              {/* Lógica do botão Iniciar/Continuar */}
+              {!activeLog ? (
+                // Se não há treino ativo, mostra "Iniciar"
+                <TouchableOpacity style={styles.startButton} onPress={handleStartWorkout} disabled={isSaving}>
+                  {isSaving ? <ActivityIndicator color="#000" /> : (
+                    <>
+                      <Text style={styles.startButtonText}>Iniciar</Text>
+                      <FontAwesome name="arrow-right" size={14} color="#000" />
+                    </>
+                  )}
+                </TouchableOpacity>
+              ) : activeLog.treino?.id === treino?.id ? (
+                // Se o treino ativo é o mesmo que está sendo editado, mostra "Continuar"
+                <TouchableOpacity style={styles.startButton} onPress={handleStartWorkout} disabled={isSaving}>
+                  {isSaving ? <ActivityIndicator color="#000" /> : (
+                    <>
+                      <Text style={styles.startButtonText}>Continuar</Text>
+                      <FontAwesome name="play" size={14} color="#000" />
+                    </>
+                  )}
+                </TouchableOpacity>
+              ) : null /* Se há um treino ativo diferente, não mostra nada */}
+            </Animated.View>
+          )}
+        </View>
+      </View>
+
+      {treino && (
         <DraggableFlatList
-          containerStyle={{ flex: 1 }}
-          contentContainerStyle={{ padding: 15, paddingBottom: 100 }}
-          data={treino.exercicios || []} // Adicionado o tipo aqui
-          renderItem={renderExercicioItem}
-          keyExtractor={(item, index) => `exercicio-${index}`}
-          onDragEnd={({ data }) => setTreino(prev => ({ ...prev, exercicios: data }))}
+          data={treino.exercicios}
+          onDragEnd={({ data }) => setTreino(prev => prev ? { ...prev, exercicios: data } : null)}
+          keyExtractor={(item) => item.modeloId || `new-${Math.random()}`}
+          renderItem={renderItem}
           ListHeaderComponent={
-            <>
-              <TextInput style={styles.input} value={treino.nome} onChangeText={text => setTreino(p => ({ ...p, nome: text }))} placeholder="Nome do Treino (Ex: Treino A - Peito e Tríceps)" placeholderTextColor="#888" />
-
-              <Text style={styles.label}>Dias da Semana</Text>
-              <View style={styles.diasContainer}>
-                {DIAS_SEMANA.map(dia => (
-                  <TouchableOpacity key={dia} style={[styles.diaButton, treino.diasSemana?.includes(dia) && styles.diaSelected]} onPress={() => toggleDiaSemana(dia)}>
-                    <Text style={styles.diaText}>{dia.charAt(0).toUpperCase() + dia.slice(1)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.label}>Intervalo de Descanso</Text>
-              <View style={styles.intervaloContainer}>
-                  <TextInput style={styles.intervaloInput} value={String(treino.intervalo?.min ?? 1)} onChangeText={text => handleIntervalChange('min', text)} keyboardType="number-pad" maxLength={2} />
-                  <Text style={styles.intervaloLabel}>min</Text>
-                  <TextInput style={styles.intervaloInput} value={String(treino.intervalo?.seg ?? 0)} onChangeText={text => handleIntervalChange('seg', text)} keyboardType="number-pad" maxLength={2} />
-                  <Text style={styles.intervaloLabel}>seg</Text>
-              </View>
-
-              <Text style={styles.sectionTitle}>Exercícios</Text>
-            </>
+            <View style={styles.listHeaderContainer}>
+              <TextInput
+                style={styles.titleInput}
+                value={treino.nome}
+                onChangeText={text => {
+                  if (!isEditing) setIsEditing(true);
+                  if (!isEditing) setIsEditing(true);
+                  setTreino(prev => prev ? { ...prev, nome: text } : null);
+                }}
+                placeholder="Nome do Treino"
+                placeholderTextColor="#888"
+              />
+              <TouchableOpacity
+                style={styles.daySelectorContainer}
+                onPress={() => setDaySelectorVisible(true)}
+              >
+                <Text style={styles.daySelectorText} numberOfLines={1}>
+                  {treino.diasSemana.length > 0
+                    ? treino.diasSemana.join(', ').toUpperCase() : 'Dias da semana'}
+                </Text>
+                <FontAwesome name={treino.diasSemana.length > 0 ? "calendar" : "chevron-down"} size={16} color="#ccc" />
+              </TouchableOpacity>
+            </View>
           }
           ListFooterComponent={
             <>
-              <TouchableOpacity style={styles.addButton} onPress={openAddExercicioModal}>
-                <Text style={styles.addButtonText}>+ Adicionar Exercício</Text>
+              <TouchableOpacity style={styles.addExerciseButton} onPress={() => setModalVisible(true)}>
+                <FontAwesome name="plus" size={16} color="#fff" />
+                <Text style={styles.addExerciseButtonText}>Adicionar Exercício</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={isSaving}>
-                {isSaving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Salvar Treino</Text>}
-              </TouchableOpacity>
+              {/* Botão para apagar o treino, só aparece se o treino já existir */}
+              {treinoId && (
+                <TouchableOpacity style={styles.deleteWorkoutButton} onPress={handleDeleteTreino}>
+                  <FontAwesome name="trash" size={16} color="#ff3b30" />
+                  <Text style={styles.deleteWorkoutButtonText}>Apagar Treino</Text>
+                </TouchableOpacity>
+              )}
             </>
           }
+          contentContainerStyle={{ paddingBottom: 130 }}
         />
+      )}
 
-        <SelectExerciseModal
-          visible={isSelectExerciseModalVisible}
-          onClose={() => setSelectExerciseModalVisible(false)}
-          onSelect={openExercicioModal}
-        />
+      <MultiSelectExerciseModal
+        visible={isModalVisible}
+        onClose={() => setModalVisible(false)}
+        onConfirm={handleAddExercises}
+        // Se veio da config, não filtra exercícios. Senão, filtra os já existentes.
+        existingExerciseIds={fromConfig === 'true' ? [] : (treino?.exercicios.map(e => e.modeloId) || [])}
+      />
 
-        <EditarExercicioNoTreinoModal
-          visible={isExercicioModalVisible}
-          onClose={() => {
-            setExercicioModalVisible(false);
-            setExercicioSendoEditado(null);
-            setEditingExercicioIndex(null);
-          }}
-          exercise={exercicioSendoEditado}
-          onSave={handleSaveExercicio}
-        />
-      </SafeAreaView>
-    </GestureHandlerRootView>
+      <RepetitionsDrawer
+        visible={isRepDrawerVisible}
+        onClose={() => setIsRepDrawerVisible(false)}
+        onSave={handleRepetitionsSave}
+        initialValue={getRepetitionsValue()}
+      />
+
+      <Modal
+        transparent={true}
+        visible={isDaySelectorVisible}
+        animationType="fade"
+        onRequestClose={() => setDaySelectorVisible(false)}
+      >
+        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setDaySelectorVisible(false)}>
+          <View style={styles.daySelectorModal}>
+            <Text style={styles.daySelectorTitle}>Selecione os dias</Text>
+            <View style={styles.daysContainer}>
+              {DIAS_SEMANA_ARRAY.map(day => {
+                const isSelected = treino?.diasSemana.includes(day);
+                return (
+                  <TouchableOpacity
+                    key={day}
+                    style={[styles.dayButton, isSelected && styles.dayButtonSelected]}
+                    onPress={() => handleToggleDay(day)}
+                  >
+                    <Text style={styles.dayButtonText}>{day.toUpperCase()}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity style={styles.daySelectorCloseButton} onPress={() => setDaySelectorVisible(false)}><Text style={styles.daySelectorCloseButtonText}>Fechar</Text></TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* NOVO DRAWER DE TEMPO DE DESCANSO */}
+      <RestTimeDrawer
+        visible={isRestTimeModalVisible}
+        onClose={() => {
+          setIsRestTimeModalVisible(false);
+          setEditingIndices(null);
+        }}
+        onSave={handleRestTimeSave}
+        initialValue={getRestTimeValue()}
+      />
+
+    </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
-  container: { padding: 15, backgroundColor: '#030405',},
-  title: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-  label: { fontSize: 16, color: '#ccc', marginBottom: 10, marginTop: 10 },
-  input: { backgroundColor: '#222', color: '#fff', padding: 15, borderRadius: 8, fontSize: 16, marginBottom: 20 },
-  diasContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 20 },
-  diaButton: { paddingVertical: 10, paddingHorizontal: 12, backgroundColor: '#222', borderRadius: 8 , flexGrow: 1, alignItems: 'center', marginHorizontal: 2},
-  diaSelected: { backgroundColor: '#1cb0f6' },
-  diaText: { color: '#fff', fontWeight: 'bold' },
-  intervaloContainer: {
+  container: {
+    flex: 1,
+    backgroundColor: '#030405', // Dark background
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 10, // Mantido
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+  headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'flex-start',
+    gap: 4,
   },
-  intervaloInput: {
-    backgroundColor: '#222',
+  headerButtonWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  backButton: {
+    padding: 5,
+  },
+  headerTitle: {
     color: '#fff',
-    padding: 15,
-    borderRadius: 8,
-    fontSize: 16,
-    width: 60,
-    textAlign: 'center',
+    fontSize: 22, // Aumentado
+    fontWeight: 'bold',
   },
-  intervaloLabel: {
-    color: '#ccc',
-    fontSize: 16,
-    marginHorizontal: 10,
+  headerTitleContainer: {
+    position: 'absolute',
   },
-  sectionTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginTop: 10, marginBottom: 10 },
+  saveButtonText: {
+    color: '#1cb0f6',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  startButton: {
+    backgroundColor: '#fff',
+    borderRadius: 25,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  startButtonText: {
+    color: '#000',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#030405',
+  },
+  listHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+
+    borderBottomColor: '#222',
+  },
+  titleInput: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: 'bold',
+    flex: 1, // Allows the input to take available space
+    borderBottomWidth: 1,
+    borderColor: '#222',
+    paddingRight: 10,
+    paddingBottom: 5,
+  },
   exercicioCard: {
     backgroundColor: '#141414',
+    borderRadius: 12,
+    marginHorizontal: 15,
+    marginVertical: 8,
     padding: 15,
-    borderRadius: 8,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#ffffff1a',
+    borderColor: '#222',
   },
-  biSetLinker: {
-    height: 40,
+  activeCard: {
+    borderColor: '#1cb0f6',
+    shadowColor: '#1cb0f6',
+    shadowOpacity: 0.5,
+    shadowRadius: 5,
+    elevation: 10,
+  },
+  exercicioHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    gap: 10,
-    paddingLeft: 15, // Alinha com o conteúdo do card
-  },
-  biSetLabel: {
-    color: '#1cb0f6',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  exercicioName: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  exercicioDetails: { color: '#aaa', fontSize: 14, marginTop: 4 },
-  addButton: {
-    borderWidth: 1,
-    borderColor: '#ffffffee',
-    borderStyle: 'dashed',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 10,
-    backgroundColor: '#121212',
-  },
-  addButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  saveButton: { backgroundColor: '#1cb0f6', padding: 15, borderRadius: 8, alignItems: 'center', marginTop: 30, marginBottom: 50 },
-  saveButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  deleteBox: {
-    backgroundColor: '#ff3b30',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-    borderRadius: 8,
-  },
-  
-  editBox: {
-    backgroundColor: '#1cb0f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 80,
-    borderRadius: 8,
-  },
-
-  // Modal Styles
-
-  // Add Exercicio Modal
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#ffffff1a',
-  },
-  modalHeaderText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  exerciseInfoCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalSafeArea: {
-    flex: 1,
-    backgroundColor: '#141414',
-  },
-  bottomSheetContainer: {
-    flex: 1,
-    justifyContent: "flex-end", // Alinha o modal na parte de baixo
-    alignItems: "center",
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalScrollViewContent: {
-    padding: 20,
-    paddingBottom: 40, // Espaço extra no final do scroll
-  },
-  addExercicioModalView: {
-    margin: 0,
-    backgroundColor: "#141414",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-    width: '100%',
-    height: '100%', // Ocupa a altura total
-  },
-  addExercicioModalVideo: {
-    width: 100,
-    height: 100,
-    borderRadius: 10,
     marginBottom: 15,
+  },
+  exerciseVideo: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 15,
     backgroundColor: '#333',
   },
-  modalText: {
-    textAlign: "center",
+  exerciseInfo: {
+    flex: 1,
+  },
+  exercicioName: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: 'bold'
-  },
-  modalExerciseName: {
-    color: '#fff',
-    fontSize: 20,
     fontWeight: 'bold',
   },
-  modalMuscleGroup: {
-    color: '#ccc',
-    fontSize: 16,
-    fontWeight: 'bold'
+  muscleGroup: {
+    color: '#aaa',
+    fontSize: 14,
+    marginTop: 4,
   },
-  modalInput: {
-    backgroundColor: '#222',
-    color: '#fff',
+  dragHandle: {
     padding: 10,
-    borderRadius: 8,
-    fontSize: 16,
-    marginBottom: 15,
-    width: 200,
-    textAlign: 'center'
   },
-  modalButtons: {
-    flexDirection: 'column-reverse', // Empilha os botões, com o principal (Salvar) embaixo
-    justifyContent: 'flex-start',
-    width: '100%',
-    marginTop: 20,
+  seriesContainer: {
+    marginTop: 10,
   },
-  button: {
-    borderRadius: 10,
-    padding: 10,
-    elevation: 2,
-    flex: 1,
-    marginHorizontal: 5,
-    marginVertical: 5, // Adiciona espaçamento vertical entre os botões
-  },
-  buttonClose: {
-    backgroundColor: "transparent",
-  },
-  buttonAdd: {
-    backgroundColor: "#1cb0f6",
-  },
-  textStyle: {
-    color: "white",
-    fontWeight: "bold",
-    textAlign: "center"
+  seriesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 5,
+    paddingHorizontal: 5, // Alinha com o padding do setRow
   },
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 5,
-    borderRadius: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2f2f2f',
-    height: 65,
+    marginBottom: 10,
+    paddingVertical: 5,
   },
-
+  dropsetRow: {
+    marginLeft: 20,
+    borderLeftWidth: 2,
+    borderLeftColor: '#444',
+    paddingLeft: 10,
+  },
+  setIndicator: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    width: 40, // Aumentado para alinhar com o dragHandle
+    textAlign: 'center',
+  },
+  inputGroup: {
+    alignItems: 'center',
+    flex: 1, // Adicionado para que o grupo ocupe o espaço disponível
+  },
+  inputLabel: {
+    color: '#aaa',
+    fontSize: 10,
+    marginBottom: 4,
+  },
+  setInput: {
+    backgroundColor: '#2c2c2e',
+    color: '#fff',
+    padding: 10,
+    borderRadius: 5,
+    textAlign: 'center',
+    fontSize: 16,
+    minWidth: 80,
+  },
+  repButton: {
+    backgroundColor: '#2c2c2e',
+    padding: 10,
+    borderRadius: 5,
+    minWidth: 80,
+    height: 42, // Para alinhar com o TextInput
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  repButtonText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+  xText: {
+    color: '#888',
+    fontSize: 14,
+    alignSelf: 'flex-end',
+    paddingBottom: 10,
+  },
+  exerciseActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#222',
+  },
+  addSetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 15,
+    marginTop: 10,
+    backgroundColor: '#1f1f1f',
+    borderRadius: 8,
+    alignSelf: 'center',
+    width: '100%',
+    justifyContent: 'center',
+  },
+  addSetButtonText: {
+    color: '#1cb0f6',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  configButton: {
+    padding: 10, // Aumenta a área de toque
+    marginLeft: 15,
+  },
+  removeExerciseButton: {
+    padding: 10,
+  },
+  restTimerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2c2c2e',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    gap: 8,
+  },
+  restTimerText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  addExerciseButton: {
+    backgroundColor: '#141414',
+    borderWidth: 1,
+    borderColor: '#222',
+    borderRadius: 12,
+    padding: 15,
+    margin: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  addExerciseButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  deleteWorkoutButton: {
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 59, 48, 0.5)',
+    borderRadius: 12,
+    padding: 15,
+    marginHorizontal: 15,
+    marginTop: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  deleteWorkoutButtonText: {
+    color: '#ff3b30',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  notesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  notesInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    backgroundColor: 'transparent',
+  },
+  // Day Selector Styles
+  daySelectorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  daySelectorText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    maxWidth: 100, // Prevents the text from pushing the icon too far
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  daySelectorModal: {
+    backgroundColor: '#1f1f1f',
+    borderRadius: 15,
+    padding: 20,
+    width: '90%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  daySelectorTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  daysContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
+  dayButton: {
+    backgroundColor: '#333',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 20,
+  },
+  dayButtonSelected: {
+    backgroundColor: '#1cb0f6',
+  },
+  dayButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  daySelectorCloseButton: { padding: 10 },
+  daySelectorCloseButtonText: { color: '#1cb0f6', fontSize: 16 },
+  // Rest Time Modal
+  restTimeOptionsContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
+  restTimeOptionButton: {
+    backgroundColor: '#333',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderRadius: 8,
+  },
+  restTimeOptionText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  customRestTimeButton: { backgroundColor: '#555' },
 });

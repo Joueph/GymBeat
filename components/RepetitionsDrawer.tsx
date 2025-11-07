@@ -100,10 +100,10 @@ export const RepetitionsDrawer = ({ visible, onClose, onSave, initialValue }: Re
   // --- NOVOS HANDLERS USANDO O NumberSlider ---
 
   const handleMinRepsChange = (newMin: number) => {
-    const newMax = Math.min(newMin + delta, newMin + MAX_REP_DIFF, 50);
+    // Mantém a diferença (delta) constante, ajustando o valor máximo uniformemente.
+    const newMax = Math.min(newMin + delta, 50); // Garante que o máximo não passe de 50.
     setMinReps(newMin);
     setMaxReps(newMax);
-    setDelta(newMax - newMin);
   };
 
   const handleMaxRepsChange = (newMax: number) => {

@@ -56,7 +56,7 @@ export default function WorkoutsScreen() {
       try {
         const [fichas, userProfile] = await Promise.all([
           getFichasModelos(),
-          user ? getUserProfile(user.uid) : Promise.resolve(null)
+          user ? getUserProfile(user.id) : Promise.resolve(null)
         ]);
         setProfile(userProfile);
 
@@ -166,8 +166,8 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
           }))
         : treinos;
 
-      const newFichaId = await copyFichaModeloToUser(selectedFicha, user.uid, treinosParaCopiar);
-      const fichaAtivada: Ficha | null = await setFichaAtivaService(user.uid, newFichaId);
+      const newFichaId = await copyFichaModeloToUser(selectedFicha, user.id, treinosParaCopiar);
+      const fichaAtivada: Ficha | null = await setFichaAtivaService(user.id, newFichaId);
 
       // Após ativar, busca os treinos recém-criados e salva tudo no cache
       if (fichaAtivada && fichaAtivada.treinos.length > 0) {
@@ -222,7 +222,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
   const handleUpdateStreakGoal = async () => {
     if (!user || !selectedFicha || !selectedFicha.totalDias) return;
     try {
-      await updateUserProfile(user.uid, { streakGoal: selectedFicha.totalDias });
+      await updateUserProfile(user.id, { streakGoal: selectedFicha.totalDias });
       // Atualiza o perfil localmente para refletir a mudança imediatamente na UI
       setProfile(prev => prev ? { ...prev, streakGoal: selectedFicha.totalDias } : null);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -364,15 +364,15 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     if (workoutGoal < userGoal) {
       // Cenário: Meta do treino é MAIOR que a do usuário
       return (
-        <View style={[styles.goalDiffCard, styles.goalDiffConstructive]}>
+        <View style={[styles.goalDiffCard, styles.goalDiffDestructive]}>
           <Text style={styles.goalDiffTitle}>Este treino possui uma meta <Text style={{ fontStyle: 'italic' }}>Menor que a sua</Text></Text>
           <View style={styles.goalDiffImages}>
             <Image source={getStreakImage(userGoal)} style={styles.goalDiffImage} />
             <FontAwesome name="long-arrow-right" size={24} color="#fff" />
             <Image source={getStreakImage(workoutGoal)} style={styles.goalDiffImage} />
           </View>
-          <Text style={styles.goalDiffInfo}>Você pode aderir à este treino <Text style={{ fontWeight: 'bold' }}>SEM COMPROMETER SUA SEQUÊNCIA</Text>.</Text>
-          <TouchableOpacity style={styles.goalDiffButtonConstructive} onPress={handleUpdateStreakGoal}>
+          <Text style={styles.goalDiffInfo}>Recomendamos que você ajuste sua meta semanal para sequência de treinos.</Text>
+          <TouchableOpacity style={styles.goalDiffButtonDestructive} onPress={handleUpdateStreakGoal}>
             <Text style={styles.goalDiffButtonText}>Diminuir meta para {workoutGoal} dias</Text>
           </TouchableOpacity>
         </View>
@@ -380,15 +380,15 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     } else {
       // Cenário: Meta do treino é MENOR que a do usuário
       return (
-        <View style={[styles.goalDiffCard, styles.goalDiffDestructive]}>
+        <View style={[styles.goalDiffCard, styles.goalDiffConstructive]}>
           <Text style={styles.goalDiffTitle}>Este treino possui uma meta <Text style={{ fontStyle: 'italic' }}>Maior que a sua</Text></Text>
           <View style={styles.goalDiffImages}>
             <Image source={getStreakImage(userGoal)} style={styles.goalDiffImage} />
             <FontAwesome name="long-arrow-right" size={24} color="#fff" />
             <Image source={getStreakImage(workoutGoal)} style={styles.goalDiffImage} />
           </View>
-          <Text style={styles.goalDiffInfo}>Para aderir à este treino, sua sequência pode ser comprometida. Recomendamos que você <Text style={{ fontWeight: 'bold' }}>AUMENTE SUA META SEMANAL</Text>.</Text>
-          <TouchableOpacity style={styles.goalDiffButtonDestructive} onPress={handleUpdateStreakGoal}>
+          <Text style={styles.goalDiffInfo}>Este treino possui um objetivo de treinos na semana maior que sua meta, se quiser, você pode <Text style={{ fontWeight: 'bold' }}>AUMENTAR SUA META SEMANAL</Text>.</Text>
+          <TouchableOpacity style={styles.goalDiffButtonConstructive} onPress={handleUpdateStreakGoal}>
             <Text style={styles.goalDiffButtonText}>Aumentar meta para {workoutGoal} dias</Text>
           </TouchableOpacity>
         </View>

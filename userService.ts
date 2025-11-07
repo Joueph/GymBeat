@@ -92,6 +92,7 @@ export const createUserProfileDocument = async (
     isPro: additionalData.isPro || false,
     streakGoal: additionalData.streakGoal || 3,
     weeksStreakGoal: additionalData.weeksStreakGoal || 4,
+    workoutScreenType: additionalData.workoutScreenType || 'simplified', // New field
     
     // --- NOVOS DADOS VINDOS DO ONBOARDING ---
     objetivoPrincipal: additionalData.objetivoPrincipal || null,

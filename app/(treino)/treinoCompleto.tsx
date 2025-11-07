@@ -28,7 +28,7 @@ const ProgressBar = memo(({ progress }: { progress: number }) => (
     </View>
 ));
 
-interface SerieComStatus extends Serie {
+interface SerieComStatus extends Omit<Serie, 'concluido'> {
   concluido?: boolean;
 }
 
@@ -164,9 +164,9 @@ export default function TreinoCompletoScreen() {
         try {
             const [userProfile, userLogs, fichaAtiva] = await Promise.all([
 // ... (código existente de promise.all)
-                getUserProfile(user.uid),
-                getLogsByUsuarioId(user.uid),
-                getFichaAtiva(user.uid)
+                getUserProfile(user.id),
+                getLogsByUsuarioId(user.id),
+                getFichaAtiva(user.id)
             ]);
             setAllUserLogs(userLogs); // Guarda todos os logs para os componentes filhos
             

@@ -93,10 +93,16 @@ export const getFichasModelos = async (): Promise<FichaModelo[]> => {
     opcoes: 'Programa de treinamento',
     ativa: false,
     imagemUrl: fichaModelo.imagemUrl || '',
+    dataCriacao: Timestamp.now() as any,
     // modeloId: fichaModelo.id, // Removed as it's not part of Ficha interface
   };
 
   batch.set(newFichaRef, newFichaData);
+
+  // 3.5. Update each new treino with the new ficha's ID
+  newTreinoRefs.forEach(treinoRef => {
+    batch.update(treinoRef, { fichaId: newFichaRef.id });
+  });
 
   // 4. Commit all writes in a single batch
   await batch.commit();

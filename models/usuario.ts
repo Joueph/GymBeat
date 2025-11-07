@@ -3,6 +3,7 @@ import { Ficha } from './ficha';
 export type UserRole = 'usuario' | 'administrador' | 'personal';
 
 export interface Usuario {
+  uid(uid: any): unknown;
   settings: any;
   id: string;
   email: string;
@@ -28,4 +29,5 @@ export interface Usuario {
   hasTrainedToday?: boolean;
   streakGoal?: number; // Meta de treinos por semana para a sequência (streak)
   weeksStreakGoal?: number; // Meta de semanas seguidas de treino
+  workoutScreenType?: 'simplified' | 'complete'; // New field for workout screen type
 }

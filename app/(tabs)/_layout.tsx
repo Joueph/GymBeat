@@ -1,10 +1,16 @@
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { HapticTab } from '../../components/haptic-tab';
 
-function TabBarIcon(props: { name: React.ComponentProps<typeof FontAwesome>['name']; color: string }) {
-  return <FontAwesome size={24} style={{ marginBottom: -3 }} {...props} />;
+function TabBarIcon(props: {
+  name: React.ComponentProps<typeof FontAwesome>['name'];
+  color: string;
+  size?: number;
+}) {
+  return (
+    <FontAwesome size={props.size || 24} style={{ marginBottom: -3 }} {...props} />
+  );
 }
 
 export default function TabLayout() {
@@ -27,30 +33,24 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: "Progresso",
           headerShown: false,
-          tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="workouts"
-        options={{
-          title: "Treinos",
-          tabBarIcon: ({ color }) => <TabBarIcon name="book" color={color} />,
+          tabBarIcon: ({ color }) => <FontAwesome5 name="chart-line" size={20} color={color} style={{ marginBottom: -3 }} />,
         }}
       />
       <Tabs.Screen
         name="treinoHoje"
         options={{
-          title: "Meus treinos",
-          tabBarIcon: ({ color }) => <TabBarIcon name="fire" color={color} />,
+          title: "Treinos",
+          headerShown: false,
+          tabBarIcon: ({ color }) => <FontAwesome5 name="dumbbell" size={20} color={color} style={{ marginBottom: -3 }} />,
         }}
       />
       <Tabs.Screen
         name="amigos"
         options={{
           title: "Social",
-          tabBarIcon: ({ color }) => <TabBarIcon name="users" color={color} />,
+          tabBarIcon: ({ color }) => <TabBarIcon name="users" color={color} size={20}  />,
         }}
       />
     </Tabs>

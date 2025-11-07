@@ -7,4 +7,5 @@ export interface Ficha {
   opcoes: string;
   ativa: boolean;
   imagemUrl?: string;
+  dataCriacao?: Date;
 }

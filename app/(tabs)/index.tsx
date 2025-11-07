@@ -7,6 +7,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import React, { useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View, } from 'react-native';
 import { WorkoutReviewModal } from '../(treino)/modals/modalReviewTreinos';
+import { WorkoutScreenPreference } from '../(treino)/modals/specifics/WorkoutScreenPreference';
 import { db } from '../../firebaseconfig';
 import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
@@ -18,6 +19,7 @@ import { cacheFichaCompleta } from '../../services/offlineCacheService';
 import { getTreinosByIds } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
 
+import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 
 
 
@@ -54,7 +56,7 @@ interface TimelineItem {
 
 
 export default function HomeScreen() {
-  const { user, initialized: authInitialized } = useAuth();
+  const { user: authUser, initialized: authInitialized } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<Usuario | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,6 +72,8 @@ export default function HomeScreen() {
   const [isReviewModalVisible, setReviewModalVisible] = useState(false);
   const [dataVersion, setDataVersion] = useState(0); // Para forçar recarga
   const isInitialLoad = useRef(true);
+  const [isWorkoutScreenPreferenceVisible, setIsWorkoutScreenPreferenceVisible] = useState(false);
+  const [pendingNavigationParams, setPendingNavigationParams] = useState<any>(null);
   
 
   // Substituído useEffect por useFocusEffect para garantir que os dados sejam
@@ -82,18 +86,15 @@ useFocusEffect(
         return;
       }
       
-      if (!user) {
+      if (!authUser) {
         setLoading(false);
         return;
       }
 
-      if (isInitialLoad.current) {
-        setLoading(true);
-      }
-
       try {
+        // SINCRONIZAÇÃO EM SEGUNDO PLANO: A lógica abaixo agora roda sem bloquear a UI
         // 1. Buscar perfil do usuário
-        const userProfileDoc = await getDoc(doc(db, "users", user.uid));
+        const userProfileDoc = await getDoc(doc(db, "users", authUser.id));
         const userProfile = userProfileDoc.exists() 
           ? { id: userProfileDoc.id, ...userProfileDoc.data() } as Usuario 
           : null;
@@ -110,7 +111,7 @@ useFocusEffect(
         // 3. Buscar logs do Firestore
         let userLogs: Log[] = [];
         try {
-          userLogs = await getLogsByUsuarioId(user.uid);
+          userLogs = await getLogsByUsuarioId(authUser.id);
           
           // Se não havia log no cache, busca um ativo no Firestore
           if (!ongoingLog) {
@@ -129,7 +130,7 @@ useFocusEffect(
         setActiveLog(ongoingLog || null);
 
         // 4. Buscar ficha ativa
-        const fichaAtiva = await getFichaAtiva(user.uid);
+        const fichaAtiva = await getFichaAtiva(authUser.id);
         setActiveFicha(fichaAtiva);
         
         // 5. Buscar treinos da ficha
@@ -217,7 +218,7 @@ useFocusEffect(
     };
     
     fetchData();
-  }, [user, authInitialized])
+  }, [authUser, authInitialized])
 );
 
 const getAverageDuration = (treinoId: string | undefined): number | null => {
@@ -308,13 +309,31 @@ const generateTimelineData = (): TimelineItem[] => {
     }
   };
 
+  const handleInitiateWorkoutNavigation = (params: any) => {
+    if (profile?.workoutScreenType) {
+      router.push({ pathname: '/(treino)/LoggingDuringWorkout', params });
+    } else {
+      setPendingNavigationParams(params);
+      setIsWorkoutScreenPreferenceVisible(true);
+    }
+  };
+
+  const handlePreferenceSelected = (preference: 'simplified' | 'complete') => {
+    if (pendingNavigationParams) {
+      const targetPath = preference === 'simplified' ? '/(treino)/ongoingWorkout' : '/(treino)/LoggingDuringWorkout';
+      router.push({ pathname: targetPath, params: pendingNavigationParams });
+      setPendingNavigationParams(null);
+    }
+    setIsWorkoutScreenPreferenceVisible(false);
+  };
+
   const handleCreateNewFicha = async () => {
-    if (!user) return;
+    if (!authUser) return;
     try {
       const expirationDate = new Date();
       expirationDate.setMonth(expirationDate.getMonth() + 2);
       const newFichaId = await addFicha({
-        usuarioId: user.uid,
+        usuarioId: authUser.id,
         nome: 'Nova Ficha (Edite)',
         treinos: [],
         dataExpiracao: expirationDate,
@@ -323,8 +342,7 @@ const generateTimelineData = (): TimelineItem[] => {
       });
 
       if (newFichaId) {
-        setModalVisible(false);
-        router.push({ pathname: '/(treino)/criatFicha', params: { fichaId: newFichaId } });
+        router.push({ pathname: `/(treino)/criatFicha`, params: { fichaId: newFichaId } } as any);
       }
     } catch (error) {
       console.error("Erro ao criar nova ficha:", error);
@@ -470,13 +488,10 @@ case 'active':
     return (
       <TouchableOpacity 
         style={styles.heroCard} 
-        onPress={() => router.push({ 
-          pathname: '/(treino)/ongoingWorkout', 
-          params: { 
-            fichaId: activeLog.treino.fichaId || '', 
-            treinoId: activeLog.treino.id, 
-            logId: activeLog.id 
-          } 
+        onPress={() => handleInitiateWorkoutNavigation({ 
+          fichaId: activeLog.treino.fichaId || '', 
+          treinoId: activeLog.treino.id, 
+          logId: activeLog.id 
         })}
       >
         <View style={styles.heroTextContainer}>
@@ -485,13 +500,10 @@ case 'active':
         </View>
         <TouchableOpacity 
           style={styles.heroStartButton} 
-          onPress={() => router.push({ 
-            pathname: '/(treino)/ongoingWorkout', 
-            params: { 
-              fichaId: activeLog.treino.fichaId || '', 
-              treinoId: activeLog.treino.id, 
-              logId: activeLog.id 
-            } 
+          onPress={() => handleInitiateWorkoutNavigation({ 
+            fichaId: activeLog.treino.fichaId || '', 
+            treinoId: activeLog.treino.id, 
+            logId: activeLog.id 
           })}
         >
           <FontAwesome name="play" size={16} color="#030405" />
@@ -511,12 +523,9 @@ case 'active':
     return (
       <TouchableOpacity 
         style={styles.heroCard} 
-        onPress={() => router.push({ 
-          pathname: '/(treino)/ongoingWorkout', 
-          params: { 
-            fichaId: activeFicha.id, 
-            treinoId: treinoDeHoje.id 
-          } 
+        onPress={() => handleInitiateWorkoutNavigation({ 
+          fichaId: activeFicha.id, 
+          treinoId: treinoDeHoje.id 
         })}
       >
         <View style={styles.heroTextContainer}>
@@ -528,12 +537,9 @@ case 'active':
         </View>
         <TouchableOpacity 
           style={styles.heroStartButton} 
-          onPress={() => router.push({ 
-            pathname: '/(treino)/ongoingWorkout', 
-            params: { 
-              fichaId: activeFicha.id, 
-              treinoId: treinoDeHoje.id 
-            } 
+          onPress={() => handleInitiateWorkoutNavigation({ 
+            fichaId: activeFicha.id, 
+            treinoId: treinoDeHoje.id 
           })}
         >
           <FontAwesome name="play" size={16} color="#030405" />
@@ -549,12 +555,9 @@ case 'active':
     return (
       <TouchableOpacity 
         style={[styles.heroCard, styles.missedWorkoutCard]} 
-        onPress={() => router.push({ 
-          pathname: '/(treino)/ongoingWorkout', 
-          params: { 
-            fichaId: activeFicha.id, 
-            treinoId: treinoPerdido.id 
-          } 
+        onPress={() => handleInitiateWorkoutNavigation({ 
+          fichaId: activeFicha.id, 
+          treinoId: treinoPerdido.id 
         })}
       >
         <View style={styles.heroTextContainer}>
@@ -563,12 +566,9 @@ case 'active':
         </View>
         <TouchableOpacity 
           style={[styles.heroStartButton, styles.missedWorkoutButton]} 
-          onPress={() => router.push({ 
-            pathname: '/(treino)/ongoingWorkout', 
-            params: { 
-              fichaId: activeFicha.id, 
-              treinoId: treinoPerdido.id 
-            } 
+          onPress={() => handleInitiateWorkoutNavigation({ 
+            fichaId: activeFicha.id, 
+            treinoId: treinoPerdido.id 
           })}
         >
           <FontAwesome name="repeat" size={16} color="#030405" />
@@ -599,15 +599,16 @@ case 'active':
       case 'default':
         if (!activeFicha) {
           return (
-            <View style={styles.heroCard}>
+            <View style={[styles.heroCard, { gap: 20 }]}>
               <View style={styles.heroTextContainer}>
                 <Text style={styles.heroTitle}>Nenhum plano ativo</Text>
                 <Text style={styles.heroInfo}>Crie um novo plano de treino para começar sua jornada.</Text>
               </View>
-              <TouchableOpacity style={styles.heroStartButton} onPress={() => setModalVisible(true)}>
-                <FontAwesome name="plus" size={16} color="#030405" />
-                <Text style={styles.heroStartButtonText}>Criar Nova Ficha</Text>
-              </TouchableOpacity>
+              {/* Botão único que leva para a tela de opções de treino */}
+              <TouchableOpacity style={styles.heroStartButton} onPress={() => router.push('/(treino)/modals/OpcoesTreino')}>
+                  <FontAwesome5 name="pen" size={14} color="#030405" />
+                  <Text style={styles.heroStartButtonText}>Criar um novo treino</Text>
+                </TouchableOpacity>
             </View>
           );
         }
@@ -678,9 +679,10 @@ const TimelineWorkoutItem = ({
           <View style={styles.workoutInfoContainer}>
             <TouchableOpacity 
               style={styles.workoutTitleContainer} 
-              onPress={() => router.push(
-                `/(treino)/editarTreino?fichaId=${activeFicha.id}&treinoId=${treino.id}`
-              )}
+              onPress={() => router.push({
+                pathname: '/(treino)/editarTreino',
+                params: { fichaId: activeFicha.id, treinoId: treino.id }
+              })}
             >
               <FontAwesome5 name="dumbbell" size={16} color="#ccc" /> 
               <Text style={styles.workoutName}>{treino.nome}</Text>
@@ -791,6 +793,13 @@ const TimelineWorkoutItem = ({
           onClose={() => setReviewModalVisible(false)}
           initialLog={treinoConcluidoHoje} allUserLogs={logs}        />
       )}
+
+      <WorkoutScreenPreference
+        isVisible={isWorkoutScreenPreferenceVisible}
+        onClose={() => setIsWorkoutScreenPreferenceVisible(false)}
+        onSelectPreference={handlePreferenceSelected}
+      />
+      <OngoingWorkoutFooter />
     </>
   );
 }
@@ -1138,6 +1147,22 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 15,
+  },
+  secondaryHeroButton: {
+    backgroundColor: '#2c2c2e',
+    borderRadius: 10,
+    paddingVertical: 15,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  secondaryHeroButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 10,
   },
   heroTextContainer: {
     marginBottom: 20,

@@ -153,7 +153,8 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
   const handleCopyFicha = async () => {
     if (!user || !selectedFicha || !treinos) return;
     setIsCopying(true);
-    try {
+    try { // Importa o serviço de atualização de ficha
+      const { updateFicha } = require('../../services/fichaService');
       // Importa o serviço de cache aqui para evitar importações cíclicas no nível superior
       const { cacheFichaCompleta } = require('../../services/offlineCacheService');
       const { getTreinosByIds: getTreinosReaisByIds } = require('../../services/treinoService');
@@ -161,12 +162,20 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
       // CORREÇÃO: Garante que o tipo de treinosParaCopiar seja TreinoModelo[]
       const treinosParaCopiar: TreinoModelo[] = isCustomizing
         ? treinos.map((treino, index) => ({
-            ...treino,
-            diasSemana: customDays[index] ? [customDays[index]] : [],
+          ...treino,
+          diasSemana: customDays[index] ? [customDays[index]] : [],
+          // Mapeia os exercícios para o formato correto com 'series' e 'repeticoes'
+          exercicios: treino.exercicios.map(ex => ({
+            ...ex,
+            series: (ex as any).series || 0,
+            repeticoes: (ex as any).repeticoes || '0'
           }))
+        }))
         : treinos;
 
-      const newFichaId = await copyFichaModeloToUser(selectedFicha, user.id, treinosParaCopiar);
+      // CORREÇÃO: A função agora retorna tanto o ID da ficha quanto os IDs dos novos treinos.
+      const { fichaId: newFichaId, treinoIds: newTreinoIds } = await copyFichaModeloToUser(selectedFicha, user.id, treinosParaCopiar);
+
       const fichaAtivada: Ficha | null = await setFichaAtivaService(user.id, newFichaId);
 
       // Após ativar, busca os treinos recém-criados e salva tudo no cache

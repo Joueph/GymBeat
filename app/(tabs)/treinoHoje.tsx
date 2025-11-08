@@ -10,7 +10,7 @@ import { FichaMenuAction, FichaOptionsMenu } from '../../components/FichaOptions
 
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 import { Ficha } from '../../models/ficha';
-import { Treino } from '../../models/treino';
+import { Treino } from '../../models/treino'; // CORREÇÃO: Importa a função com o nome correto
 import { deleteFicha, getFichaAtiva, getFichasByUsuarioId, setFichaAtiva, updateFicha } from '../../services/fichaService';
 import { getTreinosByUsuarioId, updateTreino, updateTreinosOrdem } from '../../services/treinoService';
 import { useAuth } from '../authprovider';
@@ -82,17 +82,16 @@ export default function MeusTreinosScreen() {
       }
 
       // Create folders based on user's fichas
-      const treinosMap = new Map(todosOsTreinosDoUsuario.map(t => [t.id, t]));
+      const treinosMap = new Map(todosOsTreinosDoUsuario.map((t: Treino) => [t.id, t])); // CORREÇÃO: Adiciona tipo ao parâmetro 't'
       const fichaFolders: Folder[] = todasAsFichasDoUsuario.map((ficha: Ficha) => {
         const treinosDaFicha = (ficha.treinos || [])
           .map(treinoId => treinosMap.get(treinoId))
           .filter((t): t is Treino => !!t); // Filter out undefined if a treino was deleted but still in the array
         return { id: ficha.id, type: 'ficha', nome: ficha.nome, treinos: treinosDaFicha };
       });
-
       // Filter all workouts that don't have a fichaId for the "unassigned" folder.
       const treinosAvulsos = todosOsTreinosDoUsuario.filter(
-        (treino) => !treino.fichaId
+        (treino: Treino) => !treino.fichaId // CORREÇÃO: Adiciona tipo ao parâmetro 'treino'
       );
 
       // Create the "Meus Treinos" (unassigned) folder.

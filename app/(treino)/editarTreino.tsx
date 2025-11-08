@@ -557,10 +557,7 @@ export default function EditarTreinoScreen() {
         {
           text: "Apagar", style: "destructive", onPress: async () => {
             try {
-              // Garante que o fichaId seja uma string antes de chamar a função
-              if (typeof treino.fichaId === 'string') {
-                await deleteTreino(treino.id, treino.fichaId);
-              }
+              await deleteTreino(treino.id, treino.fichaId);
               Alert.alert("Sucesso", "O treino foi apagado.");
               router.back();
             } catch (error) { console.error("Erro ao apagar treino:", error); Alert.alert('Erro', 'Não foi possível apagar o treino.'); }

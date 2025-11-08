@@ -79,7 +79,7 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
  */
 export const getTreinosByUsuarioId = async (userId: string): Promise<Treino[]> => {
   const treinosRef = collection(db, 'treinos');
-  const q = query(treinosRef, where('usuarioId', '==', userId), orderBy('ordem'));
+  const q = query(treinosRef, where('usuarioId', '==', userId));
   const querySnapshot = await getDocs(q);
   const treinos = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
   
@@ -177,9 +177,26 @@ export const updateTreinosOrdem = async (treinoIds: string[]): Promise<void> => 
 /**
  * Deletes a workout and removes its reference from the corresponding ficha.
  */
-export const deleteTreino = async (treinoId: string, fichaId: string): Promise<void> => {
-  // This is a simplified version. A robust implementation would use a transaction or batch write
-  // to also remove the treinoId from the 'treinos' array in the corresponding 'ficha' document.
+export const deleteTreino = async (treinoId: string, fichaId?: string): Promise<void> => {
+  const batch = writeBatch(db);
   const treinoRef = doc(db, 'treinos', treinoId);
-  await deleteDoc(treinoRef);
+
+  // If a fichaId is provided, remove the treino from its list
+  if (fichaId) {
+    const fichaRef = doc(db, 'fichas', fichaId);
+    const fichaSnap = await getDoc(fichaRef);
+
+    if (fichaSnap.exists()) {
+      const fichaData = fichaSnap.data();
+      const existingTreinos = fichaData.treinos || [];
+      const newTreinos = existingTreinos.filter((id: string) => id !== treinoId);
+      batch.update(fichaRef, { treinos: newTreinos });
+    }
+  }
+
+  // Delete the treino document
+  batch.delete(treinoRef);
+
+  // Commit the batch
+  await batch.commit();
 };

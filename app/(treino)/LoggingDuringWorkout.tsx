@@ -1,7 +1,6 @@
 import { RepetitionsDrawer } from '@/components/RepetitionsDrawer';
 import { RestTimeDrawer } from '@/components/RestTimeDrawer';
 import { SetOptionsMenu } from '@/components/SetOptionsMenu';
-import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { Log } from '@/models/log';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
@@ -29,13 +28,14 @@ import {
 import { MenuProvider } from 'react-native-popup-menu';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { Treino } from '../../models/treino';
+import { addLog } from '../../services/logService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
 import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
-import { FinishingLoggingWorkout } from './modals/specifics/FinishingLoggingWorkout'; // Import the finishing workout modal
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -387,30 +387,8 @@ const LoggedExerciseCard = ({
               <FontAwesome name={isAdvancedOptionsVisible ? "chevron-up" : "chevron-down"} size={14} color="#fff" />
             </TouchableOpacity>
           </View>
-        </>
-      ) : (
-        <View style={styles.collapsedInfoContainer}>
-          <View style={styles.collapsedLeft}>
-            <View style={styles.seriesCounterContainer}>
-              <FontAwesome5 name="layer-group" size={16} color="#aaa" />
-              <Text style={styles.seriesCounterText}>
-                {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
-              </Text>
-            </View>
-            <View style={styles.seriesCounterContainer}>
-              <FontAwesome5 name="weight-hanging" size={16} color="#aaa" />
-              <Text style={styles.seriesCounterText}>{Math.round(exerciseVolume)} kg</Text>
-            </View>
-          </View>
-          <View style={styles.collapsedRight}>
-            <TouchableOpacity onPress={() => setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible)} style={[styles.avancadoButton, {backgroundColor: '#2c2c2e'}]}>
-              <Text style={styles.avancadoButtonText}>Avançado +</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
 
-      {isAdvancedOptionsVisible && (
+          {isAdvancedOptionsVisible && (
         <View style={styles.advancedOptionsContainer}>
           {item.modelo.caracteristicas?.usaBarra && (
             <View style={styles.barbellWeightCard}>
@@ -493,6 +471,43 @@ const LoggedExerciseCard = ({
           </View>)}
         </View>
       )}
+        </>
+      ) : (
+        <View style={styles.collapsedInfoContainer}>
+          <View style={styles.collapsedLeft}>
+            <View style={styles.seriesCounterContainer}>
+              <FontAwesome5 name="layer-group" size={16} color="#aaa" />
+              <Text style={styles.seriesCounterText}>
+                {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
+              </Text>
+            </View>
+            <View style={styles.seriesCounterContainer}>
+              <FontAwesome5 name="weight-hanging" size={16} color="#aaa" />
+              <Text style={styles.seriesCounterText}>{Math.round(exerciseVolume)} kg</Text>
+            </View>
+          </View>
+          <View style={styles.collapsedRight}>
+            <TouchableOpacity onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setIsExpanded(true);
+            }} style={[styles.avancadoButton, {backgroundColor: '#2c2c2e'}]}>
+              <Text style={styles.avancadoButtonText}>
+                {(() => {
+                  const completedSets = series.filter(s => s.concluido).length;
+                  const totalSets = series.length;
+                  if (totalSets > 0 && completedSets === totalSets) {
+                    return 'Finalizado';
+                  }
+                  if (completedSets > 0) {
+                    return 'Em andamento';
+                  }
+                  return 'Pendente';
+                })()}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
 
       <RestTimeDrawer
         visible={isRestTimePickerVisible}
@@ -534,11 +549,9 @@ export default function LoggingDuringWorkoutScreen() {
   const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
   const [isModalVisible, setModalVisible] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
-  const [isFinishingModalVisible, setIsFinishingModalVisible] = useState(false); // State for the finishing modal
   const [workoutName, setWorkoutName] = useState('');
   const [isNameEdited, setIsNameEdited] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
-  const [endTime, setEndTime] = useState<Date | null>(null); // Added for FinishingLoggingWorkout
   const [elapsedTime, setElapsedTime] = useState(0); // in seconds
   const [totalLoad, setTotalLoad] = useState(0);
   const [userWeight, setUserWeight] = useState(70); // default fallback
@@ -842,20 +855,58 @@ export default function LoggingDuringWorkoutScreen() {
       ]
     );
   };
-  const handleFinishWorkout = () => {
+  const handleFinishWorkout = async () => {
     const allSetsCompleted = loggedExercises.every(exercise =>
       (exercise.series as SerieEdit[]).every(set => set.concluido)
     );
 
-    const proceedToFinish = () => {
+    const proceedToFinish = async () => {
+      if (!user || !startTime) {
+        Alert.alert('Erro', 'Dados do usuário ou do treino incompletos para salvar o log.');
+        return;
+      }
+      
       setIsFinishing(true);
-      setEndTime(new Date()); // Define a hora de término
-      setIsFinishingModalVisible(true); // Abre o modal de finalização
-      setIsFinishing(false); // Reseta o estado de "finalizando"
+      const finalEndTime = new Date();
+
+      try {
+        const newLog: Partial<Log> = {
+          usuarioId: user.id,
+          treino: {
+            id: treinoId || `freestyle-${Date.now()}`,
+            fichaId: fichaId, // Can be undefined
+            nome: workoutName,
+            usuarioId: user.id,
+            exercicios: loggedExercises,
+            diasSemana: [],
+            intervalo: { min: 0, seg: 0 },
+            ordem: 0,
+          },
+          exercicios: loggedExercises,
+          horarioInicio: startTime,
+          horarioFim: finalEndTime,
+          status: 'conclido',
+          cargaAcumulada: totalLoad,
+          exerciciosFeitos: loggedExercises.filter(ex => ex.series.some(s => s.concluido)),
+          nomeTreino: workoutName,
+          observacoes: loggedExercises.map((ex) => ex.notes).filter(Boolean).join('; '),
+        };
+
+        const newLogId = await addLog(newLog);
+        
+        await cacheActiveWorkoutLog(null);
+
+        router.replace({ pathname: '/(treino)/treinoCompleto', params: { logId: newLogId } });
+
+      } catch (error) {
+        console.error('Error saving workout log:', error);
+        Alert.alert('Erro', 'Não foi possível salvar o log do treino.');
+        setIsFinishing(false);
+      }
     };
 
     if (allSetsCompleted) {
-      proceedToFinish();
+      await proceedToFinish();
     } else {
       Alert.alert(
         "Finalizar Treino?",
@@ -1083,26 +1134,18 @@ export default function LoggingDuringWorkoutScreen() {
                             )}
                   
                                                       <MultiSelectExerciseModal
+                  
                                                         visible={isModalVisible}
+                  
                                                         onClose={() => setModalVisible(false)}
+                  
                                                         onConfirm={handleSelectExercises}
+                  
                                                         existingExerciseIds={loggedExercises.map(e => e.modeloId)}
+                  
                                                       />
-                            
-                                                                                <FinishingLoggingWorkout
-                                                                                  visible={isFinishingModalVisible}
-                                                                                  onClose={async () => {
-                                                                                    await cacheActiveWorkoutLog(null); // Discard the cache
-                                                                                    setIsFinishingModalVisible(false);
-                                                                                  }}
-                                                                                  loggedExercises={loggedExercises}                                                        totalLoad={totalLoad}
-                                                        elapsedTime={elapsedTime}
-                                                        startTime={startTime}
-                                                        endTime={endTime}
-                                                        initialWorkoutName={workoutName}
-                                                        userWeight={userWeight}
-                                                      />
-                                                    </SafeAreaView>                  
+                  
+                                                      </SafeAreaView>                  
                           {(isResting || isDoingExercise) && (
                             <View style={styles.restTimerOverlay}>
                               <View style={styles.restTimerProgressContainer}>

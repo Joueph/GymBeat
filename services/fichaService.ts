@@ -42,7 +42,7 @@ export const getFichasModelos = async (): Promise<FichaModelo[]> => {
 /**
  * Copies a FichaModelo and its associated TreinoModelos to a user-specific Ficha and Treinos.
  */
-  export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: string, treinosParaCopiar: TreinoModelo[]): Promise<string> => {
+  export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: string, treinosParaCopiar: TreinoModelo[]): Promise<{ fichaId: string; treinoIds: string[] }> => {
     const batch = writeBatch(db);
     const newTreinoRefs: any[] = [];
 
@@ -107,20 +107,22 @@ export const getFichasModelos = async (): Promise<FichaModelo[]> => {
   // 4. Commit all writes in a single batch
   await batch.commit();
 
-  return newFichaRef.id;
+  return { fichaId: newFichaRef.id, treinoIds: newTreinoRefs.map(ref => ref.id) };
 };
 
 export const getFichaAtiva = async (userId: string): Promise<Ficha | null> => {
   const fichasRef = collection(db, 'fichas');
   const q = query(fichasRef, where('usuarioId', '==', userId), where('ativa', '==', true));
   const querySnapshot = await getDocs(q);
+
   if (querySnapshot.empty) {
     return null;
   }
-  const doc = querySnapshot.docs[0];
-  return { id: doc.id, ...doc.data() } as Ficha;
-};
 
+  // Assume there's only one active ficha per user
+  const docSnap = querySnapshot.docs[0];
+  return { id: docSnap.id, ...docSnap.data() } as Ficha;
+};
 export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => {
   const fichasRef = collection(db, 'fichas');
   const q = query(fichasRef, where('usuarioId', '==', userId));
@@ -186,10 +188,10 @@ export const deleteFicha = async (fichaId: string, treinoIds: string[]): Promise
   const fichaRef = doc(db, 'fichas', fichaId);
   batch.delete(fichaRef);
 
-  // 2. Mark all associated Treino documents for deletion
+  // 2. Disassociate all associated Treino documents by setting fichaId to null
   treinoIds.forEach(treinoId => {
     const treinoRef = doc(db, 'treinos', treinoId);
-    batch.delete(treinoRef);
+    batch.update(treinoRef, { fichaId: null });
   });
 
   // 3. Commit the batch

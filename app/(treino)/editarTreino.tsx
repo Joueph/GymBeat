@@ -195,10 +195,14 @@ const ExerciseItem = ({
           <TextInput
             style={styles.setInput}
             value={String(setItem.peso || '')}
-            onChangeText={text => {
-              const newSets = series.map((s, i) => 
-                i === index ? { ...s, peso: parseFloat(text.replace(',', '.')) || 0 } : s
-              );
+            onChangeText={(text) => {
+              const newSets = [...series];
+              newSets[index] = { ...newSets[index], peso: text as any };
+              handleSeriesUpdate(newSets);
+            }}
+            onEndEditing={(e) => {
+              const newSets = [...series];
+              newSets[index] = { ...newSets[index], peso: parseFloat(e.nativeEvent.text.replace(',', '.')) || 0 };
               handleSeriesUpdate(newSets);
             }}
             keyboardType="decimal-pad"

@@ -287,9 +287,14 @@ const LoggedExerciseCard = ({
                 keyboardType="decimal-pad"
                 editable={!setItem.isTimeBased}
                 value={String(setItem.peso || '')}
-                onChangeText={text => {
+                onChangeText={(text) => {
                   const newSets = [...series];
-                  newSets[itemIndex].peso = parseFloat(text.replace(',', '.')) || 0;
+                  newSets[itemIndex].peso = text as any;
+                  handleSeriesUpdate(newSets);
+                }}
+                onEndEditing={(e) => {
+                  const newSets = [...series];
+                  newSets[itemIndex].peso = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
                   handleSeriesUpdate(newSets);
                 }}
               />

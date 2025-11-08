@@ -898,10 +898,14 @@ const completeTheSet = async () => {
           <View style={styles.bottomSectionContainer}>
             <View style={styles.exerciseSectionContainer}>
               {isBiSet && biSetPartnerExercise ? (
-                <><ExerciseDisplayCard exercise={treino.exercicios[currentExerciseIndex]} isCurrent={true} completedSets={completedSets} totalNormalSeries={totalNormalSeries} completedNormalSeriesCount={completedNormalSeriesCount} onPress={() => { isBiSetEditing ? openEditModalForExercise(treino.exercicios[currentExerciseIndex]) : setExerciseDetailModalVisible(true); }} showDetailsInside={true} isPulsing={isBiSetEditing} />
+                <>
+                  <View style={{ flexDirection: 'row', gap: 5, justifyContent: 'center', alignItems: 'center' }}>
+                    <ExerciseDisplayCard exercise={treino.exercicios[currentExerciseIndex]} isCurrent={true} completedSets={completedSets} totalNormalSeries={totalNormalSeries} completedNormalSeriesCount={completedNormalSeriesCount} onPress={() => { isBiSetEditing ? openEditModalForExercise(treino.exercicios[currentExerciseIndex]) : setExerciseDetailModalVisible(true); }} showDetailsInside={true} isPulsing={isBiSetEditing} />
+                    <FontAwesome name="link" size={20} color="#1cb0f6" />
+                    <ExerciseDisplayCard exercise={biSetPartnerExercise} isCurrent={true} completedSets={completedSets} totalNormalSeries={partnerTotalNormalSeries} completedNormalSeriesCount={completedNormalSeriesCount} onPress={() => { isBiSetEditing ? openEditModalForExercise(biSetPartnerExercise) : setExerciseDetailModalVisible(true); }} showDetailsInside={true} isPulsing={isBiSetEditing} />
+                  </View>
                   {isDropsetSequence && (<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dropsetScrollContainer}>{currentSet && dropsetGroup.map((set, index) => { if (!treino.exercicios[currentExerciseIndex].series.some(s => s.type === 'dropset')) return null; const isCurrent = set.id === currentSet.id; return (<View key={set.id} style={[styles.dropsetItem, isCurrent && styles.currentDropsetItem]}><Text style={styles.dropsetItemLabel}>{index === 0 ? 'Série' : 'Drop'}</Text><Text style={styles.dropsetItemValue}>{set.repeticoes}</Text><Text style={styles.dropsetItemValue}>{set.peso || 0}kg</Text></View>); })}</ScrollView>)}
-                  <View style={styles.biSetLinker}><FontAwesome name="link" size={20} color="#1cb0f6" /><Text style={styles.biSetToggleText}>Bi-set</Text></View>
-                  <ExerciseDisplayCard exercise={biSetPartnerExercise} isCurrent={true} completedSets={completedSets} totalNormalSeries={partnerTotalNormalSeries} completedNormalSeriesCount={completedNormalSeriesCount} onPress={() => { isBiSetEditing ? openEditModalForExercise(biSetPartnerExercise) : setExerciseDetailModalVisible(true); }} showDetailsInside={true} isPulsing={isBiSetEditing} /></>
+                </>
               ) : currentExercise && (
                 <><ExerciseDisplayCard exercise={currentExercise} isCurrent={true} completedSets={completedSets} totalNormalSeries={totalNormalSeries} completedNormalSeriesCount={completedNormalSeriesCount} onPress={() => { setExerciseDetailModalVisible(true); }} showDetailsInside={false} isPulsing={false} />
                   <View style={styles.detailsContainer}><View style={styles.detailItem}><FontAwesome name="clone" size={20} color="#ccc" /><Text style={styles.detailValue}>{completedNormalSeriesCount}/{totalNormalSeries}</Text><Text style={styles.detailLabel}>Séries</Text></View>{currentSet && <NormalSetDetails currentSet={currentSet} isBodyweight={currentExercise.modelo.caracteristicas?.isPesoCorporal} />}</View>
@@ -999,7 +1003,7 @@ const styles = StyleSheet.create({
     exerciseName: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
     exerciseMuscleGroup: { color: '#fff', fontWeight: '300', opacity: 0.65, marginTop: 4 },
     exerciseSectionContainer: { width: '100%', gap: 0 },
-    exerciseCardWrapper: { width: '100%', gap: 10 },
+    exerciseCardWrapper: { flex: 1, gap: 10 },
     biSetLinker: { height: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, marginVertical: -5, zIndex: -1 },
     biSetToggleText: { color: '#1cb0f6', fontWeight: 'bold', fontSize: 12 },
     bottomSectionContainer: { width: '100%', alignItems: 'center', gap: 15 },

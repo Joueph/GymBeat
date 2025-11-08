@@ -36,6 +36,7 @@ import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
+import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -553,6 +554,7 @@ export default function LoggingDuringWorkoutScreen() {
   const { treinoId, fichaId, logId } = useLocalSearchParams<{ treinoId?: string; fichaId?: string, logId?: string }>();
   const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
   const [isModalVisible, setModalVisible] = useState(false);
+  const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [workoutName, setWorkoutName] = useState('');
   const [isNameEdited, setIsNameEdited] = useState(false);
@@ -667,14 +669,19 @@ export default function LoggingDuringWorkoutScreen() {
   }, [user]);
 
   // Efeito para o timer do treino
-  useEffect(() => {
-    if (startTime) {
-      const interval = setInterval(() => {
-        setElapsedTime(Math.floor((new Date().getTime() - startTime.getTime()) / 1000));
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [startTime]);
+useEffect(() => {
+  let interval: ReturnType<typeof setInterval> | undefined;
+  if (startTime) {
+    const updateElapsedTime = () => {
+      const now = new Date();
+      const differenceInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+      setElapsedTime(differenceInSeconds);
+    };
+    updateElapsedTime(); // Run once immediately
+    interval = setInterval(updateElapsedTime, 1000);
+  }
+  return () => clearInterval(interval);
+}, [startTime]);
 
   // Efeito para calcular a carga total
   useEffect(() => {
@@ -1124,6 +1131,13 @@ export default function LoggingDuringWorkoutScreen() {
                                       <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
+                                      style={styles.settingsButton}
+                                      onPress={() => setSettingsModalVisible(true)}
+                                    >
+                                      <FontAwesome name="cog" size={16} color="#aaa" />
+                                      <Text style={styles.settingsButtonText}>Configurações</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
                                       style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
                                       onPress={handleCancelWorkout}
                                     >
@@ -1148,6 +1162,13 @@ export default function LoggingDuringWorkoutScreen() {
                   
                                                         existingExerciseIds={loggedExercises.map(e => e.modeloId)}
                   
+                                                      />
+
+                                                      <WorkoutSettingsModal
+                                                        isVisible={isSettingsModalVisible}
+                                                        onClose={() => setSettingsModalVisible(false)}
+                                                        currentWorkoutScreenType={workoutScreenType}
+                                                        onWorkoutScreenTypeChange={setWorkoutScreenType}
                                                       />
                   
                                                       </SafeAreaView>                  
@@ -1356,6 +1377,24 @@ const styles = StyleSheet.create({
     marginTop: 10,
     backgroundColor: '#121212',
     marginHorizontal: 15,
+  },
+  settingsButton: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 15,
+    borderRadius: 8,
+    marginTop: 10,
+    backgroundColor: 'transparent',
+    marginHorizontal: 15,
+    borderWidth: 1,
+    borderColor: '#333'
+  },
+  settingsButtonText: {
+      color: '#aaa',
+      fontWeight: 'bold',
+      fontSize: 16,
+      marginLeft: 8
   },
   deleteBox: {
     backgroundColor: '#ff3b30',

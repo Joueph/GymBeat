@@ -1,13 +1,13 @@
 // components/RepetitionsDrawer.tsx
 import React, { useEffect, useState } from 'react';
 import {
-    Modal,
-    Pressable,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NumberSlider } from './NumberSlider';
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
   },
   drawerContainer: {
     height: '65%',
-    backgroundColor: '#000',
+    backgroundColor: '#0B0D10',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
@@ -234,7 +234,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     padding: 15,
-    backgroundColor: '#1f1f1f',
+    backgroundColor: '#1A1D23',
     borderRadius: 10,
   },
   toggleLabel: {
@@ -271,7 +271,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 25,
   },
   saveButton: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
     height: 60,
     borderRadius: 10,
     alignItems: 'center',

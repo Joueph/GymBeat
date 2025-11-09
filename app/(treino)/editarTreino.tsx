@@ -35,6 +35,7 @@ type DiaSemana = typeof DIAS_SEMANA_ARRAY[number];
 interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
+  isWarmup?: boolean;
 }
 
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
@@ -137,7 +138,7 @@ const ExerciseItem = ({
   // Isso garante que a UI reflita as mudanças feitas no drawer de repetições.
   useEffect(() => {
     setSeries(item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' })));
-  }, [item.series]);
+  }, [item.series, item]);
 
   const handleSeriesUpdate = (newSeries: SerieEdit[]) => {
     setSeries(newSeries);
@@ -145,7 +146,7 @@ const ExerciseItem = ({
     setIsEditing(true); // Ativa o modo de edição imediatamente
   };
 
-  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
+  const handleSetOption = (option: 'toggleWarmup' | 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
     setTimeout(() => {
       const newSets = [...series];
       if (option === 'delete') {
@@ -161,6 +162,9 @@ const ExerciseItem = ({
           type: 'dropset',
           concluido: false,
         });
+      } else if (option === 'toggleWarmup') {
+        const currentSet = newSets[index];
+        currentSet.isWarmup = !currentSet.isWarmup;
       } else if (option === 'toggleTime') {
         newSets[index].isTimeBased = !newSets[index].isTimeBased;
       }
@@ -211,6 +215,7 @@ const ExerciseItem = ({
         <SetOptionsMenu
           isTimeBased={!!setItem.isTimeBased}
           isNormalSet={setItem.type === 'normal'}
+          isWarmup={!!setItem.isWarmup}
           onSelect={action => handleSetOption(action, index)}
         />
       </View>
@@ -278,6 +283,7 @@ const ExerciseItem = ({
                 repeticoes: lastSet?.repeticoes || '10',
                 peso: lastSet?.peso || 10,
                 type: 'normal',
+                isWarmup: false,
                 concluido: false,
               },
             ]);

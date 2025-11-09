@@ -14,7 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { auth } from "../firebaseconfig";
 import { Usuario } from "../models/usuario";
 import { getLogsByUsuarioId } from "../services/logService";
-import { cancelNotification, scheduleNotification } from "../services/notificationService"; // Novo serviço
+import { cancelNotification, scheduleNotification } from "../services/notificationService";
 import { uploadImageAndGetURL } from "../services/storageService";
 import { getUserProfile, updateUserProfile } from "../userService";
 import type { NotificationSettings, PrivacySettings } from './settings';
@@ -43,10 +43,14 @@ const toDate = (date: any): Date | null => {
 
 interface UserSettings {
   notifications: NotificationSettings;
-  privacy: PrivacySettings & { profileVisibility: 'todos' | 'amigos' | 'ninguém' };
+  privacy: PrivacySettings & { profileVisibility: 'todos' | 'amigos' | 'ninguem' };
 }
 
-type ProfileWithSettings = Partial<Usuario> & { settings?: UserSettings; expoPushToken?: string; };
+type ProfileWithSettings = Partial<Usuario> & {
+  settings?: UserSettings;
+  expoPushToken?: string;
+  novoPeso?: string; // Propriedade para o campo de input do novo peso
+};
 
 export default function PerfilScreen() {
   const { user } = useAuth();
@@ -185,22 +189,24 @@ const handleUpdate = async () => {
         photoURL: finalPhotoURL,
       };
 
-      // Adiciona os campos numéricos apenas se eles forem válidos, senão usa null.
+      // Adiciona a altura apenas se for um número válido.
       const alturaNum = Number(profile.altura);
       if (!isNaN(alturaNum) && alturaNum > 0) {
         dataToUpdate.altura = alturaNum;
       } else {
         dataToUpdate.altura = undefined;
       }
-
-      const pesoNum = Number(profile.peso);
+      
+      // Adiciona um novo registro de peso ao histórico se um valor válido for fornecido.
+      const pesoNum = Number(profile.novoPeso);
       if (!isNaN(pesoNum) && pesoNum > 0) {
-        dataToUpdate.peso = pesoNum;
-      } else {
-        dataToUpdate.peso = undefined;
+        const novoRegistroPeso = { valor: pesoNum, data: new Date() };
+        // Garante que o histórico exista antes de adicionar
+        const historicoAtual = profile.historicoPeso || [];
+        dataToUpdate.historicoPeso = [...historicoAtual, novoRegistroPeso];
       }
       
-      // Adiciona a data de nascimento apenas se for uma data válida, senão usa null.
+      // Adiciona a data de nascimento apenas se for uma data válida.
       if (profile.dataNascimento) {
         const dataNasc = toDate(profile.dataNascimento);
         if (dataNasc) {
@@ -210,6 +216,7 @@ const handleUpdate = async () => {
 
       await updateUserProfile(user.id, dataToUpdate);
       setNewPhotoURI(null); // Limpa a URI temporária após o sucesso
+      handleChange('novoPeso', ''); // Limpa o campo de novo peso
       Alert.alert("Sucesso", "Perfil atualizado com sucesso!");
       setEditProfileModalVisible(false); // Fecha o modal
     } catch (error: any) {
@@ -254,7 +261,7 @@ const handleUpdate = async () => {
     }
   };
   
-  const handleChange = (field: keyof Usuario, value: any) => {
+  const handleChange = (field: keyof ProfileWithSettings, value: any) => {
     setProfile(prev => ({ ...prev, [field]: value }));
   };
 
@@ -335,9 +342,14 @@ const handleUpdate = async () => {
         <Text style={styles.profileName}>{profile.nome}</Text>
         <Text style={styles.emailText}>{user?.email}</Text>
 
+        {/* Exibe o peso mais recente do histórico */}
         <View style={styles.widgetsContainer}>
             <View style={styles.widget}>
-                <Text style={styles.widgetValue}>{profile.peso || '--'}</Text>
+                <Text style={styles.widgetValue}>
+                  {profile.historicoPeso && profile.historicoPeso.length > 0 
+                    ? profile.historicoPeso[profile.historicoPeso.length - 1].valor 
+                    : '--'}
+                </Text>
                 <Text style={styles.widgetLabel}>Peso (kg)</Text>
             </View>
             <View style={styles.widget}>
@@ -383,8 +395,8 @@ const handleUpdate = async () => {
               <TextInput style={styles.input} placeholder="Ex: 175" placeholderTextColor="#ccc" keyboardType="numeric" value={profile.altura ? String(profile.altura) : ''} onChangeText={(text) => handleChange('altura', text)} />
 
               <Text style={styles.label}>Peso (kg)</Text>
-              <TextInput style={styles.input} placeholder="Ex: 70.5" placeholderTextColor="#ccc" keyboardType="numeric" value={profile.peso ? String(profile.peso) : ''} onChangeText={(text) => handleChange('peso', text)} />
-
+              <TextInput style={styles.input} placeholder="Adicionar novo registro de peso" placeholderTextColor="#ccc" keyboardType="numeric" value={profile.novoPeso ? String(profile.novoPeso) : ''} onChangeText={(text) => handleChange('novoPeso', text)} />
+              
               <Text style={styles.label}>Gênero</Text>
               <View style={styles.optionContainer}>
                 {(['Masculino', 'Feminino', 'Outro'] as const).map(g => (

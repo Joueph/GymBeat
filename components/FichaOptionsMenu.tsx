@@ -78,7 +78,7 @@ export const FichaOptionsMenu = ({ onSelect, isPrincipal }: FichaOptionsMenuProp
 
 const menuStyles = {
   optionsContainer: {
-    backgroundColor: '#2c2c2ef1',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     paddingVertical: 8,
     marginTop: 30,

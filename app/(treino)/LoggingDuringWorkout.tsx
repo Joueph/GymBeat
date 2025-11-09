@@ -26,7 +26,7 @@ import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler'; // Adicionado ScrollView
 import { MenuProvider } from 'react-native-popup-menu';
-import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { Treino } from '../../models/treino';
@@ -46,6 +46,7 @@ interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
   concluido: boolean;
+  isWarmup?: boolean;
 }
 
 export interface LoggedExercise extends Exercicio { // Adicionei restTime aqui
@@ -74,6 +75,7 @@ const LoggedExerciseCard = ({
   userWeight,
   onPesoBarraChange,
   startRestTimer, // This prop is passed but its type needs to be updated
+  onMenuStateChange,
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -83,6 +85,7 @@ const LoggedExerciseCard = ({
   userWeight: number;
   onPesoBarraChange: (newPesoBarra: number) => void; // New prop
   startRestTimer: (duration: number, isExercise: boolean, timedSetInfo?: { exerciseIndex: number, setIndex: number }) => void;
+  onMenuStateChange: (isOpen: boolean) => void;
 }) => {
   const { VideoListItem } = require('./editarTreino');
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
@@ -100,6 +103,7 @@ const LoggedExerciseCard = ({
       id: s.id || `set-${Date.now()}-${i}`,
       type: s.type || 'normal',
       concluido: s.concluido || false,
+      isWarmup: s.isWarmup || false,
     }))
   );
 
@@ -120,7 +124,7 @@ const LoggedExerciseCard = ({
   };
 
   const handleSetOption = (
-    option: 'addDropset' | 'copy' | 'delete' | 'toggleTime',
+    option: 'toggleWarmup' | 'addDropset' | 'copy' | 'delete' | 'toggleTime',
     index: number
   ) => {
     setTimeout(() => {
@@ -145,8 +149,12 @@ const LoggedExerciseCard = ({
           repeticoes: parentSet.repeticoes,
           peso: (parentSet.peso ?? 10) * 0.7,
           type: 'dropset',
+          isWarmup: false, // Dropsets não são de aquecimento
           concluido: false,
         });
+      } else if (option === 'toggleWarmup') {
+        const currentSet = newSets[index];
+        currentSet.isWarmup = !currentSet.isWarmup;
       }
       handleSeriesUpdate(newSets);
     }, 100);
@@ -232,8 +240,8 @@ const LoggedExerciseCard = ({
         <View
           style={[
             styles.setRow,
-            { backgroundColor: '#1f1f1f' },
             setItem.concluido && styles.setRowCompleted,
+            setItem.isWarmup && styles.setRowWarmup,
             { flex: 1 },
           ]}
         >
@@ -305,11 +313,12 @@ const LoggedExerciseCard = ({
             style={styles.checkboxContainer}
             onPress={() => handleToggleComplete(itemIndex, 0)} // TODO: Pass correct exerciseIndex
           >
-            <FontAwesome name={setItem.concluido ? 'check-square' : 'square-o'} size={24} color={setItem.concluido ? '#1cb0f6' : '#aaa'} />
+            <FontAwesome name={setItem.concluido ? 'check-square' : 'square-o'} size={24} color={setItem.concluido ? '#3B82F6' : '#aaa'} />
           </TouchableOpacity>
           <SetOptionsMenu
             isTimeBased={!!setItem.isTimeBased}
             isNormalSet={(setItem.type || 'normal') === 'normal'}
+            isWarmup={!!setItem.isWarmup}
             onSelect={action => handleSetOption(action, itemIndex)}
           />
         </View>
@@ -364,6 +373,7 @@ const LoggedExerciseCard = ({
                 peso: lastNormalSet?.peso || 10,
                 type: 'normal' as const,
                 isTimeBased: lastNormalSet?.isTimeBased || false,
+                isWarmup: false,
                 concluido: false,
               };
               handleSeriesUpdate([...series, newSet]);
@@ -496,7 +506,7 @@ const LoggedExerciseCard = ({
             <TouchableOpacity onPress={() => {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setIsExpanded(true);
-            }} style={[styles.avancadoButton, {backgroundColor: '#2c2c2e'}]}>
+            }} style={[styles.avancadoButton, {backgroundColor: '#2A2E37'}]}>
               <Text style={styles.avancadoButtonText}>
                 {(() => {
                   const completedSets = series.filter(s => s.concluido).length;
@@ -560,6 +570,7 @@ export default function LoggingDuringWorkoutScreen() {
   const [isNameEdited, setIsNameEdited] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0); // in seconds
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [totalLoad, setTotalLoad] = useState(0);
   const [userWeight, setUserWeight] = useState(70); // default fallback
   const { user } = useAuth();
@@ -645,8 +656,9 @@ export default function LoggingDuringWorkoutScreen() {
 
       // Busca o peso do usuário independentemente do cache
       getUserProfile(user.id).then(profile => {
-        if (profile?.peso) {
-          setUserWeight(profile.peso);
+        const latestWeight = profile?.historicoPeso && profile.historicoPeso.length > 0 ? profile.historicoPeso[profile.historicoPeso.length - 1].valor : null;
+        if (latestWeight) {
+          setUserWeight(latestWeight);
         }
         if (profile?.workoutScreenType) {
           setWorkoutScreenType(profile.workoutScreenType);
@@ -661,8 +673,9 @@ export default function LoggingDuringWorkoutScreen() {
   useEffect(() => {
     if (user?.id) {
       getUserProfile(user.id).then(profile => {
-        if (profile?.peso) {
-          setUserWeight(profile.peso);
+        const latestWeight = profile?.historicoPeso && profile.historicoPeso.length > 0 ? profile.historicoPeso[profile.historicoPeso.length - 1].valor : null;
+        if (latestWeight) {
+          setUserWeight(latestWeight);
         }
       });
     }
@@ -953,9 +966,7 @@ useEffect(() => {
     const newLoggedExercises: LoggedExercise[] = exercicios.map((modelo) => ({
       modelo: modelo,
       modeloId: modelo.id,
-      series: [
-        { id: `set-${Date.now()}`, repeticoes: '10', peso: 10, type: 'normal', concluido: false },
-      ],
+      series: [{ id: `set-${Date.now()}`, repeticoes: '10', peso: 10, type: 'normal', concluido: false, isWarmup: false }],
       isBiSet: false,
       notes: '', // Adiciona a propriedade 'notes' obrigatória
       restTime: 90, // Adiciona um tempo de descanso padrão
@@ -993,7 +1004,7 @@ useEffect(() => {
     gap: 20,
     paddingVertical: 15,
     paddingHorizontal: 15,
-    backgroundColor: '#030405', // Cor de fundo do container
+    backgroundColor: '#0B0D10', // Cor de fundo do container
   };
 
   const statItemStyle = {
@@ -1077,7 +1088,7 @@ useEffect(() => {
                 style={styles.addButtonCircle}
                 onPress={() => setModalVisible(true)}
               >
-                <FontAwesome name="plus" size={50} color="#1cb0f6" />
+                <FontAwesome name="plus" size={50} color="#3B82F6" />
               </TouchableOpacity>
               <Text style={styles.emptyText}>Adicione o primeiro exercício</Text>
             </View>
@@ -1089,18 +1100,10 @@ useEffect(() => {
               }}
               keyExtractor={(item) => item.modeloId}
               ListHeaderComponent={
-                <View style={statsContainerStyle}>
-                  <View style={statItemStyle}>
-                    <FontAwesome name="clock-o" size={16} color="#aaa" />
-                    <Text style={styles.statValue}>{formatTime(elapsedTime)}</Text>
-                  </View>
-                  <View style={statItemStyle}>
-                    <FontAwesome5 name="weight-hanging" size={16} color="#aaa" />
-                    <Text style={styles.statValue}>{Math.round(totalLoad).toLocaleString('pt-BR')} kg</Text>
-                  </View>
-                </View>
+              <View style={statsContainerStyle}><View style={statItemStyle}><FontAwesome name="clock-o" size={16} color="#aaa" /><Text style={styles.statValue}>{formatTime(elapsedTime)}</Text></View><View style={statItemStyle}><FontAwesome5 name="weight-hanging" size={16} color="#aaa" /><Text style={styles.statValue}>{Math.round(totalLoad).toLocaleString('pt-BR')} kg</Text></View></View>
               }
-              renderItem={({ item, index }) => (
+            renderItem={({ item, index }) => {
+              return (
                 <LoggedExerciseCard
                   item={item}
                   userWeight={userWeight}
@@ -1113,44 +1116,51 @@ useEffect(() => {
                     updatedExercises[index].restTime = newRestTime;
                     setLoggedExercises(updatedExercises);
                   }}
-                                    onNotesChange={(newNotes) => {
-                                      const updatedExercises = [...loggedExercises];
-                                      updatedExercises[index].notes = newNotes;
-                                      setLoggedExercises(updatedExercises);
-                                    }}
-                                    onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
-                                    startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
-                                  />
-                                )}
-                                ListFooterComponent={
-                                  <>
-                                    <TouchableOpacity
-                                      style={styles.addMoreButton}
-                                      onPress={() => setModalVisible(true)}
-                                    >
-                                      <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={styles.settingsButton}
-                                      onPress={() => setSettingsModalVisible(true)}
-                                    >
-                                      <FontAwesome name="cog" size={16} color="#aaa" />
-                                      <Text style={styles.settingsButtonText}>Configurações</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
-                                      onPress={handleCancelWorkout}
-                                    >
-                                      <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
-                                    </TouchableOpacity>
-                                  </>
-                                }
-                                contentContainerStyle={{
-                                  paddingBottom: 140,
-                                  paddingTop: 15, // Padding normal, já que os stats não são mais fixos
-                                }}
-                              />
-                            )}
+                  onNotesChange={(newNotes) => {
+                    const updatedExercises = [...loggedExercises];
+                    updatedExercises[index].notes = newNotes;
+                    setLoggedExercises(updatedExercises);
+                  }}
+                  onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
+                  startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
+                  onMenuStateChange={setIsMenuOpen}
+                />
+              );
+            }}
+            ListFooterComponent={
+              <>
+                <TouchableOpacity
+                  style={styles.addMoreButton}
+                  onPress={() => setModalVisible(true)}
+                >
+                  <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.settingsButton}
+                  onPress={() => setSettingsModalVisible(true)}
+                >
+                  <FontAwesome name="cog" size={16} color="#aaa" />
+                  <Text style={styles.settingsButtonText}>Configurações</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
+                  onPress={handleCancelWorkout}
+                >
+                  <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
+                </TouchableOpacity>
+              </>
+            }
+            contentContainerStyle={{
+              paddingBottom: 140,
+              paddingTop: 15, // Padding normal, já que os stats não são mais fixos
+            }}
+          />
+        )}
+                  {isMenuOpen && (
+                    <Animated.View style={styles.overlay} entering={FadeIn} exiting={FadeOut}>
+                      <View style={StyleSheet.absoluteFill} />
+                    </Animated.View>
+                  )}
                   
                                                       <MultiSelectExerciseModal
                   
@@ -1239,7 +1249,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   statValue: {
     color: '#fff', 
@@ -1250,22 +1260,22 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 12,
   },
-  container: { flex: 1, backgroundColor: '#030405' },
+  container: { flex: 1, backgroundColor: '#0B0D10' },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   addButtonCircle: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#1cb0f6',
+    borderColor: '#3B82F6',
     borderStyle: 'dashed',
   },
   emptyText: { color: '#888', marginTop: 20, fontSize: 16 },
   exercicioCard: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     padding: 15,
     flex: 1,
     marginBottom: 15,
@@ -1297,13 +1307,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
     paddingHorizontal: 5,
-    borderRadius: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
   },
   setRowCompleted: {
     opacity: 0.75,
   },
+  setRowWarmup: {
+    backgroundColor: 'rgba(255, 165, 0, 0.1)', // Fundo alaranjado para aquecimento
+    borderBottomColor: 'rgba(255, 165, 0, 0.3)',
+  },
   seriesNumberContainer: {
-    backgroundColor: '#1f1f1f',
     justifyContent: 'center',
     alignItems: 'center',
     width: 30,
@@ -1312,7 +1326,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   seriesNumberCompleted: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   seriesNumberText: {
     color: '#fff',
@@ -1321,7 +1335,7 @@ const styles = StyleSheet.create({
   },
   completedBar: {
     width: 5,
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
     height: '100%',
     marginRight: 5,
     borderRadius: 2,
@@ -1334,7 +1348,7 @@ const styles = StyleSheet.create({
     color: '#aaa', fontSize: 10, marginBottom: 4
   },
   setInput: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#262A32',
     color: '#fff',
     padding: 10,
     borderRadius: 5,
@@ -1343,7 +1357,7 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   repButton: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#262A32',
     padding: 10,
     borderRadius: 5,
     textAlign: 'center',
@@ -1404,7 +1418,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   completeBox: {
-    backgroundColor: '#1cb0f6', // Azul para "Completar"
+    backgroundColor: '#3B82F6', // Azul para "Completar"
     justifyContent: 'center',
     alignItems: 'center',
     width: 100, // Aumentado para caber o texto
@@ -1477,7 +1491,7 @@ const styles = StyleSheet.create({
     flex: 0, // Não expande
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 8,
@@ -1491,7 +1505,7 @@ const styles = StyleSheet.create({
   seriesCounterContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 8,
@@ -1523,7 +1537,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
   modalOptionButton: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -1532,7 +1546,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   modalOptionButtonSelected: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   modalOptionText: {
     color: '#fff',
@@ -1556,7 +1570,7 @@ const styles = StyleSheet.create({
   },
   restTimerProgressBar: {
     height: '100%',
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   restTimerContent: {
     flexDirection: 'row',
@@ -1594,7 +1608,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1cb0f6',
+    borderColor: '#3B82F6',
   },
   finishButtonText: {
     color: '#fff',
@@ -1602,7 +1616,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   finishButtonCompleted: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   finishButtonTextCompleted: {
     color: '#fff',
@@ -1651,7 +1665,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   barbellWeightInput: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     color: '#fff',
     paddingVertical: 8,
     paddingHorizontal: 15,
@@ -1699,7 +1713,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   barbellCenterWeightText: {
-    color: '#1cb0f6',
+    color: '#3B82F6',
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -1756,5 +1770,10 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 59, 48, 0.8)',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    zIndex: 1, // Garante que o overlay fique sobre o conteúdo mas abaixo do menu
   },
 });

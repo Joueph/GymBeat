@@ -3,7 +3,7 @@ import React, { ReactNode, useEffect, useState } from "react";
 import { Linking, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 
 // --- Tipos para as Configurações ---
-type PrivacyLevel = 'todos' | 'amigos' | 'ninguém';
+type PrivacyLevel = 'todos' | 'amigos' | 'ninguem';
 
 export interface NotificationSettings {
   // Treinos
@@ -48,7 +48,7 @@ const PrivacySetting = ({ label, value, onChange }: { label: string; value: Priv
   <View style={styles.settingItem}>
     <Text style={styles.settingLabel}>{label}</Text>
     <View style={styles.privacyOptionsContainer}>
-      {(['todos', 'amigos', 'ninguém'] as const).map(level => (
+      {(['todos', 'amigos', 'ninguem'] as const).map(level => (
         <TouchableOpacity
           key={level}
           style={[styles.privacyOption, value === level && styles.privacyOptionSelected]}

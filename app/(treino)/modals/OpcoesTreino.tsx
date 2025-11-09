@@ -203,7 +203,7 @@ export default function OpcoesTreinoScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#030405',
+    backgroundColor: '#0B0D10',
   },
   container: {
     flex: 1,
@@ -231,19 +231,19 @@ const styles = StyleSheet.create({
   },
   card: {
     flex: 1,
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     padding: 15,
     borderWidth: 1,
-    borderColor: '#222',
+    borderColor: '#2A2E37',
     minHeight: 180,
   },
   largeCard: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#222',
+    borderColor: '#2A2E37',
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
@@ -280,11 +280,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   newFolderContainer: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#222',
+    borderColor: '#2A2E37',
   },
   // Modal Styles
   modalCenteredView: {
@@ -334,7 +334,7 @@ const styles = StyleSheet.create({
   },
   input: {
     width: '100%',
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#262A32',
     color: '#fff',
     borderRadius: 8,
     padding: 12,
@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
     // textAlign: 'center', // Removido para alinhar à esquerda
   },
   primaryButton: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
     padding: 15,
     borderRadius: 8,
     width: '100%',

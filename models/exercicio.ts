@@ -22,6 +22,7 @@ export interface ExercicioModelo {
 }
 
 export interface Serie {
+  isWarmup?: boolean;
   concluido: boolean;
   id: string;
   repeticoes: string;
@@ -31,6 +32,8 @@ export interface Serie {
 }
 
 export interface Exercicio {
+  restTime: number;
+  notes: string;
   modelo: ExercicioModelo;
   modeloId: string;
   series: Serie[];

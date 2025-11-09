@@ -86,7 +86,7 @@ export const createUserProfileDocument = async (
     photoURL: additionalData.photoURL || '',
     dataNascimento: additionalData.dataNascimento || null,
     altura: additionalData.altura || null,
-    peso: additionalData.peso || null,
+    historicoPeso: additionalData.historicoPeso || [],
     genero: additionalData.genero || null,
     nivel: additionalData.nivel || null,
     isPro: additionalData.isPro || false,

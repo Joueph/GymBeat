@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      paddingHorizontal: 15,
+      paddingHorizontal: 16,
       paddingTop: '15%',
       marginBottom: 10,
     },
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
     workoutWrapper: {},
     workoutCard: {
       marginTop:8,
-      backgroundColor: '#141414',
+      backgroundColor: '#1A1D23',
       borderRadius: 25,
       paddingVertical: 15,
       height:72,
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
       justifyContent: 'space-between',
       marginVertical: 5,
       borderWidth: 0.5,
-      borderColor: '#ffffff1a',
+      borderColor: '#2A2E37',
     },
     workoutCardContent: {
       flex: 1,
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
     },
     container: {
         flex: 1,
-        backgroundColor: '#030405',
+        backgroundColor: '#0B0D10',
     },
     mainTitle: {
       fontSize: 40,

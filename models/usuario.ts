@@ -11,7 +11,7 @@ export interface Usuario {
   nome_lowercase?: string;
   dataNascimento?: Date;
   altura?: number; // em cm
-  peso?: number;   // em kg
+  historicoPeso?: { valor: number; data: Date }[]; // Histórico de pesos
   genero?: 'Masculino' | 'Feminino' | 'Outro';
   nivel?: 'Iniciante' | 'Intermediário' | 'Avançado';
   fichas?: Ficha[];

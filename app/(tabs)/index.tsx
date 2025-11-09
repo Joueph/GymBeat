@@ -390,12 +390,13 @@ const generateTimelineData = (): TimelineItem[] => {
             
             // -> Treino não realizado ... Deve ter a borda com o laranja
             isMissed && styles.missedDay, // Estilo com borda laranja para treino perdido
+            isToday && styles.todayContainer, // Apply today's styling
           ];
           
           return (
             <View key={day} style={dayStyles}>
               <ThemedText style={styles.dayText}>{day}</ThemedText>
-              <ThemedText style={styles.dateText}>{date.getDate()}</ThemedText>
+              <ThemedText style={[styles.dateText, isToday && styles.todayNumberText]}>{date.getDate()}</ThemedText>
             </View>
           );
         })}
@@ -1183,6 +1184,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 10,
+  },
+  todayContainer: {
+    backgroundColor: '#1A1D23',
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: '#1F2937',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  todayNumberText: {
+    color: '#EAEAEA',
   },
   missedWorkoutCard: {
     borderTopColor: '#FFA500',

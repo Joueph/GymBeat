@@ -145,6 +145,37 @@ export default function HomeScreen() {
     };
   }, [logs]);
 
+  const historyMetrics = React.useMemo(() => {
+    const completedLogs = logs.filter(log => log.status === 'concluido' && log.horarioFim);
+
+    const timeHistory = completedLogs.map(log => ({
+      valor: (log.horarioFim!.seconds - log.horarioInicio!.seconds) / 60, // minutes
+      data: new Date(log.horarioFim!.seconds * 1000)
+    }));
+
+    const seriesHistory = completedLogs.map(log => {
+      const totalSets = log.exercicios.reduce((acc, ex) => {
+        return acc + (ex.series?.filter(s => (s as any).concluido).length || 0);
+      }, 0);
+      return {
+        valor: totalSets,
+        data: new Date(log.horarioFim!.seconds * 1000)
+      };
+    });
+
+    const volumeHistory = completedLogs.map(log => ({
+      valor: log.cargaAcumulada || 0,
+      data: new Date(log.horarioFim!.seconds * 1000)
+    }));
+
+    return {
+      tempoDeTreino: timeHistory,
+      series: seriesHistory,
+      volume: volumeHistory,
+    };
+
+  }, [logs]);
+
   const handleSaveWeight = async (newWeight: number) => {
     if (!user || !userProfile) return;
 
@@ -338,9 +369,21 @@ export default function HomeScreen() {
             onEdit={() => setWeightDrawerVisible(true)}
             historyData={userProfile.historicoPeso}
           />
-          <MetricCard metricName="Tempo de treino" metricValue={weeklyMetrics.tempoDeTreino} />
-          <MetricCard metricName="Séries" metricValue={String(weeklyMetrics.series)} />
-          <MetricCard metricName="Volume" metricValue={weeklyMetrics.volume} />
+          <MetricCard 
+            metricName="Tempo de treino" 
+            metricValue={weeklyMetrics.tempoDeTreino} 
+            historyData={historyMetrics.tempoDeTreino}
+          />
+          <MetricCard 
+            metricName="Séries" 
+            metricValue={String(weeklyMetrics.series)} 
+            historyData={historyMetrics.series}
+          />
+          <MetricCard 
+            metricName="Volume" 
+            metricValue={weeklyMetrics.volume} 
+            historyData={historyMetrics.volume}
+          />
         </View>
       )}
 

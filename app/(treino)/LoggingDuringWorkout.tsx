@@ -26,7 +26,7 @@ import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler'; // Adicionado ScrollView
 import { MenuProvider } from 'react-native-popup-menu';
-import Animated, { cancelAnimation, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { Treino } from '../../models/treino';
@@ -584,6 +584,8 @@ export default function LoggingDuringWorkoutScreen() {
   const [isDoingExercise, setIsDoingExercise] = useState(false);
   const [exerciseCountdown, setExerciseCountdown] = useState(0);
   const [maxExerciseTime, setMaxExerciseTime] = useState(0);
+  const [restStartTime, setRestStartTime] = useState<number | null>(null);
+  const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
   const [setBeingTimed, setSetBeingTimed] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const progress = useSharedValue(0);
   const scrollY = useSharedValue(0); // Restaurado
@@ -769,6 +771,7 @@ useEffect(() => {
       setRestCountdown(duration);
       setMaxRestTime(duration);
       setIsResting(true);
+      setRestStartTime(Date.now());
     }
     progress.value = 0; // Reseta a barra de progresso
   };
@@ -778,50 +781,64 @@ useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
 
     if (isResting || isDoingExercise) {
-      const duration = isDoingExercise ? exerciseCountdown : restCountdown;
-      progress.value = withTiming(1, { duration: duration * 1000 });
+      // Lógica para restaurar o progresso da barra ao voltar para a tela
+      const startTime = isResting ? restStartTime : exerciseStartTime;
+      const maxTime = isResting ? maxRestTime : maxExerciseTime;
+
+      if (startTime && maxTime > 0) {
+        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+        const remainingSeconds = Math.max(0, maxTime - elapsedSeconds);
+        const elapsedPercentage = Math.min(1, elapsedSeconds / maxTime);
+
+        // Inicia a animação do ponto em que parou
+        progress.value = elapsedPercentage;
+        progress.value = withTiming(1, { duration: remainingSeconds * 1000, easing: Easing.linear });
+      }
 
       interval = setInterval(() => {
         if (isDoingExercise) {
-          setExerciseCountdown((prev) => {
-            const newTime = prev - 1;
-            if (newTime <= 0) {
-              clearInterval(interval);
-              setIsDoingExercise(false);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              // Marca a série como concluída e inicia o descanso
-              if (setBeingTimed) {
-                const { exerciseIndex, setIndex } = setBeingTimed;
-                const updatedExercises = [...loggedExercises];
-                const exercise = updatedExercises[exerciseIndex];
-                (exercise.series as SerieEdit[])[setIndex].concluido = true;
-                setLoggedExercises(updatedExercises);
-                // Inicia o timer de descanso
-                startTimer(exercise.restTime || 60, false);
-              }
-              return 0;
+          if (!exerciseStartTime) return;
+          const elapsedSeconds = Math.floor((Date.now() - exerciseStartTime) / 1000);
+          const remainingTime = Math.max(0, maxExerciseTime - elapsedSeconds); // Corrigido para usar maxExerciseTime
+          setExerciseCountdown(remainingTime);
+
+          if (remainingTime <= 0) {
+            setIsDoingExercise(false);
+            setExerciseStartTime(null);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+            if (setBeingTimed) {
+              const { exerciseIndex, setIndex } = setBeingTimed;
+              const updatedExercises = [...loggedExercises];
+              const exercise = updatedExercises[exerciseIndex];
+              (exercise.series as SerieEdit[])[setIndex].concluido = true;
+              setLoggedExercises(updatedExercises);
+              startTimer(exercise.restTime || 60, false);
             }
-            if (newTime <= 3 && newTime >= 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            return newTime;
-          });
+          } else if (remainingTime <= 3) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
         } else { // isResting
-          setRestCountdown((prev) => {
-            const newTime = prev - 1;
-            if (newTime <= 0) {
-              clearInterval(interval);
-              setIsResting(false);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              return 0;
-            }
-            if (newTime <= 3 && newTime >= 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            return newTime;
-          });
+          if (!restStartTime) return;
+          const elapsedSeconds = Math.floor((Date.now() - restStartTime) / 1000);
+          const remainingTime = Math.max(0, maxRestTime - elapsedSeconds);
+          setRestCountdown(remainingTime);
+
+          if (remainingTime <= 0) {
+            setIsResting(false);
+            setRestStartTime(null);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } else if (remainingTime <= 3) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
         }
       }, 1000);
     } else {
       // Garante que tudo seja resetado quando nenhum timer estiver ativo
       cancelAnimation(progress);
       progress.value = 0;
+      setRestStartTime(null);
+      setExerciseStartTime(null);
       setRestCountdown(0);
       setExerciseCountdown(0);
       setSetBeingTimed(null);
@@ -832,7 +849,7 @@ useEffect(() => {
         clearInterval(interval);
       }
     };
-  }, [isResting, isDoingExercise, setBeingTimed]);
+  }, [isResting, isDoingExercise]);
 
 
   const handleSkipRest = () => {

@@ -23,7 +23,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({ metricName, metricValue,
         )}
       </View>
       <Text style={styles.metricValue}>{metricValue}</Text>
-      {historyData && historyData.length > 1 ? (
+      {historyData && historyData.length > 1 ? ( // CORREÇÃO: Removida a condição que limitava o gráfico apenas ao "Peso Corporal"
         <WeightHistoryChart data={historyData} />
       ) : (
         <View style={styles.chartPlaceholder}>

@@ -1,4 +1,4 @@
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -325,7 +325,7 @@ const handleDragEnd = async ({ data: newDisplayItems, from, to }: { data: Displa
                   >
                     <TouchableOpacity style={styles.folderCard} onPress={() => handleFolderPress(item.id)}>
                       <View style={styles.folderInfo}>
-                      <FontAwesome name={item.isExpanded ? "arrow-up" : "arrow-down"} size={16} color="#555" />
+                      <Ionicons name={item.isExpanded ? "arrow-up" : "arrow-down"} size={16} color="#555" />
                       <Text style={styles.folderName}>{(item.data as Folder).nome}</Text>
                       {item.isPrincipal && <Text style={styles.principalTag}>principal</Text>}
                       </View>

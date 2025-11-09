@@ -21,6 +21,8 @@ interface SetOptionsMenuProps {
   isNormalSet: boolean;
   /** Passado para saber se a série é de aquecimento */
   isWarmup: boolean;
+  /** Passado para saber se é a primeira série do exercício */
+  isFirstSet: boolean;
   onMenuOpen?: () => void;
   onMenuClose?: () => void;
 }
@@ -48,7 +50,7 @@ const MenuOptionItem = ({ text, icon, onSelect, isDestructive = false }: MenuOpt
   </MenuOption>
 );
 
-export const SetOptionsMenu = ({ onSelect, isTimeBased, isNormalSet, isWarmup, onMenuOpen, onMenuClose }: SetOptionsMenuProps) => {
+export const SetOptionsMenu = ({ onSelect, isTimeBased, isNormalSet, isWarmup, isFirstSet, onMenuOpen, onMenuClose }: SetOptionsMenuProps) => {
   const handleOpen = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onMenuOpen?.();
@@ -66,12 +68,16 @@ export const SetOptionsMenu = ({ onSelect, isTimeBased, isNormalSet, isWarmup, o
 
       {/* As opções que aparecem no popover */}
       <MenuOptions customStyles={menuStyles}>
-        <MenuOptionItem
-          text={isWarmup ? "Desmarcar aquecimento" : "Marcar como aquecimento"}
-          icon="fire"
-          onSelect={() => onSelect('toggleWarmup')}
-        />
-        <View style={styles.divider} />
+        {isFirstSet && (
+          <>
+            <MenuOptionItem
+              text={isWarmup ? "Desmarcar aquecimento" : "Aquecimento"}
+              icon="fire"
+              onSelect={() => onSelect('toggleWarmup')}
+            />
+            <View style={styles.divider} />
+          </>
+        )}
 
         {isNormalSet && (
           <>

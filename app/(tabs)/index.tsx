@@ -8,7 +8,7 @@ import { getLogsByUsuarioId } from '@/services/logService';
 import { getCachedActiveWorkoutLog } from '@/services/offlineCacheService';
 import { getTreinosByIds } from '@/services/treinoService';
 import { getUserProfile, updateUserProfile } from '@/userService';
-import { FontAwesome } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react'; // Adicionado ScrollView
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -159,7 +159,6 @@ export default function HomeScreen() {
       setUserProfile(prev => prev ? { ...prev, historicoPeso: updatedHistorico } : null);
 
       setWeightDrawerVisible(false); // Fecha o drawer
-      Alert.alert("Sucesso", "Seu peso foi atualizado!");
     } catch (error) {
       console.error("Erro ao salvar o novo peso:", error);
       Alert.alert("Erro", "Não foi possível salvar seu novo peso. Tente novamente.");
@@ -244,7 +243,8 @@ export default function HomeScreen() {
               <Text style={styles.workoutDetailText}>~{estimatedTime} min</Text>
             </View>
           </View>
-          <FontAwesome name="chevron-right" size={18} color="#555" />
+          
+          <Ionicons name="chevron-forward" size={28} color="#262A32" />
         </TouchableOpacity>
       </>
     );
@@ -323,9 +323,6 @@ export default function HomeScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContentContainer}>
       <View style={styles.headerContainer}>
         <Text style={styles.headerTitle}>Progresso</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => router.push('/(treino)/modals/OpcoesTreino' as any)}>
-          <FontAwesome name="plus" size={18} color="#EAEAEA" />
-        </TouchableOpacity>
       </View>
       {renderWeeklyCalendar()}
       <Text style={styles.sectionTitle}>Minha semana</Text>

@@ -173,12 +173,17 @@ const ExerciseItem = ({
   };
 
   const renderSetItem = (setItem: SerieEdit, index: number) => {
-    const normalSeriesCount = series.slice(0, index + 1).filter(s => s.type === 'normal').length;
+    // Adjust series counting to exclude warm-up sets from the main count.
+    const normalSeriesCount = series
+      .slice(0, index + 1)
+      .filter(s => s.type === 'normal' && !s.isWarmup).length;
 
     return (
       <View key={setItem.id} style={[styles.setRow, setItem.type === 'dropset' && styles.dropsetRow]}>
         {setItem.type === 'dropset' ? (
           <FontAwesome5 name="arrow-down" size={16} color="#888" style={styles.setIndicator} />
+        ) : setItem.isWarmup ? (
+          <FontAwesome5 name="fire" size={16} color="#FFA500" style={styles.setIndicator} />
         ) : (
           <Text style={styles.setIndicator}>{normalSeriesCount}</Text>
         )}
@@ -216,6 +221,7 @@ const ExerciseItem = ({
           isTimeBased={!!setItem.isTimeBased}
           isNormalSet={setItem.type === 'normal'}
           isWarmup={!!setItem.isWarmup}
+          isFirstSet={index === 0}
           onSelect={action => handleSetOption(action, index)}
         />
       </View>
@@ -790,15 +796,15 @@ export default function EditarTreinoScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#030405', // Dark background
+    backgroundColor: '#0B0D10',
+    paddingHorizontal:8, // Dark background
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 8,
     paddingVertical: 10, // Mantido
-    borderBottomWidth: 1,
+    borderBottomWidth: 0.5,
     borderBottomColor: '#222',
   },
   headerRight: {
@@ -857,7 +863,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
     paddingVertical: 16,
 
     borderBottomColor: '#222',
@@ -869,14 +874,13 @@ const styles = StyleSheet.create({
     flex: 1, // Allows the input to take available space
     borderBottomWidth: 1,
     borderColor: '#222',
-    paddingRight: 10,
+    paddingHorizontal: 10,
     paddingBottom: 5,
   },
   exercicioCard: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
-    marginHorizontal: 15,
-    marginVertical: 8,
+    marginBottom: 15,
     padding: 15,
     borderWidth: 1,
     borderColor: '#222',
@@ -929,13 +933,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
-    paddingVertical: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
   },
   dropsetRow: {
     marginLeft: 20,
     borderLeftWidth: 2,
     borderLeftColor: '#444',
-    paddingLeft: 10,
   },
   setIndicator: {
     color: '#fff',
@@ -954,20 +960,20 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   setInput: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#262A32',
     color: '#fff',
     padding: 10,
     borderRadius: 5,
     textAlign: 'center',
     fontSize: 16,
-    minWidth: 80,
+    minWidth: 80, // Mantido
   },
   repButton: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#262A32',
     padding: 10,
     borderRadius: 5,
     minWidth: 80,
-    height: 42, // Para alinhar com o TextInput
+    height: 42,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -986,24 +992,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#222',
+    gap: 10,
   },
   addSetButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     padding: 15,
-    marginTop: 10,
-    backgroundColor: '#1f1f1f',
+    marginTop: 15,
+    backgroundColor: 'transparent',
     borderRadius: 8,
     alignSelf: 'center',
     width: '100%',
     justifyContent: 'center',
   },
   addSetButtonText: {
-    color: '#1cb0f6',
+    color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
   },
@@ -1017,7 +1021,7 @@ const styles = StyleSheet.create({
   restTimerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 8,
@@ -1029,7 +1033,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   addExerciseButton: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderWidth: 1,
     borderColor: '#222',
     borderRadius: 12,

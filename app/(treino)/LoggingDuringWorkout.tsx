@@ -4,7 +4,7 @@ import { SetOptionsMenu } from '@/components/SetOptionsMenu';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { Log } from '@/models/log';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
-import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -149,7 +149,6 @@ const LoggedExerciseCard = ({
           repeticoes: parentSet.repeticoes,
           peso: (parentSet.peso ?? 10) * 0.7,
           type: 'dropset',
-          isWarmup: false, // Dropsets não são de aquecimento
           concluido: false,
         });
       } else if (option === 'toggleWarmup') {
@@ -241,13 +240,16 @@ const LoggedExerciseCard = ({
           style={[
             styles.setRow,
             setItem.concluido && styles.setRowCompleted,
-            setItem.isWarmup && styles.setRowWarmup,
             { flex: 1 },
           ]}
         >
           {setItem.type === 'dropset' ? (
             <View style={{ width: 30, marginRight: 10, alignItems: 'center' }}>
               <FontAwesome5 name="arrow-down" size={16} color="#888" />
+            </View>
+          ) : setItem.isWarmup ? (
+            <View style={{ width: 30, marginRight: 10, alignItems: 'center' }}>
+              <FontAwesome5 name="fire" size={16} color="#FFA500" />
             </View>
           ) : (
             <View style={[styles.seriesNumberContainer, setItem.concluido && styles.seriesNumberCompleted]}>
@@ -319,8 +321,7 @@ const LoggedExerciseCard = ({
             isTimeBased={!!setItem.isTimeBased}
             isNormalSet={(setItem.type || 'normal') === 'normal'}
             isWarmup={!!setItem.isWarmup}
-            onSelect={action => handleSetOption(action, itemIndex)}
-          />
+            onSelect={action => handleSetOption(action, itemIndex)} isFirstSet={false}          />
         </View>
       </View>
     );
@@ -373,7 +374,6 @@ const LoggedExerciseCard = ({
                 peso: lastNormalSet?.peso || 10,
                 type: 'normal' as const,
                 isTimeBased: lastNormalSet?.isTimeBased || false,
-                isWarmup: false,
                 concluido: false,
               };
               handleSeriesUpdate([...series, newSet]);
@@ -966,7 +966,9 @@ useEffect(() => {
     const newLoggedExercises: LoggedExercise[] = exercicios.map((modelo) => ({
       modelo: modelo,
       modeloId: modelo.id,
-      series: [{ id: `set-${Date.now()}`, repeticoes: '10', peso: 10, type: 'normal', concluido: false, isWarmup: false }],
+      series: [
+        { id: `set-${Date.now()}`, repeticoes: '10', peso: 10, type: 'normal', concluido: false },
+      ],
       isBiSet: false,
       notes: '', // Adiciona a propriedade 'notes' obrigatória
       restTime: 90, // Adiciona um tempo de descanso padrão
@@ -1039,7 +1041,7 @@ useEffect(() => {
           <View style={styles.customHeader}>
             <View style={styles.headerLeftGroup}>
               <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                <FontAwesome name="arrow-left" size={20} color="#fff" />
+                <Ionicons name="chevron-back" size={28} color="#fff" />
               </TouchableOpacity>
               <TextInput
                 style={styles.headerTitleInput}
@@ -1559,7 +1561,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#1f1f1f',
+    backgroundColor: '#0B0D10',
     borderTopWidth: 1,
     borderTopColor: '#333',
     paddingBottom: 30, // Espaço para safe area
@@ -1592,7 +1594,7 @@ const styles = StyleSheet.create({
   skipButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#333',
+    backgroundColor: '#3B82F6',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,

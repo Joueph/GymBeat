@@ -8,7 +8,7 @@ import { BarChart } from 'react-native-chart-kit';
 import Animated from 'react-native-reanimated';
 
 // --- Helpers ---
-interface SerieComStatus extends Serie {
+interface SerieComStatus extends Omit<Serie, 'concluido'> {
     concluido?: boolean;
 }
 

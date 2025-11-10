@@ -1,3 +1,4 @@
+import { OngoingWorkoutFooter } from '@/components/OngoingWorkoutFooter';
 import { WeightInputDrawer } from '@/components/WeightInputDrawer';
 import { Ficha } from '@/models/ficha';
 import { Log } from '@/models/log';
@@ -146,35 +147,75 @@ export default function HomeScreen() {
   }, [logs]);
 
   const historyMetrics = React.useMemo(() => {
-    const completedLogs = logs.filter(log => log.status === 'concluido' && log.horarioFim);
+    // Lógica para as últimas 5 semanas (para tempo, séries, volume)
+    const generateWeeklyHistory = (getValue: (log: Log) => number) => {
+        const today = new Date();
+        const weeklyTotals = new Map<string, { total: number, weekStartDate: Date }>();
 
-    const timeHistory = completedLogs.map(log => ({
-      valor: (log.horarioFim!.seconds - log.horarioInicio!.seconds) / 60, // minutes
-      data: new Date(log.horarioFim!.seconds * 1000)
-    }));
+        const getWeekStart = (d: Date) => {
+            const date = new Date(d);
+            date.setHours(0, 0, 0, 0);
+            date.setDate(date.getDate() - date.getDay()); // Domingo
+            return date;
+        };
 
-    const seriesHistory = completedLogs.map(log => {
-      const totalSets = log.exercicios.reduce((acc, ex) => {
-        return acc + (ex.series?.filter(s => (s as any).concluido).length || 0);
-      }, 0);
-      return {
-        valor: totalSets,
-        data: new Date(log.horarioFim!.seconds * 1000)
-      };
-    });
+        const fiveWeeksAgo = getWeekStart(new Date());
+        fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - (4 * 7));
 
-    const volumeHistory = completedLogs.map(log => ({
-      valor: log.cargaAcumulada || 0,
-      data: new Date(log.horarioFim!.seconds * 1000)
-    }));
+        const completedLogs = logs.filter(log => {
+            if (!log.horarioFim || !log.horarioFim.seconds) return false;
+            const logDate = new Date(log.horarioFim.seconds * 1000);
+            return logDate >= fiveWeeksAgo;
+        });
 
-    return {
-      tempoDeTreino: timeHistory,
-      series: seriesHistory,
-      volume: volumeHistory,
+        for (const log of completedLogs) {
+            const logDate = new Date(log.horarioFim!.seconds * 1000);
+            const weekStartDate = getWeekStart(logDate);
+            const weekKey = weekStartDate.toISOString().split('T')[0];
+            
+            const current = weeklyTotals.get(weekKey) || { total: 0, weekStartDate: weekStartDate };
+            current.total += getValue(log);
+            weeklyTotals.set(weekKey, current);
+        }
+
+        const result: { valor: number; data: Date }[] = [];
+        for (let i = 0; i < 5; i++) {
+            const weekStartDate = getWeekStart(new Date());
+            weekStartDate.setDate(weekStartDate.getDate() - ((4 - i) * 7));
+            const weekKey = weekStartDate.toISOString().split('T')[0];
+            
+            result.push({
+                data: weekStartDate,
+                valor: weeklyTotals.get(weekKey)?.total || 0,
+            });
+        }
+        return result;
     };
 
-  }, [logs]);
+    const timeHistory = generateWeeklyHistory(log => (log.horarioFim!.seconds - log.horarioInicio!.seconds) / 60);
+    const seriesHistory = generateWeeklyHistory(log => log.exercicios.reduce((acc, ex) => acc + (ex.series?.filter(s => (s as any).concluido).length || 0), 0));
+    const volumeHistory = generateWeeklyHistory(log => log.cargaAcumulada || 0);
+    
+    // Lógica para o peso corporal (histórico completo)
+    let weightHistory: { valor: number; data: Date }[] = [];
+    if (userProfile?.historicoPeso && userProfile.historicoPeso.length > 0) {
+        weightHistory = [...userProfile.historicoPeso]
+            .map(h => {
+                const date = typeof (h.data as any)?.toDate === 'function' 
+                    ? (h.data as any).toDate() 
+                    : new Date(h.data as any);
+                return { valor: h.valor, data: date };
+            })
+            .sort((a, b) => a.data.getTime() - b.data.getTime());
+    }
+
+    return {
+        tempoDeTreino: timeHistory,
+        series: seriesHistory,
+        volume: volumeHistory,
+        pesoCorporal: weightHistory,
+    };
+  }, [logs, userProfile]);
 
   const handleSaveWeight = async (newWeight: number) => {
     if (!user || !userProfile) return;
@@ -196,9 +237,19 @@ export default function HomeScreen() {
     }
   };
 
-  const getLatestWeight = () => (
-    userProfile?.historicoPeso && userProfile.historicoPeso.length > 0 ? userProfile.historicoPeso[userProfile.historicoPeso.length - 1].valor : 70
-  );
+  const getLatestWeight = () => {
+    if (!userProfile?.historicoPeso || userProfile.historicoPeso.length === 0) {
+      return 70; // Default value
+    }
+    // Sort to find the most recent entry
+    const sortedHistorico = [...userProfile.historicoPeso]
+      .map(h => ({
+        ...h,
+        data: typeof (h.data as any)?.toDate === 'function' ? (h.data as any).toDate() : new Date(h.data as any)
+      }))
+      .sort((a, b) => b.data.getTime() - a.data.getTime()); // Sort descending
+    return sortedHistorico[0].valor;
+  };
 
   const renderWeeklyProgress = () => {
     const today = new Date();
@@ -351,50 +402,53 @@ export default function HomeScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContentContainer}>
-      <View style={styles.headerContainer}>
-        <Text style={styles.headerTitle}>Progresso</Text>
-      </View>
-      {renderWeeklyCalendar()}
-      <Text style={styles.sectionTitle}>Minha semana</Text>
-      {renderWeeklyProgress()}
-      {renderTodaysWorkoutCard()}
-      <Text style={styles.sectionTitle}>Minhas métricas</Text>
-      {userProfile && (
-        <View style={styles.metricsContainer}>
-          <MetricCard 
-            metricName="Peso Corporal"
-            metricValue={`${getLatestWeight()} kg`}
-            isEditable={true}
-            onEdit={() => setWeightDrawerVisible(true)}
-            historyData={userProfile.historicoPeso}
-          />
-          <MetricCard 
-            metricName="Tempo de treino" 
-            metricValue={weeklyMetrics.tempoDeTreino} 
-            historyData={historyMetrics.tempoDeTreino}
-          />
-          <MetricCard 
-            metricName="Séries" 
-            metricValue={String(weeklyMetrics.series)} 
-            historyData={historyMetrics.series}
-          />
-          <MetricCard 
-            metricName="Volume" 
-            metricValue={weeklyMetrics.volume} 
-            historyData={historyMetrics.volume}
-          />
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollContentContainer}>
+        <View style={styles.headerContainer}>
+          <Text style={styles.headerTitle}>Progresso</Text>
         </View>
-      )}
+        {renderWeeklyCalendar()}
+        <Text style={styles.sectionTitle}>Minha semana</Text>
+        {renderWeeklyProgress()}
+        {renderTodaysWorkoutCard()}
+        <Text style={styles.sectionTitle}>Minhas métricas</Text>
+        {userProfile && (
+          <View style={styles.metricsContainer}>
+            <MetricCard
+              metricName="Peso Corporal"
+              metricValue={`${getLatestWeight()} kg`}
+              isEditable={true}
+              onEdit={() => setWeightDrawerVisible(true)}
+              historyData={historyMetrics.pesoCorporal}
+            />
+            <MetricCard
+              metricName="Tempo de treino"
+              metricValue={weeklyMetrics.tempoDeTreino}
+              historyData={historyMetrics.tempoDeTreino}
+            />
+            <MetricCard
+              metricName="Séries"
+              metricValue={String(weeklyMetrics.series)}
+              historyData={historyMetrics.series}
+            />
+            <MetricCard
+              metricName="Volume"
+              metricValue={weeklyMetrics.volume}
+              historyData={historyMetrics.volume}
+            />
+          </View>
+        )}
 
-      {/* Drawer para inserir o peso */}
-      <WeightInputDrawer
-        visible={isWeightDrawerVisible}
-        onClose={() => setWeightDrawerVisible(false)}
-        onSave={handleSaveWeight}
-        initialValue={getLatestWeight()}
-      />
-    </ScrollView>
+        {/* Drawer para inserir o peso */}
+        <WeightInputDrawer
+          visible={isWeightDrawerVisible}
+          onClose={() => setWeightDrawerVisible(false)}
+          onSave={handleSaveWeight}
+          initialValue={getLatestWeight()}
+        />
+      </ScrollView>
+      <OngoingWorkoutFooter />
+    </View>
   );
 }
 

@@ -1,3 +1,4 @@
+import { Timestamp } from 'firebase/firestore';
 import { Ficha } from './ficha';
 
 export type UserRole = 'usuario' | 'administrador' | 'personal';
@@ -11,7 +12,7 @@ export interface Usuario {
   nome_lowercase?: string;
   dataNascimento?: Date;
   altura?: number; // em cm
-  historicoPeso?: { valor: number; data: Date }[]; // Histórico de pesos
+  historicoPeso?: { valor: number; data: Date | Timestamp }[]; // Histórico de pesos
   genero?: 'Masculino' | 'Feminino' | 'Outro';
   nivel?: 'Iniciante' | 'Intermediário' | 'Avançado';
   fichas?: Ficha[];

@@ -1,7 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { WeightHistoryChart } from './charts/WeightHistoryChart';
+import { MetricHistoryChart } from './charts/MetricHistoryChart';
 
 interface MetricCardProps {
   metricName: string;
@@ -23,8 +23,8 @@ export const MetricCard: React.FC<MetricCardProps> = ({ metricName, metricValue,
         )}
       </View>
       <Text style={styles.metricValue}>{metricValue}</Text>
-      {historyData && historyData.length > 1 ? ( // CORREÇÃO: Removida a condição que limitava o gráfico apenas ao "Peso Corporal"
-        <WeightHistoryChart data={historyData} />
+      {historyData && historyData.length > 1 ? (
+        <MetricHistoryChart data={historyData} />
       ) : (
         <View style={styles.chartPlaceholder}>
           <FontAwesome name="line-chart" size={30} color="#444" />

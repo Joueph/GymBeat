@@ -363,6 +363,27 @@ export default function AmigosScreen() {
         </View>
       </View>
 
+      {/* Card do Perfil do Usuário */}
+      <TouchableOpacity style={styles.userProfileCard} onPress={() => router.push('/perfil')}>
+        <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/perfil')}>
+            <FontAwesome name="pencil" size={16} color="#ccc" />
+        </TouchableOpacity>
+        <View style={styles.userProfileInfo}>
+          {user?.photoURL ? (
+            <Image source={{ uri: user.photoURL }} style={styles.userPfp} />
+          ) : (
+            <View style={styles.userPfpPlaceholder}><FontAwesome name="user" size={24} color="#555" /></View>
+          )}
+          <View>
+            <Text style={styles.userName}>{user?.nome}</Text>
+            <Text style={styles.userEmail}>{user?.email}</Text>
+          </View>
+        </View>
+        <View style={styles.friendCountContainer}>
+          <Text style={styles.friendCountNumber}>{friends.length}</Text>
+          <Text style={styles.friendCountLabel}>Amigos</Text>
+        </View>
+      </TouchableOpacity>
       <View style={styles.section}>
         <Text style={styles.mainSectionTitle}>Meus Projetos</Text>
         <FlatList
@@ -581,7 +602,7 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   container: {
-    backgroundColor: "#030405",
+    backgroundColor: "#0B0D10", // Cor de fundo principal
     flexGrow: 1,
   },
   section: {
@@ -593,6 +614,65 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  userProfileCard: {
+    backgroundColor: '#1A1D23',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+  },
+  editProfileButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 5,
+  },
+  userProfileInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  userPfp: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 15,
+  },
+  userPfpPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#0B0D10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  userName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  userEmail: {
+    color: '#aaa',
+    fontSize: 14,
+  },
+  friendCountContainer: {
+    alignItems: 'center',
+  },
+  friendCountNumber: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  friendCountLabel: {
+    color: '#aaa',
+    fontSize: 12,
   },
   card: {
     marginVertical: 8,

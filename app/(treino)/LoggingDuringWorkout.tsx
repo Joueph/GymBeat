@@ -3,6 +3,7 @@ import { RestTimeDrawer } from '@/components/RestTimeDrawer';
 import { SetOptionsMenu } from '@/components/SetOptionsMenu';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { Log } from '@/models/log';
+import { Treino } from '@/models/treino';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -27,11 +28,10 @@ import { MenuProvider } from 'react-native-popup-menu';
 import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
-import { Treino } from '../../models/treino';
 import { addLog } from '../../services/logService';
 import { cancelNotification, scheduleNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
-import { getTreinoById } from '../../services/treinoService';
+import { addTreino, getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
@@ -320,7 +320,9 @@ const LoggedExerciseCard = ({
             isTimeBased={!!setItem.isTimeBased}
             isNormalSet={(setItem.type || 'normal') === 'normal'}
             isWarmup={!!setItem.isWarmup}
-            onSelect={action => handleSetOption(action, itemIndex)} isFirstSet={false}          />
+            onSelect={action => handleSetOption(action, itemIndex)}
+            isFirstSet={itemIndex === 0}
+          />
         </View>
       </View>
     );
@@ -611,7 +613,7 @@ export default function LoggingDuringWorkoutScreen() {
       // **NOVA LÓGICA**: Prioriza carregar um log ativo do cache se um logId for passado
       if (logId) {
         try {
-          const cachedLog = await getCachedActiveWorkoutLog();
+          const cachedLog = await getCachedActiveWorkoutLog(); // CORRIGIDO: Função agora importada
           if (cachedLog && cachedLog.id === logId) {
             setLoggedExercises(cachedLog.exercicios || []);
             setWorkoutName(String(cachedLog.nomeTreino || 'Treino'));
@@ -642,7 +644,7 @@ export default function LoggingDuringWorkoutScreen() {
       } else {
         // Lógica existente para treino livre (cache ou novo)
         try {
-          const cachedLog = await getCachedActiveWorkoutLog();
+          const cachedLog = await getCachedActiveWorkoutLog(); // CORRIGIDO: Função agora importada
           if (cachedLog && cachedLog.id.startsWith('free-workout-')) {
             // Carrega do cache
             setLoggedExercises(cachedLog.exercicios || []);
@@ -756,7 +758,7 @@ useEffect(() => {
         observacoes: undefined, // Propriedade 'observacoes' adicionada
       };
 
-      await cacheActiveWorkoutLog(log);
+      await cacheActiveWorkoutLog(log); // CORRIGIDO: Função agora importada
     };
 
     const debounceSave = setTimeout(saveWorkout, 1000);
@@ -933,12 +935,44 @@ useEffect(() => {
       setIsFinishing(true);
       const finalEndTime = new Date();
 
+      // Adicionado log para depuração
+      console.log('[handleFinishWorkout] Iniciando finalização do treino.');
+      console.log('[handleFinishWorkout] treinoId:', treinoId, '| fichaId:', fichaId);
+
+      let finalTreinoId = treinoId;
+
+      // Se for um treino livre (sem treinoId), cria um novo documento de treino primeiro.
+      if (!finalTreinoId) {
+        console.log('[handleFinishWorkout] Detectado treino livre. Criando novo documento de treino...');
+        const novoTreinoData: Omit<Treino, 'id'> = {
+          nome: workoutName,
+          usuarioId: user.id,
+          exercicios: loggedExercises,
+          diasSemana: [],
+          fichaId: null, // Treinos livres não pertencem a uma ficha.
+          intervalo: { min: 1, seg: 0 }, // Intervalo padrão
+          ordem: 999, // Ordem alta para aparecer por último se não for associado
+        };
+        try {
+          finalTreinoId = await addTreino(novoTreinoData);
+          console.log('[handleFinishWorkout] Novo treino livre criado com ID:', finalTreinoId);
+        } catch (treinoError) {
+          console.error('[handleFinishWorkout] Erro ao criar documento do treino livre:', treinoError);
+          Alert.alert('Erro', 'Não foi possível criar o registro do treino antes de salvar o log.');
+          setIsFinishing(false);
+          return;
+        }
+      }
+
       try {
         const newLog: Partial<Log> = {
           usuarioId: user.id,
           treino: {
-            id: treinoId || `freestyle-${Date.now()}`,
-            fichaId: fichaId, // Can be undefined
+            id: finalTreinoId,
+            // CORREÇÃO: Usar `null` em vez de 'null' como string.
+            // O `as any` é um truque para contornar o erro do TypeScript, permitindo que o valor `null`
+            // seja enviado para o Firebase, que é o que a função `addLog` espera para campos vazios.
+            fichaId: (fichaId || null) as any,
             nome: workoutName,
             usuarioId: user.id,
             exercicios: loggedExercises,
@@ -956,14 +990,19 @@ useEffect(() => {
           observacoes: loggedExercises.map((ex) => ex.notes).filter(Boolean).join('; '),
         };
 
+        // Adicionado log para inspecionar o objeto que será salvo
+        console.log('[handleFinishWorkout] Objeto do log pronto para ser salvo:', JSON.stringify(newLog, null, 2));
+
         const newLogId = await addLog(newLog);
         
+        console.log('[handleFinishWorkout] Log salvo com sucesso. ID:', newLogId);
+
         await cacheActiveWorkoutLog(null);
 
         router.replace({ pathname: '/(treino)/treinoCompleto', params: { logId: newLogId } });
 
       } catch (error) {
-        console.error('Error saving workout log:', error);
+        console.error('[handleFinishWorkout] Erro ao salvar o log do treino:', error);
         Alert.alert('Erro', 'Não foi possível salvar o log do treino.');
         setIsFinishing(false);
       }
@@ -977,14 +1016,14 @@ useEffect(() => {
         "Você não completou todas as séries. Deseja finalizar o treino mesmo assim?",
         [
           {
+          text: "Finalizar",
+          onPress: proceedToFinish,
+          style: "destructive"
+        },
+        {
             text: "Cancelar",
             style: "cancel"
           },
-          {
-            text: "Finalizar",
-            onPress: proceedToFinish,
-            style: "destructive"
-          }
         ]
       );
     }

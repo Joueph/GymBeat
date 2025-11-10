@@ -13,5 +13,5 @@ export interface Treino {
     seg: number;
   };
   exercicios: Exercicio[];
-  fichaId?: string; // Adicionado para rastrear a qual ficha o treino pertence
+  fichaId?: string | null; // Adicionado para rastrear a qual ficha o treino pertence
 }

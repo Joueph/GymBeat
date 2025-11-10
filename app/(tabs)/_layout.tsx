@@ -50,6 +50,7 @@ export default function TabLayout() {
         name="amigos"
         options={{
           title: "Social",
+          headerShown: false,
           tabBarIcon: ({ color }) => <TabBarIcon name="users" color={color} size={20}  />,
         }}
       />

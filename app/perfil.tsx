@@ -1,6 +1,3 @@
-import React, { useEffect, useLayoutEffect, useState } from "react";
-import { useAuth } from "./authprovider";
-
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker'; // This line is already correct.
 import * as Device from 'expo-device';
@@ -8,8 +5,10 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
 import { useNavigation } from 'expo-router';
 import { signOut } from "firebase/auth";
+import React, { useEffect, useLayoutEffect, useState } from "react";
 import { ActivityIndicator, Alert, Button, Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useAuth } from "./authprovider";
 
 import { auth } from "../firebaseconfig";
 import { Usuario } from "../models/usuario";
@@ -246,6 +245,27 @@ const handleUpdate = async () => {
         cancelNotification('morning-workout-reminder');
       }
       // Adicione lógica para outras notificações aqui...
+
+      // Lógica para a nova notificação de fim de intervalo
+      if (newSettings.notifications.restTimeEnding) {
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') {
+          const { status: newStatus } = await Notifications.requestPermissionsAsync();
+          if (newStatus !== 'granted') {
+            // Se o usuário negar, desfaz a alteração no estado visual
+            const revertedSettings = {
+              ...newSettings,
+              notifications: {
+                ...newSettings.notifications,
+                restTimeEnding: false,
+              },
+            };
+            setProfile(prev => ({ ...prev, settings: revertedSettings }));
+            Alert.alert("Permissão Negada", "As notificações não podem ser ativadas sem a sua permissão.");
+            return; // Interrompe a execução para não salvar o estado "true"
+          }
+        }
+      }
 
     } catch (error) {
       console.error("Erro ao salvar configurações:", error);

@@ -1,10 +1,11 @@
 import { FontAwesome } from '@expo/vector-icons';
-import React, { useEffect, useRef } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { FlatList, Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { updateUserProfile } from '../../../userService'; // Assuming this path
-import { useAuth } from '../../authprovider'; // Assuming this path
+import { updateUserProfile } from '../../../userService';
+import { useAuth } from '../../authprovider';
 
 interface WorkoutSettingsModalProps {
   isVisible: boolean;
@@ -24,12 +25,23 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
   const scrollY = useSharedValue(0);
   const translationY = useSharedValue(0);
   const isModalActive = useSharedValue(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   useEffect(() => {
     if (isVisible) {
       translationY.value = 0;
+      // Verifica o estado inicial das permissões e configurações do usuário
+      const checkInitialStatus = async () => {
+        if (user?.settings?.notifications?.restTimeEnding) {
+          const { status } = await Notifications.getPermissionsAsync();
+          setNotificationsEnabled(status === 'granted');
+        } else {
+          setNotificationsEnabled(false);
+        }
+      };
+      checkInitialStatus();
     }
-  }, [isVisible]);
+  }, [isVisible, user]);
 
   const panGesture = Gesture.Pan()
     .onBegin(() => {
@@ -55,7 +67,6 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
     transform: [{ translateY: translationY.value }],
   }));
 
-
   const handleWorkoutScreenPreferenceSelect = async (preference: 'simplified' | 'complete') => {
     if (user) {
       try {
@@ -63,8 +74,38 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
         onWorkoutScreenTypeChange(preference);
       } catch (error) {
         console.error('Erro ao salvar preferência de tela de treino:', error);
-        // Optionally, show an alert to the user
       }
+    }
+  };
+
+  const handleNotificationToggle = async (newValue: boolean) => {
+    if (!user) return;
+
+    if (newValue) {
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status !== 'granted') {
+        const { status: newStatus } = await Notifications.requestPermissionsAsync();
+        if (newStatus !== 'granted') {
+          Alert.alert("Permissão Negada", "As notificações não podem ser ativadas sem a sua permissão.");
+          return; // Não ativa o toggle se a permissão for negada
+        }
+      }
+    }
+
+    // Se a permissão foi concedida (ou já existia), ou se está desativando
+    setNotificationsEnabled(newValue);
+    try {
+      // Cria um objeto de configurações atualizado para salvar no perfil
+      const updatedSettings = {
+        ...user.settings,
+        notifications: {
+          ...user.settings?.notifications,
+          restTimeEnding: newValue,
+        },
+      };
+      await updateUserProfile(user.id, { settings: updatedSettings });
+    } catch (error) {
+      console.error('Erro ao salvar configuração de notificação:', error);
     }
   };
 
@@ -73,18 +114,9 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
       id: 'workoutScreenType',
       title: 'Tipo de Tela de Treino',
     },
-    // Add other settings options here
     {
-      id: 'otherSetting1',
-      title: 'Outra Configuração 1',
-      description: 'Descrição da configuração 1',
-      action: () => console.log('Other setting 1 pressed'),
-    },
-    {
-      id: 'otherSetting2',
-      title: 'Outra Configuração 2',
-      description: 'Descrição da configuração 2',
-      action: () => console.log('Other setting 2 pressed'),
+      id: 'restTimeNotification',
+      title: 'Notificar ao fim do intervalo',
     },
   ];
 
@@ -116,15 +148,18 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
       );
     }
 
-    return (
-      <TouchableOpacity style={styles.settingItem} onPress={item.action}>
-        <View>
-          <Text style={styles.settingTitle}>{item.title}</Text>
-          <Text style={styles.settingDescription}>{item.description}</Text>
+    if (item.id === 'restTimeNotification') {
+      return (
+        <View style={styles.cardSettingItem}>
+          <View style={styles.switchSettingItem}>
+            <Text style={styles.settingTitle}>{item.title}</Text>
+            <Switch onValueChange={handleNotificationToggle} value={notificationsEnabled} />
+          </View>
         </View>
-        <FontAwesome name="chevron-right" size={16} color="#888" />
-      </TouchableOpacity>
-    );
+      );
+    }
+
+    return null; // Para outras configurações futuras
   };
 
   return (
@@ -203,30 +238,22 @@ const styles = StyleSheet.create({
   settingsList: {
     width: '100%',
   },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#2c2c2e',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-  },
-  settingTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  settingDescription: {
-    color: '#aaa',
-    fontSize: 13,
-    marginTop: 2,
-  },
   cardSettingItem: {
     backgroundColor: '#2c2c2e',
     borderRadius: 10,
     padding: 15,
     marginBottom: 10,
+  },
+  switchSettingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+  },
+  settingTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   cardContainer: {
     flexDirection: 'row',

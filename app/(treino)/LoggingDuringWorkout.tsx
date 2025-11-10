@@ -10,18 +10,16 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  FlatList,
+  Alert, AppState, AppStateStatus, FlatList,
   Image,
-  LayoutAnimation,
-  Platform,
+  LayoutAnimation, Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   UIManager,
   View
-} from 'react-native';
+} from 'react-native'; // Adicionado Platform
 import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler'; // Adicionado ScrollView
@@ -31,6 +29,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { Treino } from '../../models/treino';
 import { addLog } from '../../services/logService';
+import { cancelNotification, scheduleNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
 import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
@@ -589,6 +588,20 @@ export default function LoggingDuringWorkoutScreen() {
   const [setBeingTimed, setSetBeingTimed] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const progress = useSharedValue(0);
   const scrollY = useSharedValue(0); // Restaurado
+
+  const appState = React.useRef(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App voltou para o primeiro plano, cancela a notificação de descanso
+        cancelNotification('rest-timer');
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, []);
   
   // Efeito para carregar do cache ou inicializar um novo treino
   useEffect(() => {
@@ -772,6 +785,13 @@ useEffect(() => {
       setMaxRestTime(duration);
       setIsResting(true);
       setRestStartTime(Date.now());
+
+      // Agenda notificação se o app estiver em background
+      if (appState.current !== 'active') {
+        const triggerDate = new Date(Date.now() + duration * 1000);
+        const trigger = { hour: triggerDate.getHours(), minute: triggerDate.getMinutes() };
+        scheduleNotification('rest-timer', 'Intervalo finalizado!', 'Seu descanso acabou. Hora de voltar ao treino!', trigger);
+      }
     }
     progress.value = 0; // Reseta a barra de progresso
   };
@@ -855,6 +875,7 @@ useEffect(() => {
   const handleSkipRest = () => {
     setIsResting(false);
     setIsDoingExercise(false); // Também para o timer de exercício
+    cancelNotification('rest-timer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -891,6 +912,7 @@ useEffect(() => {
           style: "destructive",
           onPress: async () => {
             await cacheActiveWorkoutLog(null); // Limpa o cache
+            cancelNotification('rest-timer');
             router.back(); // Volta para a tela anterior
           },
         },

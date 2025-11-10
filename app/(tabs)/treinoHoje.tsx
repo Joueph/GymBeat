@@ -1,4 +1,4 @@
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -325,7 +325,7 @@ const handleDragEnd = async ({ data: newDisplayItems, from, to }: { data: Displa
                   >
                     <TouchableOpacity style={styles.folderCard} onPress={() => handleFolderPress(item.id)}>
                       <View style={styles.folderInfo}>
-                      <FontAwesome name={item.isExpanded ? "arrow-up" : "arrow-down"} size={16} color="#555" />
+                      <Ionicons name={item.isExpanded ? "arrow-up" : "arrow-down"} size={16} color="#555" />
                       <Text style={styles.folderName}>{(item.data as Folder).nome}</Text>
                       {item.isPrincipal && <Text style={styles.principalTag}>principal</Text>}
                       </View>
@@ -385,7 +385,7 @@ const styles = StyleSheet.create({
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      paddingHorizontal: 15,
+      paddingHorizontal: 16,
       paddingTop: '15%',
       marginBottom: 10,
     },
@@ -435,7 +435,7 @@ const styles = StyleSheet.create({
     workoutWrapper: {},
     workoutCard: {
       marginTop:8,
-      backgroundColor: '#141414',
+      backgroundColor: '#1A1D23',
       borderRadius: 25,
       paddingVertical: 15,
       height:72,
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
       justifyContent: 'space-between',
       marginVertical: 5,
       borderWidth: 0.5,
-      borderColor: '#ffffff1a',
+      borderColor: '#2A2E37',
     },
     workoutCardContent: {
       flex: 1,
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
     },
     container: {
         flex: 1,
-        backgroundColor: '#030405',
+        backgroundColor: '#0B0D10',
     },
     mainTitle: {
       fontSize: 40,

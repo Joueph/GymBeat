@@ -11,7 +11,7 @@ import {
 } from 'react-native-popup-menu';
 
 // As opções que o seu modal espera
-export type SetMenuAction = 'toggleTime' | 'addDropset' | 'copy' | 'delete';
+export type SetMenuAction = 'toggleWarmup' | 'toggleTime' | 'addDropset' | 'copy' | 'delete';
 
 interface SetOptionsMenuProps {
   onSelect: (action: SetMenuAction) => void;
@@ -19,6 +19,12 @@ interface SetOptionsMenuProps {
   isTimeBased: boolean;
   /** Passado para saber se exibe as opções de 'toggleTime' e 'addDropset' */
   isNormalSet: boolean;
+  /** Passado para saber se a série é de aquecimento */
+  isWarmup: boolean;
+  /** Passado para saber se é a primeira série do exercício */
+  isFirstSet: boolean;
+  onMenuOpen?: () => void;
+  onMenuClose?: () => void;
 }
 
 interface MenuOptionItemProps {
@@ -44,9 +50,17 @@ const MenuOptionItem = ({ text, icon, onSelect, isDestructive = false }: MenuOpt
   </MenuOption>
 );
 
-export const SetOptionsMenu = ({ onSelect, isTimeBased, isNormalSet }: SetOptionsMenuProps) => {
+export const SetOptionsMenu = ({ onSelect, isTimeBased, isNormalSet, isWarmup, isFirstSet, onMenuOpen, onMenuClose }: SetOptionsMenuProps) => {
+  const handleOpen = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onMenuOpen?.();
+  };
+
+  const handleClose = () => {
+    onMenuClose?.();
+  };
   return (
-    <Menu onOpen={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
+    <Menu onOpen={handleOpen} onClose={handleClose}>
       {/* O ícone de 3 pontos que aciona o menu */}
       <MenuTrigger style={styles.trigger}>
         <FontAwesome5 name="ellipsis-v" size={20} color="#ccc" />
@@ -54,6 +68,17 @@ export const SetOptionsMenu = ({ onSelect, isTimeBased, isNormalSet }: SetOption
 
       {/* As opções que aparecem no popover */}
       <MenuOptions customStyles={menuStyles}>
+        {isFirstSet && (
+          <>
+            <MenuOptionItem
+              text={isWarmup ? "Desmarcar aquecimento" : "Aquecimento"}
+              icon="fire"
+              onSelect={() => onSelect('toggleWarmup')}
+            />
+            <View style={styles.divider} />
+          </>
+        )}
+
         {isNormalSet && (
           <>
             <MenuOptionItem
@@ -91,7 +116,7 @@ export const SetOptionsMenu = ({ onSelect, isTimeBased, isNormalSet }: SetOption
 // Estilos para o Popover (baseado na sua imagem)
 const menuStyles = {
   optionsContainer: {
-    backgroundColor: '#2c2c2ef1', // Fundo escuro
+    backgroundColor: '#2A2E37', // Fundo um pouco mais claro para contraste
     borderRadius: 12,          // Cantos arredondados
     paddingVertical: 8,        // Espaçamento interno vertical
     marginTop:40,

@@ -99,15 +99,15 @@ export const OngoingWorkoutFooter = () => {
     return (
         <>
             <Animated.View style={styles.container} entering={SlideInDown.duration(500)} exiting={SlideOutDown.duration(500)}>
-                <TouchableOpacity style={styles.playButton} onPress={handleNavigation}>
-                    <FontAwesome name="play" size={16} color="#030405" />
-                </TouchableOpacity>
                 <View style={styles.infoContainer}>
                     <Text style={styles.workoutName} numberOfLines={1}>{activeLog.treino.nome}</Text>
                     <Text style={styles.workoutDetails}>
                         {activeLog.treino.exercicios?.length || 0} exercícios • {elapsedTime}
                     </Text>
                 </View>
+                <TouchableOpacity style={styles.playButton} onPress={handleNavigation}>
+                    <FontAwesome name="play" size={16} color="#fff" />
+                </TouchableOpacity>
             </Animated.View>
             <WorkoutScreenPreference
                 isVisible={isPreferenceModalVisible}
@@ -126,25 +126,25 @@ const styles = StyleSheet.create({
         right: 0,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#1C1C1E',
+        backgroundColor: '#1A1D23',
         padding: 12,
         margin: 10,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: '#ffffff2a',
+        borderColor: '#1F2937',
         elevation: 10,
         shadowColor: '#000',
         shadowOpacity: 0.4,
         shadowRadius: 8,
     },
     playButton: {
-        backgroundColor: '#00A6FF',
+        backgroundColor: '#3B82F6',
         width: 44,
         height: 44,
         borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12,
+        marginLeft: 12,
     },
     infoContainer: {
         flex: 1,

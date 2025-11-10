@@ -504,7 +504,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
-    backgroundColor: '#030405',
+    backgroundColor: '#0B0D10',
   },
   listContainer: {
     paddingHorizontal: 15,
@@ -517,24 +517,21 @@ const styles = StyleSheet.create({
   },
   card: {
     flexDirection: 'row',
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     marginBottom: 10,
     overflow: 'hidden',
     borderWidth: 1,
     alignItems: 'center',
-        borderTopColor: '#ffffff2a',
-        borderLeftColor: '#ffffff2a', 
-        borderBottomColor: '#ffffff1a',
-        borderRightColor: '#ffffff1a',
+    borderColor: '#2A2E37'
   },
   carouselCard: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     marginRight: 15,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#ffffff1a',
+    borderColor: '#2A2E37',
     width: 160,
     height: 180,
     padding: 3,
@@ -597,11 +594,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#030405',
+    backgroundColor: '#0B0D10',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#030405',
+    backgroundColor: '#0B0D10',
     padding: 20,
   },
   modalHeader: {
@@ -610,7 +607,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     borderBottomWidth: 1,
-    borderBottomColor: '#ffffff1a',
+    borderBottomColor: '#1A1D23',
     paddingBottom: 20,
   },
   modalTitle: {
@@ -627,15 +624,15 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   treinoContainer: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 8,
     padding: 15,
     marginBottom: 10,
     borderWidth: 1,
-        borderTopColor: '#ffffff2a',
-        borderLeftColor: '#ffffff2a', 
-        borderBottomColor: '#ffffff1a',
-        borderRightColor: '#ffffff1a',
+        borderTopColor: '#2A2E37',
+        borderLeftColor: '#2A2E37', 
+        borderBottomColor: '#2A2E37',
+        borderRightColor: '#2A2E37',
   },
   treinoTitle: {
     fontSize: 16,
@@ -644,7 +641,7 @@ const styles = StyleSheet.create({
   },
   treinoDays: {
     fontSize: 12,
-    color: '#1cb0f6',
+    color: '#3B82F6',
     marginTop: 5,
   },
   exercicioContainer: {
@@ -704,13 +701,13 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   goalDiffButtonDestructive: {
-    backgroundColor: '#ff3b30',
+    backgroundColor: '#EF4444',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
   },
   goalDiffButtonConstructive: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -739,8 +736,8 @@ const styles = StyleSheet.create({
     borderColor: '#333',
   },
   daySelected: {
-    backgroundColor: '#1cb0f6',
-    borderColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
+    borderColor: '#2A2E37',
   },
   dayText: {
     color: '#fff',
@@ -755,7 +752,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   customizationCard: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     padding: 15,
     marginBottom: 20,
@@ -789,13 +786,13 @@ const styles = StyleSheet.create({
   progressBarContainer: {
     height: 8,
     width: '100%',
-    backgroundColor: '#333',
+    backgroundColor: '#0B0D10',
     borderRadius: 4,
     marginBottom: 5,
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
     borderRadius: 4,
   },
   progressText: {

@@ -19,13 +19,13 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: true,
         headerStyle: {
-          backgroundColor: '#141414', // This solid color simulates 5% white opacity over a dark background
+          backgroundColor: '#1A1D23', // This solid color simulates 5% white opacity over a dark background
           borderBottomWidth: 1,
           borderBottomColor: 'rgba(255, 255, 255, 0.1)',
           elevation: 0,
         },
         headerTintColor: '#fff',
-        tabBarStyle: { backgroundColor: '#141414', borderTopColor: 'rgba(255, 255, 255, 0.1)' },
+        tabBarStyle: { backgroundColor: '#1A1D23', borderTopColor: '#1F2937',paddingVertical:15, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0},
         tabBarActiveTintColor: '#fff',
         tabBarButton: HapticTab,
       }}
@@ -50,6 +50,7 @@ export default function TabLayout() {
         name="amigos"
         options={{
           title: "Social",
+          headerShown: false,
           tabBarIcon: ({ color }) => <TabBarIcon name="users" color={color} size={20}  />,
         }}
       />

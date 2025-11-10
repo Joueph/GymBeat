@@ -1,10 +1,10 @@
 import { FontAwesome } from '@expo/vector-icons';
-import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import React, { memo, useCallback, useLayoutEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context'; // SafeAreaView já estava importado
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 import { db } from '../../firebaseconfig';
 import { Ficha } from '../../models/ficha';
@@ -178,36 +178,18 @@ const FriendListItem = memo(({ item }: { item: FriendData }) => {
 });
 
 export default function AmigosScreen() {
-  const { user } = useAuth();
-  const navigation = useNavigation<any>();
-  const router = useRouter();
-  const [friends, setFriends] = useState<FriendData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isAddOptionsModalVisible, setAddOptionsModalVisible] = useState(false);
-  const [isNotificationsModalVisible, setNotificationsModalVisible] = useState(false);
-  const [isJoinProjectModalVisible, setJoinProjectModalVisible] = useState(false);
-  const [isAddFriendModalVisible, setAddFriendModalVisible] = useState(false);
-  const [friendCode, setFriendCode] = useState('');
-  const [projectCode, setProjectCode] = useState('');
-  const [projetos, setProjetos] = useState<Projeto[]>([]);
-  const [friendRequests, setFriendRequests] = useState<Usuario[]>([]);
-
-  useLayoutEffect(() => {
-    if (navigation) {
-      navigation.setOptions({
-        headerRight: () => (
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 25, marginRight: 15 }}>
-            <TouchableOpacity onPress={() => setNotificationsModalVisible(true)}>
-              <FontAwesome name="bell" size={22} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setAddFriendModalVisible(true)}>
-              <FontAwesome name="plus" size={22} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        ),
-      });
-    }
-  }, [navigation, user]);
+  const { user } = useAuth(); // Hook de autenticação
+  const router = useRouter(); // Hook de navegação do Expo Router
+  const [friends, setFriends] = useState<FriendData[]>([]); // Estado para a lista de amigos
+  const [loading, setLoading] = useState(true); // Estado de carregamento inicial
+  const [isAddOptionsModalVisible, setAddOptionsModalVisible] = useState(false); // Visibilidade do modal de opções de projeto
+  const [isNotificationsModalVisible, setNotificationsModalVisible] = useState(false); // Visibilidade do modal de notificações
+  const [isJoinProjectModalVisible, setJoinProjectModalVisible] = useState(false); // Visibilidade do modal para entrar em projeto
+  const [isAddFriendModalVisible, setAddFriendModalVisible] = useState(false); // Visibilidade do modal para adicionar amigo
+  const [friendCode, setFriendCode] = useState(''); // Código do amigo para adicionar
+  const [projectCode, setProjectCode] = useState(''); // Código do projeto para entrar
+  const [projetos, setProjetos] = useState<Projeto[]>([]); // Lista de projetos do usuário
+  const [friendRequests, setFriendRequests] = useState<Usuario[]>([]); // Lista de pedidos de amizade pendentes
 
   const isInitialLoad = useRef(true);
 
@@ -368,8 +350,41 @@ export default function AmigosScreen() {
 
   const ListHeader = () => (
     <>
+      {/* Header Personalizado */}
+      <View style={styles.headerContainer}>
+        <Text style={styles.headerTitle}>Social</Text>
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={() => setNotificationsModalVisible(true)} style={styles.headerButton}>
+            <FontAwesome name="bell" size={20} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setAddFriendModalVisible(true)} style={styles.headerButton}>
+            <FontAwesome name="plus" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Card do Perfil do Usuário */}
+      <TouchableOpacity style={styles.userProfileCard} onPress={() => router.push('/perfil')}>
+        <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/perfil')}>
+            <FontAwesome name="pencil" size={16} color="#ccc" />
+        </TouchableOpacity>
+        <View style={styles.userProfileInfo}>
+          {user?.photoURL ? (
+            <Image source={{ uri: user.photoURL }} style={styles.userPfp} />
+          ) : (
+            <View style={styles.userPfpPlaceholder}><FontAwesome name="user" size={24} color="#555" /></View>
+          )}
+          <View>
+            <Text style={styles.userName}>{user?.nome}</Text>
+            <Text style={styles.userEmail}>{user?.email}</Text>
+          </View>
+        </View>
+        <View style={styles.friendCountContainer}>
+          <Text style={styles.friendCountNumber}>{friends.length}</Text>
+          <Text style={styles.friendCountLabel}>Amigos</Text>
+        </View>
+      </TouchableOpacity>
       <View style={styles.section}>
-        {/* O View sectionHeader foi removido pois o padding agora está no estilo do título */}
         <Text style={styles.mainSectionTitle}>Meus Projetos</Text>
         <FlatList
           data={[...projetos, { id: 'add' }]}
@@ -402,7 +417,7 @@ export default function AmigosScreen() {
           contentContainerStyle={{ paddingLeft: 8, paddingVertical: 10 }}
         />
       </View>
-      <Text style={[styles.mainSectionTitle, { marginTop: 15, marginBottom: 0 }]}>Amigos</Text>
+      <Text style={[styles.mainSectionTitle, { marginTop: 15, marginBottom: 10 }]}>Amigos</Text>
     </>
   );
 
@@ -411,7 +426,7 @@ export default function AmigosScreen() {
       <FlatList
         data={friends}
         renderItem={({ item }) => <FriendListItem item={item} />}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.id} // Chave única para cada item da lista
         style={{ flex: 1, backgroundColor: "#030405" }} // Ensure the FlatList itself fills the screen and has the correct background
         contentContainerStyle={styles.container} // Keep contentContainerStyle for padding and flexGrow of the content
         ListHeaderComponent={ListHeader}
@@ -566,9 +581,28 @@ export default function AmigosScreen() {
 const cardWidth = Dimensions.get('window').width * 0.9;
 
 const styles = StyleSheet.create({
+  headerContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: '15%', // Espaçamento superior para o conteúdo não colar na status bar
+    marginBottom: 10,
+  },
+  headerTitle: {
+    color: '#FBFBFB',
+    fontSize: 40,
+    fontWeight: 'bold',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 15,
+  },
+  headerButton: {
+    padding: 8,
+  },
   container: {
-    backgroundColor: "#030405",
-    paddingBottom: 20,
+    backgroundColor: "#0B0D10", // Cor de fundo principal
     flexGrow: 1,
   },
   section: {
@@ -581,10 +615,69 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  userProfileCard: {
+    backgroundColor: '#1A1D23',
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+  },
+  editProfileButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 5,
+  },
+  userProfileInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  userPfp: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 15,
+  },
+  userPfpPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#0B0D10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  userName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  userEmail: {
+    color: '#aaa',
+    fontSize: 14,
+  },
+  friendCountContainer: {
+    alignItems: 'center',
+  },
+  friendCountNumber: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+  },
+  friendCountLabel: {
+    color: '#aaa',
+    fontSize: 12,
+  },
   card: {
     marginVertical: 8,
     marginHorizontal: 16,
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#ffffff1a',
@@ -605,7 +698,7 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#0B0D10',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 15,
@@ -635,7 +728,7 @@ const styles = StyleSheet.create({
   expandedContent: {
     padding: 15,
     paddingTop: 0,
-    borderTopWidth: 1,
+    borderTopWidth: 0.5,
     borderTopColor: '#ffffff1a',
     marginTop: 10,
   },
@@ -650,7 +743,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   treinoItem: {
-    backgroundColor: '#222',
+    backgroundColor: '#0B0D10',
     borderRadius: 6,
     padding: 10,
     marginBottom: 5,
@@ -666,7 +759,7 @@ const styles = StyleSheet.create({
   },
   calendarContainer: {
     width: '100%',
-    backgroundColor: '#222',
+    backgroundColor: '#0B0D10',
     borderRadius: 10,
     padding: 10,
   },
@@ -714,11 +807,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   modalSafeArea: {
-    flex: 1,
-    backgroundColor: "#030405",
+    flex: 1, // Ocupa a tela inteira
+    backgroundColor: "#141414", // Fundo do modal
   },
   modalContainer: {
-    flex: 1,
+    flex: 1, // Ocupa o espaço dentro do SafeAreaView
     padding: 20,
   },
   modalHeader: {
@@ -732,13 +825,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "bold",
     color: "#fff",
-    marginBottom: 20,
   },
   sectionHeader: {
-    flexDirection: 'row',
+    flexDirection: 'row', // Removido, pois o título principal já tem padding
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 10,
@@ -748,8 +840,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 15,
-    paddingHorizontal: 16,
+    marginBottom: 20, // Aumentado o espaçamento inferior
     marginTop: 10,
   },
   addSection: {
@@ -765,7 +856,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    backgroundColor: '#141414',
+    backgroundColor: '#2A2E37',
     color: '#fff',
     borderRadius: 8,
     padding: 12,
@@ -793,7 +884,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   friendCodeText: {
-    backgroundColor: '#141414',
+    backgroundColor: '#2A2E37',
     color: '#fff',
     fontSize: 14,
     padding: 15,
@@ -805,7 +896,7 @@ const styles = StyleSheet.create({
   },
   shareButton: {
     flexDirection: 'row',
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#3B82F6',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
@@ -817,7 +908,7 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   notificationItem: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     borderRadius: 12,
     padding: 15,
     marginBottom: 10,
@@ -838,7 +929,7 @@ const styles = StyleSheet.create({
   notificationPfpPlaceholder: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    borderRadius: 20, // Corrigido para ser consistente com o pfp
     backgroundColor: '#2c2c2e',
     justifyContent: 'center',
     alignItems: 'center',
@@ -867,7 +958,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1cb0f6',
   },
   rejectButton: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#333',
   },
   notificationButtonText: {
     color: '#fff',
@@ -879,7 +970,7 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 12,
     marginRight: 15,
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     justifyContent: 'flex-end',
     overflow: 'hidden',
   },
@@ -919,7 +1010,7 @@ const styles = StyleSheet.create({
     height: 150,
     borderRadius: 12,
     marginRight: 15,
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
@@ -932,7 +1023,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   drawerContainer: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     padding: 20,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -956,7 +1047,7 @@ const styles = StyleSheet.create({
   },
   modalView: {
       margin: 20,
-      backgroundColor: '#141414',
+      backgroundColor: '#1A1D23',
       borderRadius: 20,
       padding: 35,
       alignItems: 'center',
@@ -970,7 +1061,7 @@ const styles = StyleSheet.create({
   joinProjectInput: {
     height: 60,
     width: '100%',
-    backgroundColor: '#141414',
+    backgroundColor: '#2A2E37',
     color: '#fff',
     borderRadius: 8,
     borderWidth: 1,

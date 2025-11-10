@@ -5,9 +5,9 @@ import { ResizeMode, Video } from 'expo-av'; // Changed from expo-video
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import LottieView from 'lottie-react-native';
+import LottieView from "lottie-react-native";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'; // Removido FlatList
-import { ActivityIndicator, Alert, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { Log } from '@/models/log';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
@@ -15,7 +15,7 @@ import Animated, { FadeIn, FadeOutUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Treino } from '../../models/treino';
 import { addLog } from '../../services/logService';
-import { getTreinoById } from '../../services/treinoService';
+import { cancelNotification, scheduleNotification } from '../../services/notificationService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { EditExerciseModal } from './modals/EditOngoingWorkoutExerciseModal';
@@ -25,6 +25,7 @@ import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 // **INÍCIO DA CORREÇÃO**
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
+import { getTreinoById } from '../../services/treinoService';
 // Adiciona a propriedade 'concluido' à interface Serie localmente
 interface SerieComStatus extends Omit<Serie, 'concluido'> {
   id: string; // Garante que toda série tenha um ID
@@ -199,6 +200,20 @@ export default function OngoingWorkoutScreen() {
   const [userWeight, setUserWeight] = useState<number>(0);
   const animationRef = useRef<LottieView>(null);
   
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App voltou para o primeiro plano, cancela a notificação de descanso
+        cancelNotification('rest-timer');
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, []);
+
   // Novo estado para a animação da carga total no header
   const [animatedLoadValue, setAnimatedLoadValue] = useState<number | null>(null);
 
@@ -676,6 +691,13 @@ const completeTheSet = async () => {
   const restStartTimestamp = Date.now();
   setRestStartTime(restStartTimestamp);
   setIsResting(true);
+
+  // Agenda notificação se o app estiver em background
+  if (appState.current !== 'active') {
+    const triggerDate = new Date(Date.now() + maxRestTime * 1000);
+    const trigger = { hour: triggerDate.getHours(), minute: triggerDate.getMinutes() };
+    scheduleNotification('rest-timer', 'Intervalo finalizado!', 'Seu descanso acabou. Hora de voltar ao treino!', trigger);
+  }
   };
 
   const handleMainAction = () => {
@@ -699,6 +721,7 @@ const completeTheSet = async () => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setIsResting(false);
       setRestStartTime(null);
+      cancelNotification('rest-timer');
       setRestTime(maxRestTime);
     }
   };
@@ -773,6 +796,7 @@ const completeTheSet = async () => {
     const exitWorkout = async () => {
       // Limpa o cache do treino ativo sem salvar no Firestore.
       await cacheActiveWorkoutLog(null);
+      cancelNotification('rest-timer');
       router.back();
     };
     

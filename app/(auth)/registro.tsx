@@ -600,8 +600,9 @@ export default function CadastroScreen() {
       await createUserProfileDocument(currentUser, {
         nome: finalNome,
         isPro: false,
-        altura: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : undefined,
-        peso: !isNaN(pesoNum) && pesoNum > 0 ? pesoNum : undefined,
+        altura: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : undefined, // Mantém altura como número
+        // NOVO: Salva o peso inicial como o primeiro item do histórico
+        historicoPeso: !isNaN(pesoNum) && pesoNum > 0 ? [{ valor: pesoNum, data: new Date() }] : [],
         genero: genero || undefined,
         nivel: nivel || undefined,
         streakGoal: streakGoal,

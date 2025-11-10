@@ -7,12 +7,14 @@ import { useAuth } from '../../../authprovider';
 interface WorkoutScreenPreferenceProps {
   isVisible: boolean;
   onClose: () => void;
+  currentPreference: 'simplified' | 'complete' | undefined;
   onSelectPreference: (preference: 'simplified' | 'complete') => void;
 }
 
 export const WorkoutScreenPreference: React.FC<WorkoutScreenPreferenceProps> = ({
   isVisible,
   onClose,
+  currentPreference,
   onSelectPreference,
 }) => {
   const { user } = useAuth();
@@ -45,7 +47,10 @@ export const WorkoutScreenPreference: React.FC<WorkoutScreenPreferenceProps> = (
           </Text>
 
           <TouchableOpacity
-            style={styles.optionButton}
+            style={[
+              styles.optionButton,
+              currentPreference === 'simplified' && styles.optionButtonSelected,
+            ]}
             onPress={() => handleSelect('simplified')}
           >
             <FontAwesome name="star" size={20} color="#fff" style={styles.optionIcon} />
@@ -56,7 +61,10 @@ export const WorkoutScreenPreference: React.FC<WorkoutScreenPreferenceProps> = (
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.optionButton}
+            style={[
+              styles.optionButton,
+              currentPreference === 'complete' && styles.optionButtonSelected,
+            ]}
             onPress={() => handleSelect('complete')}
           >
             <FontAwesome name="list-alt" size={20} color="#fff" style={styles.optionIcon} />
@@ -119,6 +127,8 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 15,
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   optionIcon: {
     marginRight: 15,
@@ -142,5 +152,8 @@ const styles = StyleSheet.create({
     color: '#00A6FF',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  optionButtonSelected: {
+    borderColor: '#3B82F6',
   },
 });

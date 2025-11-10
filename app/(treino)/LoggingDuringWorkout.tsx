@@ -3,36 +3,35 @@ import { RestTimeDrawer } from '@/components/RestTimeDrawer';
 import { SetOptionsMenu } from '@/components/SetOptionsMenu';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { Log } from '@/models/log';
+import { Treino } from '@/models/treino';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
-import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  FlatList,
+  Alert, AppState, AppStateStatus, FlatList,
   Image,
-  LayoutAnimation,
-  Platform,
+  LayoutAnimation, Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   UIManager,
   View
-} from 'react-native';
+} from 'react-native'; // Adicionado Platform
 import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler'; // Adicionado ScrollView
 import { MenuProvider } from 'react-native-popup-menu';
-import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
-import { Treino } from '../../models/treino';
 import { addLog } from '../../services/logService';
+import { cancelNotification, scheduleNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
-import { getTreinoById } from '../../services/treinoService';
+import { addTreino, getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
@@ -46,6 +45,7 @@ interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
   concluido: boolean;
+  isWarmup?: boolean;
 }
 
 export interface LoggedExercise extends Exercicio { // Adicionei restTime aqui
@@ -74,6 +74,7 @@ const LoggedExerciseCard = ({
   userWeight,
   onPesoBarraChange,
   startRestTimer, // This prop is passed but its type needs to be updated
+  onMenuStateChange,
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -83,6 +84,7 @@ const LoggedExerciseCard = ({
   userWeight: number;
   onPesoBarraChange: (newPesoBarra: number) => void; // New prop
   startRestTimer: (duration: number, isExercise: boolean, timedSetInfo?: { exerciseIndex: number, setIndex: number }) => void;
+  onMenuStateChange: (isOpen: boolean) => void;
 }) => {
   const { VideoListItem } = require('./editarTreino');
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
@@ -100,6 +102,7 @@ const LoggedExerciseCard = ({
       id: s.id || `set-${Date.now()}-${i}`,
       type: s.type || 'normal',
       concluido: s.concluido || false,
+      isWarmup: s.isWarmup || false,
     }))
   );
 
@@ -120,7 +123,7 @@ const LoggedExerciseCard = ({
   };
 
   const handleSetOption = (
-    option: 'addDropset' | 'copy' | 'delete' | 'toggleTime',
+    option: 'toggleWarmup' | 'addDropset' | 'copy' | 'delete' | 'toggleTime',
     index: number
   ) => {
     setTimeout(() => {
@@ -147,6 +150,9 @@ const LoggedExerciseCard = ({
           type: 'dropset',
           concluido: false,
         });
+      } else if (option === 'toggleWarmup') {
+        const currentSet = newSets[index];
+        currentSet.isWarmup = !currentSet.isWarmup;
       }
       handleSeriesUpdate(newSets);
     }, 100);
@@ -232,7 +238,6 @@ const LoggedExerciseCard = ({
         <View
           style={[
             styles.setRow,
-            { backgroundColor: '#1f1f1f' },
             setItem.concluido && styles.setRowCompleted,
             { flex: 1 },
           ]}
@@ -240,6 +245,10 @@ const LoggedExerciseCard = ({
           {setItem.type === 'dropset' ? (
             <View style={{ width: 30, marginRight: 10, alignItems: 'center' }}>
               <FontAwesome5 name="arrow-down" size={16} color="#888" />
+            </View>
+          ) : setItem.isWarmup ? (
+            <View style={{ width: 30, marginRight: 10, alignItems: 'center' }}>
+              <FontAwesome5 name="fire" size={16} color="#FFA500" />
             </View>
           ) : (
             <View style={[styles.seriesNumberContainer, setItem.concluido && styles.seriesNumberCompleted]}>
@@ -305,12 +314,14 @@ const LoggedExerciseCard = ({
             style={styles.checkboxContainer}
             onPress={() => handleToggleComplete(itemIndex, 0)} // TODO: Pass correct exerciseIndex
           >
-            <FontAwesome name={setItem.concluido ? 'check-square' : 'square-o'} size={24} color={setItem.concluido ? '#1cb0f6' : '#aaa'} />
+            <FontAwesome name={setItem.concluido ? 'check-square' : 'square-o'} size={24} color={setItem.concluido ? '#3B82F6' : '#aaa'} />
           </TouchableOpacity>
           <SetOptionsMenu
             isTimeBased={!!setItem.isTimeBased}
             isNormalSet={(setItem.type || 'normal') === 'normal'}
+            isWarmup={!!setItem.isWarmup}
             onSelect={action => handleSetOption(action, itemIndex)}
+            isFirstSet={itemIndex === 0}
           />
         </View>
       </View>
@@ -496,7 +507,7 @@ const LoggedExerciseCard = ({
             <TouchableOpacity onPress={() => {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               setIsExpanded(true);
-            }} style={[styles.avancadoButton, {backgroundColor: '#2c2c2e'}]}>
+            }} style={[styles.avancadoButton, {backgroundColor: '#2A2E37'}]}>
               <Text style={styles.avancadoButtonText}>
                 {(() => {
                   const completedSets = series.filter(s => s.concluido).length;
@@ -560,6 +571,7 @@ export default function LoggingDuringWorkoutScreen() {
   const [isNameEdited, setIsNameEdited] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0); // in seconds
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [totalLoad, setTotalLoad] = useState(0);
   const [userWeight, setUserWeight] = useState(70); // default fallback
   const { user } = useAuth();
@@ -573,9 +585,25 @@ export default function LoggingDuringWorkoutScreen() {
   const [isDoingExercise, setIsDoingExercise] = useState(false);
   const [exerciseCountdown, setExerciseCountdown] = useState(0);
   const [maxExerciseTime, setMaxExerciseTime] = useState(0);
+  const [restStartTime, setRestStartTime] = useState<number | null>(null);
+  const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
   const [setBeingTimed, setSetBeingTimed] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const progress = useSharedValue(0);
   const scrollY = useSharedValue(0); // Restaurado
+
+  const appState = React.useRef(AppState.currentState);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App voltou para o primeiro plano, cancela a notificação de descanso
+        cancelNotification('rest-timer');
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, []);
   
   // Efeito para carregar do cache ou inicializar um novo treino
   useEffect(() => {
@@ -585,7 +613,7 @@ export default function LoggingDuringWorkoutScreen() {
       // **NOVA LÓGICA**: Prioriza carregar um log ativo do cache se um logId for passado
       if (logId) {
         try {
-          const cachedLog = await getCachedActiveWorkoutLog();
+          const cachedLog = await getCachedActiveWorkoutLog(); // CORRIGIDO: Função agora importada
           if (cachedLog && cachedLog.id === logId) {
             setLoggedExercises(cachedLog.exercicios || []);
             setWorkoutName(String(cachedLog.nomeTreino || 'Treino'));
@@ -616,7 +644,7 @@ export default function LoggingDuringWorkoutScreen() {
       } else {
         // Lógica existente para treino livre (cache ou novo)
         try {
-          const cachedLog = await getCachedActiveWorkoutLog();
+          const cachedLog = await getCachedActiveWorkoutLog(); // CORRIGIDO: Função agora importada
           if (cachedLog && cachedLog.id.startsWith('free-workout-')) {
             // Carrega do cache
             setLoggedExercises(cachedLog.exercicios || []);
@@ -645,8 +673,9 @@ export default function LoggingDuringWorkoutScreen() {
 
       // Busca o peso do usuário independentemente do cache
       getUserProfile(user.id).then(profile => {
-        if (profile?.peso) {
-          setUserWeight(profile.peso);
+        const latestWeight = profile?.historicoPeso && profile.historicoPeso.length > 0 ? profile.historicoPeso[profile.historicoPeso.length - 1].valor : null;
+        if (latestWeight) {
+          setUserWeight(latestWeight);
         }
         if (profile?.workoutScreenType) {
           setWorkoutScreenType(profile.workoutScreenType);
@@ -661,8 +690,9 @@ export default function LoggingDuringWorkoutScreen() {
   useEffect(() => {
     if (user?.id) {
       getUserProfile(user.id).then(profile => {
-        if (profile?.peso) {
-          setUserWeight(profile.peso);
+        const latestWeight = profile?.historicoPeso && profile.historicoPeso.length > 0 ? profile.historicoPeso[profile.historicoPeso.length - 1].valor : null;
+        if (latestWeight) {
+          setUserWeight(latestWeight);
         }
       });
     }
@@ -728,7 +758,7 @@ useEffect(() => {
         observacoes: undefined, // Propriedade 'observacoes' adicionada
       };
 
-      await cacheActiveWorkoutLog(log);
+      await cacheActiveWorkoutLog(log); // CORRIGIDO: Função agora importada
     };
 
     const debounceSave = setTimeout(saveWorkout, 1000);
@@ -756,6 +786,14 @@ useEffect(() => {
       setRestCountdown(duration);
       setMaxRestTime(duration);
       setIsResting(true);
+      setRestStartTime(Date.now());
+
+      // Agenda notificação se o app estiver em background
+      if (appState.current !== 'active') {
+        const triggerDate = new Date(Date.now() + duration * 1000);
+        const trigger = { hour: triggerDate.getHours(), minute: triggerDate.getMinutes() };
+        scheduleNotification('rest-timer', 'Intervalo finalizado!', 'Seu descanso acabou. Hora de voltar ao treino!', trigger);
+      }
     }
     progress.value = 0; // Reseta a barra de progresso
   };
@@ -765,50 +803,64 @@ useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
 
     if (isResting || isDoingExercise) {
-      const duration = isDoingExercise ? exerciseCountdown : restCountdown;
-      progress.value = withTiming(1, { duration: duration * 1000 });
+      // Lógica para restaurar o progresso da barra ao voltar para a tela
+      const startTime = isResting ? restStartTime : exerciseStartTime;
+      const maxTime = isResting ? maxRestTime : maxExerciseTime;
+
+      if (startTime && maxTime > 0) {
+        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+        const remainingSeconds = Math.max(0, maxTime - elapsedSeconds);
+        const elapsedPercentage = Math.min(1, elapsedSeconds / maxTime);
+
+        // Inicia a animação do ponto em que parou
+        progress.value = elapsedPercentage;
+        progress.value = withTiming(1, { duration: remainingSeconds * 1000, easing: Easing.linear });
+      }
 
       interval = setInterval(() => {
         if (isDoingExercise) {
-          setExerciseCountdown((prev) => {
-            const newTime = prev - 1;
-            if (newTime <= 0) {
-              clearInterval(interval);
-              setIsDoingExercise(false);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              // Marca a série como concluída e inicia o descanso
-              if (setBeingTimed) {
-                const { exerciseIndex, setIndex } = setBeingTimed;
-                const updatedExercises = [...loggedExercises];
-                const exercise = updatedExercises[exerciseIndex];
-                (exercise.series as SerieEdit[])[setIndex].concluido = true;
-                setLoggedExercises(updatedExercises);
-                // Inicia o timer de descanso
-                startTimer(exercise.restTime || 60, false);
-              }
-              return 0;
+          if (!exerciseStartTime) return;
+          const elapsedSeconds = Math.floor((Date.now() - exerciseStartTime) / 1000);
+          const remainingTime = Math.max(0, maxExerciseTime - elapsedSeconds); // Corrigido para usar maxExerciseTime
+          setExerciseCountdown(remainingTime);
+
+          if (remainingTime <= 0) {
+            setIsDoingExercise(false);
+            setExerciseStartTime(null);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+            if (setBeingTimed) {
+              const { exerciseIndex, setIndex } = setBeingTimed;
+              const updatedExercises = [...loggedExercises];
+              const exercise = updatedExercises[exerciseIndex];
+              (exercise.series as SerieEdit[])[setIndex].concluido = true;
+              setLoggedExercises(updatedExercises);
+              startTimer(exercise.restTime || 60, false);
             }
-            if (newTime <= 3 && newTime >= 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            return newTime;
-          });
+          } else if (remainingTime <= 3) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
         } else { // isResting
-          setRestCountdown((prev) => {
-            const newTime = prev - 1;
-            if (newTime <= 0) {
-              clearInterval(interval);
-              setIsResting(false);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              return 0;
-            }
-            if (newTime <= 3 && newTime >= 1) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            return newTime;
-          });
+          if (!restStartTime) return;
+          const elapsedSeconds = Math.floor((Date.now() - restStartTime) / 1000);
+          const remainingTime = Math.max(0, maxRestTime - elapsedSeconds);
+          setRestCountdown(remainingTime);
+
+          if (remainingTime <= 0) {
+            setIsResting(false);
+            setRestStartTime(null);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } else if (remainingTime <= 3) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
         }
       }, 1000);
     } else {
       // Garante que tudo seja resetado quando nenhum timer estiver ativo
       cancelAnimation(progress);
       progress.value = 0;
+      setRestStartTime(null);
+      setExerciseStartTime(null);
       setRestCountdown(0);
       setExerciseCountdown(0);
       setSetBeingTimed(null);
@@ -819,12 +871,13 @@ useEffect(() => {
         clearInterval(interval);
       }
     };
-  }, [isResting, isDoingExercise, setBeingTimed]);
+  }, [isResting, isDoingExercise]);
 
 
   const handleSkipRest = () => {
     setIsResting(false);
     setIsDoingExercise(false); // Também para o timer de exercício
+    cancelNotification('rest-timer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -861,6 +914,7 @@ useEffect(() => {
           style: "destructive",
           onPress: async () => {
             await cacheActiveWorkoutLog(null); // Limpa o cache
+            cancelNotification('rest-timer');
             router.back(); // Volta para a tela anterior
           },
         },
@@ -881,12 +935,44 @@ useEffect(() => {
       setIsFinishing(true);
       const finalEndTime = new Date();
 
+      // Adicionado log para depuração
+      console.log('[handleFinishWorkout] Iniciando finalização do treino.');
+      console.log('[handleFinishWorkout] treinoId:', treinoId, '| fichaId:', fichaId);
+
+      let finalTreinoId = treinoId;
+
+      // Se for um treino livre (sem treinoId), cria um novo documento de treino primeiro.
+      if (!finalTreinoId) {
+        console.log('[handleFinishWorkout] Detectado treino livre. Criando novo documento de treino...');
+        const novoTreinoData: Omit<Treino, 'id'> = {
+          nome: workoutName,
+          usuarioId: user.id,
+          exercicios: loggedExercises,
+          diasSemana: [],
+          fichaId: null, // Treinos livres não pertencem a uma ficha.
+          intervalo: { min: 1, seg: 0 }, // Intervalo padrão
+          ordem: 999, // Ordem alta para aparecer por último se não for associado
+        };
+        try {
+          finalTreinoId = await addTreino(novoTreinoData);
+          console.log('[handleFinishWorkout] Novo treino livre criado com ID:', finalTreinoId);
+        } catch (treinoError) {
+          console.error('[handleFinishWorkout] Erro ao criar documento do treino livre:', treinoError);
+          Alert.alert('Erro', 'Não foi possível criar o registro do treino antes de salvar o log.');
+          setIsFinishing(false);
+          return;
+        }
+      }
+
       try {
         const newLog: Partial<Log> = {
           usuarioId: user.id,
           treino: {
-            id: treinoId || `freestyle-${Date.now()}`,
-            fichaId: fichaId, // Can be undefined
+            id: finalTreinoId,
+            // CORREÇÃO: Usar `null` em vez de 'null' como string.
+            // O `as any` é um truque para contornar o erro do TypeScript, permitindo que o valor `null`
+            // seja enviado para o Firebase, que é o que a função `addLog` espera para campos vazios.
+            fichaId: (fichaId || null) as any,
             nome: workoutName,
             usuarioId: user.id,
             exercicios: loggedExercises,
@@ -904,14 +990,19 @@ useEffect(() => {
           observacoes: loggedExercises.map((ex) => ex.notes).filter(Boolean).join('; '),
         };
 
+        // Adicionado log para inspecionar o objeto que será salvo
+        console.log('[handleFinishWorkout] Objeto do log pronto para ser salvo:', JSON.stringify(newLog, null, 2));
+
         const newLogId = await addLog(newLog);
         
+        console.log('[handleFinishWorkout] Log salvo com sucesso. ID:', newLogId);
+
         await cacheActiveWorkoutLog(null);
 
         router.replace({ pathname: '/(treino)/treinoCompleto', params: { logId: newLogId } });
 
       } catch (error) {
-        console.error('Error saving workout log:', error);
+        console.error('[handleFinishWorkout] Erro ao salvar o log do treino:', error);
         Alert.alert('Erro', 'Não foi possível salvar o log do treino.');
         setIsFinishing(false);
       }
@@ -925,14 +1016,14 @@ useEffect(() => {
         "Você não completou todas as séries. Deseja finalizar o treino mesmo assim?",
         [
           {
+          text: "Finalizar",
+          onPress: proceedToFinish,
+          style: "destructive"
+        },
+        {
             text: "Cancelar",
             style: "cancel"
           },
-          {
-            text: "Finalizar",
-            onPress: proceedToFinish,
-            style: "destructive"
-          }
         ]
       );
     }
@@ -993,7 +1084,7 @@ useEffect(() => {
     gap: 20,
     paddingVertical: 15,
     paddingHorizontal: 15,
-    backgroundColor: '#030405', // Cor de fundo do container
+    backgroundColor: '#0B0D10', // Cor de fundo do container
   };
 
   const statItemStyle = {
@@ -1028,7 +1119,7 @@ useEffect(() => {
           <View style={styles.customHeader}>
             <View style={styles.headerLeftGroup}>
               <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-                <FontAwesome name="arrow-left" size={20} color="#fff" />
+                <Ionicons name="chevron-back" size={28} color="#fff" />
               </TouchableOpacity>
               <TextInput
                 style={styles.headerTitleInput}
@@ -1077,7 +1168,7 @@ useEffect(() => {
                 style={styles.addButtonCircle}
                 onPress={() => setModalVisible(true)}
               >
-                <FontAwesome name="plus" size={50} color="#1cb0f6" />
+                <FontAwesome name="plus" size={50} color="#3B82F6" />
               </TouchableOpacity>
               <Text style={styles.emptyText}>Adicione o primeiro exercício</Text>
             </View>
@@ -1089,18 +1180,10 @@ useEffect(() => {
               }}
               keyExtractor={(item) => item.modeloId}
               ListHeaderComponent={
-                <View style={statsContainerStyle}>
-                  <View style={statItemStyle}>
-                    <FontAwesome name="clock-o" size={16} color="#aaa" />
-                    <Text style={styles.statValue}>{formatTime(elapsedTime)}</Text>
-                  </View>
-                  <View style={statItemStyle}>
-                    <FontAwesome5 name="weight-hanging" size={16} color="#aaa" />
-                    <Text style={styles.statValue}>{Math.round(totalLoad).toLocaleString('pt-BR')} kg</Text>
-                  </View>
-                </View>
+              <View style={statsContainerStyle}><View style={statItemStyle}><FontAwesome name="clock-o" size={16} color="#aaa" /><Text style={styles.statValue}>{formatTime(elapsedTime)}</Text></View><View style={statItemStyle}><FontAwesome5 name="weight-hanging" size={16} color="#aaa" /><Text style={styles.statValue}>{Math.round(totalLoad).toLocaleString('pt-BR')} kg</Text></View></View>
               }
-              renderItem={({ item, index }) => (
+            renderItem={({ item, index }) => {
+              return (
                 <LoggedExerciseCard
                   item={item}
                   userWeight={userWeight}
@@ -1113,44 +1196,51 @@ useEffect(() => {
                     updatedExercises[index].restTime = newRestTime;
                     setLoggedExercises(updatedExercises);
                   }}
-                                    onNotesChange={(newNotes) => {
-                                      const updatedExercises = [...loggedExercises];
-                                      updatedExercises[index].notes = newNotes;
-                                      setLoggedExercises(updatedExercises);
-                                    }}
-                                    onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
-                                    startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
-                                  />
-                                )}
-                                ListFooterComponent={
-                                  <>
-                                    <TouchableOpacity
-                                      style={styles.addMoreButton}
-                                      onPress={() => setModalVisible(true)}
-                                    >
-                                      <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={styles.settingsButton}
-                                      onPress={() => setSettingsModalVisible(true)}
-                                    >
-                                      <FontAwesome name="cog" size={16} color="#aaa" />
-                                      <Text style={styles.settingsButtonText}>Configurações</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
-                                      style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
-                                      onPress={handleCancelWorkout}
-                                    >
-                                      <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
-                                    </TouchableOpacity>
-                                  </>
-                                }
-                                contentContainerStyle={{
-                                  paddingBottom: 140,
-                                  paddingTop: 15, // Padding normal, já que os stats não são mais fixos
-                                }}
-                              />
-                            )}
+                  onNotesChange={(newNotes) => {
+                    const updatedExercises = [...loggedExercises];
+                    updatedExercises[index].notes = newNotes;
+                    setLoggedExercises(updatedExercises);
+                  }}
+                  onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
+                  startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
+                  onMenuStateChange={setIsMenuOpen}
+                />
+              );
+            }}
+            ListFooterComponent={
+              <>
+                <TouchableOpacity
+                  style={styles.addMoreButton}
+                  onPress={() => setModalVisible(true)}
+                >
+                  <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.settingsButton}
+                  onPress={() => setSettingsModalVisible(true)}
+                >
+                  <FontAwesome name="cog" size={16} color="#aaa" />
+                  <Text style={styles.settingsButtonText}>Configurações</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
+                  onPress={handleCancelWorkout}
+                >
+                  <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
+                </TouchableOpacity>
+              </>
+            }
+            contentContainerStyle={{
+              paddingBottom: 140,
+              paddingTop: 15, // Padding normal, já que os stats não são mais fixos
+            }}
+          />
+        )}
+                  {isMenuOpen && (
+                    <Animated.View style={styles.overlay} entering={FadeIn} exiting={FadeOut}>
+                      <View style={StyleSheet.absoluteFill} />
+                    </Animated.View>
+                  )}
                   
                                                       <MultiSelectExerciseModal
                   
@@ -1239,7 +1329,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   statValue: {
     color: '#fff', 
@@ -1250,22 +1340,22 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 12,
   },
-  container: { flex: 1, backgroundColor: '#030405' },
+  container: { flex: 1, backgroundColor: '#0B0D10' },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   addButtonCircle: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#1cb0f6',
+    borderColor: '#3B82F6',
     borderStyle: 'dashed',
   },
   emptyText: { color: '#888', marginTop: 20, fontSize: 16 },
   exercicioCard: {
-    backgroundColor: '#141414',
+    backgroundColor: '#1A1D23',
     padding: 15,
     flex: 1,
     marginBottom: 15,
@@ -1297,13 +1387,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 8,
     paddingHorizontal: 5,
-    borderRadius: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
   },
   setRowCompleted: {
     opacity: 0.75,
   },
+  setRowWarmup: {
+    backgroundColor: 'rgba(255, 165, 0, 0.1)', // Fundo alaranjado para aquecimento
+    borderBottomColor: 'rgba(255, 165, 0, 0.3)',
+  },
   seriesNumberContainer: {
-    backgroundColor: '#1f1f1f',
     justifyContent: 'center',
     alignItems: 'center',
     width: 30,
@@ -1312,7 +1406,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   seriesNumberCompleted: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   seriesNumberText: {
     color: '#fff',
@@ -1321,7 +1415,7 @@ const styles = StyleSheet.create({
   },
   completedBar: {
     width: 5,
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
     height: '100%',
     marginRight: 5,
     borderRadius: 2,
@@ -1334,7 +1428,7 @@ const styles = StyleSheet.create({
     color: '#aaa', fontSize: 10, marginBottom: 4
   },
   setInput: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#262A32',
     color: '#fff',
     padding: 10,
     borderRadius: 5,
@@ -1343,7 +1437,7 @@ const styles = StyleSheet.create({
     minWidth: 80,
   },
   repButton: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#262A32',
     padding: 10,
     borderRadius: 5,
     textAlign: 'center',
@@ -1404,7 +1498,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   completeBox: {
-    backgroundColor: '#1cb0f6', // Azul para "Completar"
+    backgroundColor: '#3B82F6', // Azul para "Completar"
     justifyContent: 'center',
     alignItems: 'center',
     width: 100, // Aumentado para caber o texto
@@ -1477,7 +1571,7 @@ const styles = StyleSheet.create({
     flex: 0, // Não expande
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 8,
@@ -1491,7 +1585,7 @@ const styles = StyleSheet.create({
   seriesCounterContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 8,
@@ -1523,7 +1617,7 @@ const styles = StyleSheet.create({
   },
   modalTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
   modalOptionButton: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -1532,7 +1626,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   modalOptionButtonSelected: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   modalOptionText: {
     color: '#fff',
@@ -1545,7 +1639,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#1f1f1f',
+    backgroundColor: '#0B0D10',
     borderTopWidth: 1,
     borderTopColor: '#333',
     paddingBottom: 30, // Espaço para safe area
@@ -1556,7 +1650,7 @@ const styles = StyleSheet.create({
   },
   restTimerProgressBar: {
     height: '100%',
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   restTimerContent: {
     flexDirection: 'row',
@@ -1578,7 +1672,7 @@ const styles = StyleSheet.create({
   skipButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#333',
+    backgroundColor: '#3B82F6',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,
@@ -1594,7 +1688,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1cb0f6',
+    borderColor: '#3B82F6',
   },
   finishButtonText: {
     color: '#fff',
@@ -1602,7 +1696,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   finishButtonCompleted: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
   },
   finishButtonTextCompleted: {
     color: '#fff',
@@ -1651,7 +1745,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   barbellWeightInput: {
-    backgroundColor: '#2c2c2e',
+    backgroundColor: '#2A2E37',
     color: '#fff',
     paddingVertical: 8,
     paddingHorizontal: 15,
@@ -1699,7 +1793,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   barbellCenterWeightText: {
-    color: '#1cb0f6',
+    color: '#3B82F6',
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -1756,5 +1850,10 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 59, 48, 0.8)',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    zIndex: 1, // Garante que o overlay fique sobre o conteúdo mas abaixo do menu
   },
 });

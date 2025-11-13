@@ -1,6 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, getDocFromCache, onSnapshot } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import React, { memo, useCallback, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -14,7 +14,7 @@ import { Treino } from '../../models/treino';
 import { Usuario } from '../../models/usuario';
 import { getFichaAtiva } from '../../services/fichaService';
 import { getLogsByUsuarioId } from '../../services/logService';
-import { getTreinosByIds } from '../../services/treinoService';
+import { getTreinosByIds, getTreinosByUsuarioId } from '../../services/treinoService';
 import { acceptFriendRequest, getUserProfile, rejectFriendRequest } from '../../userService';
 import { useAuth } from '../authprovider';
 
@@ -191,6 +191,8 @@ export default function AmigosScreen() {
   const [projetos, setProjetos] = useState<Projeto[]>([]); // Lista de projetos do usuário
   const [friendRequests, setFriendRequests] = useState<Usuario[]>([]); // Lista de pedidos de amizade pendentes
 
+  const [userWorkoutsCount, setUserWorkoutsCount] = useState(0);
+  const [userTotalVolume, setUserTotalVolume] = useState(0);
   const isInitialLoad = useRef(true);
 
   useFocusEffect(
@@ -208,7 +210,27 @@ export default function AmigosScreen() {
           setLoading(true);
         }
 
+        // Tenta obter os dados do cache primeiro para uma experiência offline mais robusta
+        try {
+          const cachedDoc = await getDocFromCache(doc(db, "users", user.id));
+          if (cachedDoc.exists()) {
+            // Processa os dados do cache se disponíveis
+          }
+        } catch (error) {
+          console.log("Não foi possível obter dados do cache, aguardando conexão online.");
+        }
+
         const unsubscribe = onSnapshot(doc(db, "users", user.id), async (userDoc) => {
+          // Busca treinos e logs do usuário em paralelo
+          const [userWorkouts, userLogs] = await Promise.all([
+            getTreinosByUsuarioId(user.id),
+            getLogsByUsuarioId(user.id)
+          ]);
+
+          setUserWorkoutsCount(userWorkouts.length);
+          const totalVolume = userLogs.reduce((sum, log) => sum + (log.cargaAcumulada || 0), 0);
+          setUserTotalVolume(totalVolume);
+
           if (userDoc.exists()) {
             const userProfile = { id: userDoc.id, ...userDoc.data() } as Usuario;
 
@@ -252,7 +274,7 @@ export default function AmigosScreen() {
 
                 return { ...friendData.profile, hasTrainedToday, weeklyLogs } as FriendData;
               } catch (error) {
-                console.warn(`Não foi possível buscar dados para o amigo ${friendId}. Pode ter sido removido ou a conta deletada.`, error);
+                console.warn(`Não foi possível buscar dados para o amigo ${friendId}. A amizade pode ter sido removida. Error:`, error);
                 return null; // Retorna nulo se houver qualquer erro de permissão ou outro.
               }
             });
@@ -368,26 +390,29 @@ export default function AmigosScreen() {
       </View>
 
       {/* Card do Perfil do Usuário */}
-      <TouchableOpacity style={styles.userProfileCard} onPress={() => router.push('/perfil')}>
-        <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/perfil')}>
-            <FontAwesome name="pencil" size={16} color="#ccc" />
-        </TouchableOpacity>
-        <View style={styles.userProfileInfo}>
-          {user?.photoURL ? (
-            <Image source={{ uri: user.photoURL }} style={styles.userPfp} />
-          ) : (
-            <View style={styles.userPfpPlaceholder}><FontAwesome name="user" size={24} color="#555" /></View>
-          )}
-          <View>
-            <Text style={styles.userName}>{user?.nome}</Text>
-            <Text style={styles.userEmail}>{user?.email}</Text>
+      <View style={styles.userProfileCard}>
+        <TouchableOpacity onPress={() => router.push('/perfil')}>
+          <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/perfil')}>
+              <FontAwesome name="pencil" size={16} color="#ccc" />
+          </TouchableOpacity>
+          <View style={styles.userProfileInfo}>
+            {user?.photoURL ? (
+              <Image source={{ uri: user.photoURL }} style={styles.userPfp} />
+            ) : (
+              <View style={styles.userPfpPlaceholder}><FontAwesome name="user" size={24} color="#555" /></View>
+            )}
+            <View>
+              <Text style={styles.userName}>{user?.nome}</Text>
+              <Text style={styles.userEmail}>{user?.email}</Text>
+            </View>
           </View>
+        </TouchableOpacity>
+        <View style={styles.userStatsContainer}>
+          <View style={styles.statItem}><Text style={styles.statValue}>{friends.length}</Text><Text style={styles.statLabel}>Amigos</Text></View>
+          <View style={styles.statItem}><Text style={styles.statValue}>{userWorkoutsCount}</Text><Text style={styles.statLabel}>Treinos</Text></View>
+          <View style={styles.statItem}><Text style={styles.statValue}>{userTotalVolume > 1000 ? `${(userTotalVolume/1000).toFixed(1)}t` : `${Math.round(userTotalVolume)}kg`}</Text><Text style={styles.statLabel}>Volume Total</Text></View>
         </View>
-        <View style={styles.friendCountContainer}>
-          <Text style={styles.friendCountNumber}>{friends.length}</Text>
-          <Text style={styles.friendCountLabel}>Amigos</Text>
-        </View>
-      </TouchableOpacity>
+      </View>
       <View style={styles.section}>
         <Text style={styles.mainSectionTitle}>Meus Projetos</Text>
         <FlatList
@@ -611,7 +636,6 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: 15,
-    backgroundColor: '#030405',
   },
   centered: {
     flex: 1,
@@ -624,10 +648,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: 16,
     marginBottom: 20,
-    padding: 15,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingTop: 15,
+    paddingHorizontal: 15,
     borderWidth: 1,
     borderColor: '#ffffff1a',
   },
@@ -666,18 +688,32 @@ const styles = StyleSheet.create({
     color: '#aaa',
     fontSize: 14,
   },
-  friendCountContainer: {
-    alignItems: 'center',
+  userStatsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    borderTopWidth: 1,
+    borderTopColor: '#ffffff1a',
+    marginTop: 15,
+    paddingTop: 15,
+    paddingBottom: 5,
   },
-  friendCountNumber: {
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
     color: '#fff',
     fontSize: 22,
     fontWeight: 'bold',
   },
-  friendCountLabel: {
+  statLabel: {
     color: '#aaa',
     fontSize: 12,
+    marginTop: 4,
   },
+  friendCountContainer: {},
+  friendCountNumber: {},
+  friendCountLabel: {},
   card: {
     marginVertical: 8,
     marginHorizontal: 16,

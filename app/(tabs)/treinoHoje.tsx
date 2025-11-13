@@ -94,12 +94,14 @@ export default function MeusTreinosScreen() {
         (treino: Treino) => !treino.fichaId // CORREÇÃO: Adiciona tipo ao parâmetro 'treino'
       );
 
+      // Ordena as fichas do usuário em ordem alfabética.
+      fichaFolders.sort((a, b) => a.nome.localeCompare(b.nome));
+
       // Create the "Meus Treinos" (unassigned) folder.
       const pastaAvulsa: Folder = { id: 'unassigned', type: 'unassigned', nome: 'Meus Treinos', treinos: treinosAvulsos };
 
-      // Add the "unassigned" folder to the list and sort it along with the others.
+      // Adiciona a pasta "Meus Treinos" (avulsos) ao final da lista.
       const allFolders = [...fichaFolders, pastaAvulsa];
-      allFolders.sort((a, b) => a.nome.localeCompare(b.nome));
 
       setFolders(allFolders);
     } catch (err) {
@@ -128,10 +130,18 @@ export default function MeusTreinosScreen() {
     switch (action) {
       case 'set-active':
         try {
-          // A função setFichaAtiva já retorna a ficha atualizada.
+          // Importa o módulo de rede para verificar a conexão
+          const Network = await import('expo-network');
+          const networkState = await Network.getNetworkStateAsync();
+          const isOffline = !networkState.isConnected;
+
+          if (isOffline) {
+            Alert.alert("Offline", "Você precisa estar online para alterar a ficha principal.");
+            return;
+          }
+
           const fichaAtualizada = await setFichaAtiva(user.id, folderId);
-          if (fichaAtualizada) { // Check if fichaAtualizada is not null
-            // Usamos o retorno da função para garantir que o tipo está correto.
+          if (fichaAtualizada) {
             setActiveFicha(fichaAtualizada);
           }
           Alert.alert("Sucesso", `"${ficha.nome}" é agora sua ficha principal.`);

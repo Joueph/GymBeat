@@ -342,8 +342,11 @@ useEffect(() => {
             console.log('[OngoingWorkout] 👤 Buscando perfil do usuário...');
             const userProfile = await getUserProfile(user.id);
             if (userProfile) {
-              if (userProfile.peso) {
-                setUserWeight(userProfile.peso);
+              const latestWeight = userProfile.historicoPeso && userProfile.historicoPeso.length > 0
+                ? [...userProfile.historicoPeso].sort((a, b) => (b.data as any).toDate().getTime() - (a.data as any).toDate().getTime())[0].valor
+                : userProfile.peso;
+              if (latestWeight) {
+                setUserWeight(latestWeight as number);
                 console.log('[OngoingWorkout] ✅ Peso do usuário:', userProfile.peso);
               }
               if (userProfile.workoutScreenType) {
@@ -443,8 +446,11 @@ useEffect(() => {
       try {
         const userProfile = await getUserProfile(user.id);
         if (userProfile) {
-          if (userProfile.peso) {
-            setUserWeight(userProfile.peso);
+          const latestWeight = userProfile.historicoPeso && userProfile.historicoPeso.length > 0
+            ? [...userProfile.historicoPeso].sort((a, b) => (b.data as any).toDate().getTime() - (a.data as any).toDate().getTime())[0].valor
+            : userProfile.peso;
+          if (latestWeight) {
+            setUserWeight(latestWeight as number);
           }
           if (userProfile.workoutScreenType) {
             setWorkoutScreenType(userProfile.workoutScreenType);

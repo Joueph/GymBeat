@@ -9,11 +9,14 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  LayoutAnimation,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View
 } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
@@ -25,12 +28,18 @@ import { SetOptionsMenu } from '../../components/SetOptionsMenu';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
 import { getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
+import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
+import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 const DIAS_SEMANA_ORDEM = { 'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6 };
 const DIAS_SEMANA_ARRAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'] as const;
 type DiaSemana = typeof DIAS_SEMANA_ARRAY[number];
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 interface SerieEdit extends Serie {
   id: string;
@@ -141,6 +150,7 @@ const ExerciseItem = ({
   }, [item.series, item]);
 
   const handleSeriesUpdate = (newSeries: SerieEdit[]) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSeries(newSeries);
     onUpdateExercise({ ...item, series: newSeries });
     setIsEditing(true); // Ativa o modo de edição imediatamente
@@ -295,7 +305,7 @@ const ExerciseItem = ({
             ]);
           }}
         >
-          <FontAwesome name="plus" size={14} color="#1cb0f6" />
+          <FontAwesome name="plus" size={14} color="#3B82F6" />
           <Text style={styles.addSetButtonText}>Adicionar Série</Text>
         </TouchableOpacity>
         <View style={styles.exerciseActions}>
@@ -328,6 +338,8 @@ export default function EditarTreinoScreen() {
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
   const [isRestTimeModalVisible, setIsRestTimeModalVisible] = useState(false);
   const [editingIndices, setEditingIndices] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
+  const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
   const [activeLog, setActiveLog] = useState<Log | null>(null);
 
   // Animation state
@@ -351,6 +363,16 @@ export default function EditarTreinoScreen() {
     // Se for um novo treino (sem ID), já começa em modo de edição.
     if (!treinoId) {
       setIsEditing(true);
+    }
+  }, [treinoId]);
+
+  useEffect(() => {
+    if (user?.id) {
+      getUserProfile(user.id).then(profile => {
+        if (profile?.workoutScreenType) {
+          setWorkoutScreenType(profile.workoutScreenType);
+        }
+      });
     }
   }, [treinoId]);
 
@@ -573,7 +595,7 @@ export default function EditarTreinoScreen() {
         {
           text: "Apagar", style: "destructive", onPress: async () => {
             try {
-              await deleteTreino(treino.id, treino.fichaId);
+              await deleteTreino(treino.id, treino.fichaId ?? undefined);
               Alert.alert("Sucesso", "O treino foi apagado.");
               router.back();
             } catch (error) { console.error("Erro ao apagar treino:", error); Alert.alert('Erro', 'Não foi possível apagar o treino.'); }
@@ -653,7 +675,7 @@ export default function EditarTreinoScreen() {
           ) : (
             // Botões de Visualização
             <Animated.View style={[styles.headerButtonWrapper, viewingStyle]}>
-              <TouchableOpacity style={styles.configButton} onPress={() => setIsEditing(true)}>
+              <TouchableOpacity style={styles.configButton} onPress={() => setSettingsModalVisible(true)}>
                 <FontAwesome name="cog" size={22} color="#ccc" />
               </TouchableOpacity>
               
@@ -787,6 +809,13 @@ export default function EditarTreinoScreen() {
         }}
         onSave={handleRestTimeSave}
         initialValue={getRestTimeValue()}
+      />
+
+      <WorkoutSettingsModal
+        isVisible={isSettingsModalVisible}
+        onClose={() => setSettingsModalVisible(false)}
+        currentWorkoutScreenType={workoutScreenType}
+        onWorkoutScreenTypeChange={setWorkoutScreenType}
       />
 
     </SafeAreaView>

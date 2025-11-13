@@ -230,33 +230,37 @@ export default function AmigosScreen() {
             setFriendRequests(requestProfiles.filter((p): p is Usuario => p !== null));
 
             const confirmedFriendIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === true);
-            
-            const friendsDataPromises = confirmedFriendIds.map(async (friendId) => {
-              const friendProfile = await getUserProfile(friendId);
-              if (friendProfile) {
-                const weekStart = getStartOfWeek(new Date());
-                const friendLogs = await getLogsByUsuarioId(friendId);
-                const weeklyLogs = friendLogs.filter(log => {
-                    const logDate = toDate(log.horarioFim);
-                    return logDate && logDate >= weekStart;
-                });
 
-                const today = new Date().toDateString();
-                const lastTrainedDate = toDate(friendProfile.lastTrained);
-                const hasTrainedToday = lastTrainedDate ? lastTrainedDate.toDateString() === today : false;
+            const friendsDataPromises = confirmedFriendIds.map(async (friendId: string) => {
+              try {
+                // Chama a Cloud Function para buscar os dados do amigo de forma segura.
+                const functions = getFunctions();
+                const getFriendActivity = httpsCallable(functions, 'getFriendActivity');
+                const result = await getFriendActivity({ friendId });
                 
-                return { ...friendProfile, hasTrainedToday, weeklyLogs };
+                const friendData = result.data as any;
+
+                if (!friendData || !friendData.profile) {
+                  console.warn(`Não foi possível obter dados para o amigo ${friendId}. A amizade pode não ser mútua.`);
+                  return null;
+                }
+
+                // Converte os logs recebidos (que são JSON) para o tipo Log.
+                const weeklyLogs = (friendData.weeklyLogs || []).map((log: any) => ({ ...log, horarioFim: toDate(log.horarioFim) })) as Log[];
+                const lastTrainedDate = toDate(friendData.profile.lastTrained);
+                const hasTrainedToday = lastTrainedDate ? lastTrainedDate.toDateString() === new Date().toDateString() : false;
+
+                return { ...friendData.profile, hasTrainedToday, weeklyLogs } as FriendData;
+              } catch (error) {
+                console.warn(`Não foi possível buscar dados para o amigo ${friendId}. Pode ter sido removido ou a conta deletada.`, error);
+                return null; // Retorna nulo se houver qualquer erro de permissão ou outro.
               }
-              return null;
             });
 
             const friendsData = (await Promise.all(friendsDataPromises)).filter(Boolean) as FriendData[];
             setFriends(friendsData);
 
           } else {
-            setFriends([]);
-            setFriendRequests([]);
-            setProjetos([]);
           }
           setLoading(false);
         });

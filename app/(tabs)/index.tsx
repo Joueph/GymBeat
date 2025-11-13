@@ -192,7 +192,13 @@ export default function HomeScreen() {
         return result;
     };
 
-    const timeHistory = generateWeeklyHistory(log => (log.horarioFim!.seconds - log.horarioInicio!.seconds) / 60);
+    const timeHistory = generateWeeklyHistory(log => {
+      // Safely calculate duration only if both start and end times exist.
+      if (log.horarioFim?.seconds && log.horarioInicio?.seconds) {
+        return (log.horarioFim.seconds - log.horarioInicio.seconds) / 60;
+      }
+      return 0; // Return 0 for logs without a duration (e.g., in-progress)
+    });
     const seriesHistory = generateWeeklyHistory(log => log.exercicios.reduce((acc, ex) => acc + (ex.series?.filter(s => (s as any).concluido).length || 0), 0));
     const volumeHistory = generateWeeklyHistory(log => log.cargaAcumulada || 0);
     

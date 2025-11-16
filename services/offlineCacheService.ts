@@ -1,6 +1,7 @@
 //  /services/offlineCacheService.ts
 
 import { Log } from '@/models/log';
+import { Usuario } from '@/models/usuario';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Ficha } from '../models/ficha';
@@ -9,6 +10,8 @@ import { Treino } from '../models/treino';
 const FICHA_ATIVA_CACHE_KEY = 'activeFichaCache';
 const TREINOS_CACHE_KEY_PREFIX = 'treinoCache_';
 const ACTIVE_WORKOUT_LOG_KEY = 'activeWorkoutLog';
+const USER_SESSION_CACHE_KEY = 'userSessionCache';
+const CURRENT_USER_ID_KEY = 'currentUserId';
 
 
 /**
@@ -109,5 +112,87 @@ export const getCachedTreinoById = async (treinoId: string): Promise<Treino | nu
     } catch (error) {
         console.error(`[Cache] Erro ao recuperar o treino ${treinoId} do cache:`, error);
         return null;
+    }
+};
+
+/**
+ * Salva a sessão do usuário atual no cache local para acesso offline.
+ * @param user O objeto do usuário a ser salvo.
+ */
+export const cacheUserSession = async (user: Usuario): Promise<void> => {
+    try {
+        await AsyncStorage.setItem(USER_SESSION_CACHE_KEY, JSON.stringify(user));
+        await AsyncStorage.setItem(CURRENT_USER_ID_KEY, user.id);
+        console.log(`[Cache] Sessão do usuário '${user.nome}' salva no cache.`);
+    } catch (error) {
+        console.error("[Cache] Erro ao salvar a sessão do usuário:", error);
+    }
+};
+
+/**
+ * Recupera a sessão do usuário em cache (para uso offline).
+ * @returns O objeto do usuário em cache ou null se não houver.
+ */
+export const getCachedUserSession = async (): Promise<Usuario | null> => {
+    try {
+        const userJson = await AsyncStorage.getItem(USER_SESSION_CACHE_KEY);
+        return userJson ? JSON.parse(userJson) : null;
+    } catch (error) {
+        console.error("[Cache] Erro ao recuperar a sessão do usuário:", error);
+        return null;
+    }
+};
+
+/**
+ * Recupera o ID do usuário atualmente em cache.
+ * @returns O ID do usuário ou null se não houver.
+ */
+export const getCachedCurrentUserId = async (): Promise<string | null> => {
+    try {
+        return await AsyncStorage.getItem(CURRENT_USER_ID_KEY);
+    } catch (error) {
+        console.error("[Cache] Erro ao recuperar o ID do usuário:", error);
+        return null;
+    }
+};
+
+/**
+ * Salva a ficha ativa em cache para rápida recuperação offline.
+ * @param ficha A ficha ativa a ser salva.
+ */
+export const cacheFichaAtiva = async (ficha: Ficha): Promise<void> => {
+    try {
+        await AsyncStorage.setItem(FICHA_ATIVA_CACHE_KEY, JSON.stringify(ficha));
+        console.log(`[Cache] Ficha ativa '${ficha.nome}' salva no cache.`);
+    } catch (error) {
+        console.error("[Cache] Erro ao salvar a ficha ativa no cache:", error);
+    }
+};
+
+/**
+ * Recupera a ficha ativa em cache (para uso offline).
+ * @returns A ficha ativa em cache ou null se não houver.
+ */
+export const getCachedFichaAtiva = async (): Promise<Ficha | null> => {
+    try {
+        const fichaJson = await AsyncStorage.getItem(FICHA_ATIVA_CACHE_KEY);
+        return fichaJson ? JSON.parse(fichaJson) : null;
+    } catch (error) {
+        console.error("[Cache] Erro ao recuperar a ficha ativa do cache:", error);
+        return null;
+    }
+};
+
+/**
+ * Limpa toda a sessão do usuário em cache (logout).
+ */
+export const clearUserSessionCache = async (): Promise<void> => {
+    try {
+        await AsyncStorage.removeItem(USER_SESSION_CACHE_KEY);
+        await AsyncStorage.removeItem(CURRENT_USER_ID_KEY);
+        await AsyncStorage.removeItem(FICHA_ATIVA_CACHE_KEY);
+        console.log("[Cache] Sessão do usuário limpa.");
+    } catch (error) {
+        console.error("[Cache] Erro ao limpar a sessão do usuário:", error);
     }
 };

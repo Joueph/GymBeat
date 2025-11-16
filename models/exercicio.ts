@@ -4,6 +4,8 @@ export interface ExercicioModelo {
   imagemUrl: string;
   grupoMuscular: string;
   tipo: string;
+  userId: string; // Adicionado para identificar o criador do exercício
+  isCustom: boolean; // Adicionado para indicar se é um exercício personalizado
 
   // NOVO CAMPO ADICIONADO AQUI
   /**

@@ -156,7 +156,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
     try { // Importa o serviço de atualização de ficha
       const { updateFicha } = require('../../services/fichaService');
       // Importa o serviço de cache aqui para evitar importações cíclicas no nível superior
-      const { cacheFichaCompleta } = require('../../services/offlineCacheService');
+      const { cacheFichaCompleta, cacheFichaAtiva } = require('../../services/offlineCacheService');
       const { getTreinosByIds: getTreinosReaisByIds } = require('../../services/treinoService');
 
       // CORREÇÃO: Garante que o tipo de treinosParaCopiar seja TreinoModelo[]
@@ -182,6 +182,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
       if (fichaAtivada && fichaAtivada.treinos.length > 0) {
         const treinosRecemCriados = await getTreinosReaisByIds(fichaAtivada.treinos);
         await cacheFichaCompleta(fichaAtivada, treinosRecemCriados);
+        await cacheFichaAtiva(fichaAtivada); // Salva a ficha ativa em cache
       }
 
       setIsCopying(false);

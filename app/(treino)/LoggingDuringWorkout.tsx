@@ -778,22 +778,28 @@ useEffect(() => {
     setIsDoingExercise(false);
 
     if (isExerciseTimer && timedSetInfo) {
+      console.log('[Timer] Iniciando timer de exercício:', { duration, setIndex: timedSetInfo.setIndex });
       setExerciseCountdown(duration);
       setMaxExerciseTime(duration);
       setSetBeingTimed(timedSetInfo);
       setIsDoingExercise(true);
     } else {
+      console.log('[Timer] Iniciando timer de descanso:', { duration, segundos: duration });
       setRestCountdown(duration);
       setMaxRestTime(duration);
       setIsResting(true);
       setRestStartTime(Date.now());
 
-      // Agenda notificação se o app estiver em background
-      if (appState.current !== 'active') {
-        const triggerDate = new Date(Date.now() + duration * 1000);
-        const trigger = { hour: triggerDate.getHours(), minute: triggerDate.getMinutes() };
-        scheduleNotification('rest-timer', 'Intervalo finalizado!', 'Seu descanso acabou. Hora de voltar ao treino!', trigger);
-      }
+      // Agenda notificação para quando o intervalo terminar
+      console.log('[Timer] Agendando notificação para daqui a', duration, 'segundos');
+      scheduleNotification(
+        'rest-timer', 
+        'Intervalo finalizado!', 
+        'Seu descanso acabou. Hora de voltar ao treino!', 
+        { seconds: duration }
+      ).catch(error => {
+        console.warn('[Timer] ✗ Erro ao agendar notificação de descanso:', error);
+      });
     }
     progress.value = 0; // Reseta a barra de progresso
   };

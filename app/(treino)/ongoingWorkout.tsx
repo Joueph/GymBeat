@@ -700,9 +700,7 @@ const completeTheSet = async () => {
 
   // Agenda notificação se o app estiver em background
   if (appState.current !== 'active') {
-    const triggerDate = new Date(Date.now() + maxRestTime * 1000);
-    const trigger = { hour: triggerDate.getHours(), minute: triggerDate.getMinutes() };
-    scheduleNotification('rest-timer', 'Intervalo finalizado!', 'Seu descanso acabou. Hora de voltar ao treino!', trigger);
+    scheduleNotification('rest-timer', 'Intervalo finalizado!', 'Seu descanso acabou. Hora de voltar ao treino!', { seconds: maxRestTime });
   }
   };
 

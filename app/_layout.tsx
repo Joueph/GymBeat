@@ -1,15 +1,49 @@
 // Em app/_layout.tsx
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
+import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
 import { MenuProvider } from 'react-native-popup-menu';
+import { syncPendingOperations } from '../services/offlineSyncService';
 import { AuthProvider, useAuth } from './authprovider'; // Verifique o caminho
+import { useNetwork } from './networkprovider';
+
+// Configuração inicial para o comportamento das notificações
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true, // Plays a sound when the notification is received
+    shouldSetBadge: true, // Sets the badge number on the app icon
+    shouldShowBanner: true, // (iOS) Show the notification as a banner
+    shouldShowList: true, // (iOS) Show the notification in the notification list
+  }),
+});
 
 // O componente que consome o contexto e faz a lógica de navegação
 function MainNavigation() {
   const { user, initialized } = useAuth();
+  const { isOnline } = useNetwork();
   const segments = useSegments();
   const router = useRouter();
+
+  // Sincroniza operações offline quando volta online
+  useEffect(() => {
+    if (isOnline && user) {
+      const attemptSync = async () => {
+        try {
+          await syncPendingOperations(async (operations) => {
+            console.log('[Sync] Tentando sincronizar operações:', operations.length);
+            // TODO: Implementar lógica real de sincronização com Firestore
+            // Por enquanto, apenas registramos as operações
+          });
+        } catch (error) {
+          console.error('[Sync] Erro ao sincronizar:', error);
+        }
+      };
+
+      attemptSync();
+    }
+  }, [isOnline, user]);
 
   useEffect(() => {
     if (!initialized) return;
@@ -50,6 +84,7 @@ function MainNavigation() {
   );
 }
 
+
 // O layout raiz que apenas fornece o contexto
 export default function RootLayout() {
   useEffect(() => {
@@ -70,6 +105,30 @@ export default function RootLayout() {
     };
     setAudioMode();
   }, []);
+
+  // Listener para notificações recebidas enquanto o app está em primeiro plano
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+      console.log('[Notifications] Notificação recebida:', {
+        id: notification.request.identifier,
+        title: notification.request.content.title,
+        body: notification.request.content.body,
+      });
+    });
+
+    // Listener para quando o usuário interage com a notificação
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(response => {
+      console.log('[Notifications] Usuário interagiu com notificação:', {
+        id: response.notification.request.identifier,
+      });
+    });
+
+    return () => {
+      subscription.remove();
+      responseSubscription.remove();
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <MainNavigation />

@@ -1,20 +1,19 @@
 // services/treinoService.ts
 import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  orderBy,
-  query,
-  updateDoc,
-  where,
-  writeBatch
+    collection,
+    doc,
+    getDoc,
+    getDocs,
+    query,
+    updateDoc,
+    where,
+    writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebaseconfig';
 import { Exercicio, ExercicioModelo } from '../models/exercicio'; // Import Exercicio and ExercicioModelo
 import { Treino } from '../models/treino';
 import { TreinoModelo } from '../models/treinoModelo';
+import { getCachedTreinoById } from './offlineCacheService';
 
 export type DiaSemana = 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab';
 
@@ -31,34 +30,45 @@ const getExercicioModeloById = async (modeloId: string): Promise<ExercicioModelo
  * Fetches a single workout by its ID.
  */
 export const getTreinoById = async (treinoId: string): Promise<Treino | null> => {
-  const docRef = doc(db, 'treinos', treinoId);
-  const docSnap = await getDoc(docRef);
+  try {
+    const docRef = doc(db, 'treinos', treinoId);
+    const docSnap = await getDoc(docRef);
 
-  if (docSnap.exists()) {
-    const treinoData = { id: docSnap.id, ...docSnap.data() } as Treino;
+    if (docSnap.exists()) {
+      const treinoData = { id: docSnap.id, ...docSnap.data() } as Treino;
 
-    // Populate 'modelo' for each exercise
-    if (treinoData.exercicios && treinoData.exercicios.length > 0) {
-      const populatedExerciciosPromises = treinoData.exercicios.map(async (ex: Exercicio) => {
-        if (ex.modeloId) {
-          const modelo = await getExercicioModeloById(ex.modeloId);
-          if (modelo) {
-            return { ...ex, modelo: modelo };
+      // Populate 'modelo' for each exercise
+      if (treinoData.exercicios && treinoData.exercicios.length > 0) {
+        const populatedExerciciosPromises = treinoData.exercicios.map(async (ex: Exercicio) => {
+          if (ex.modeloId) {
+            const modelo = await getExercicioModeloById(ex.modeloId);
+            if (modelo) {
+              return { ...ex, modelo: modelo };
+            }
           }
-        }
-        return null; // Return null for exercises where the model is not found
-      });
+          return null; // Return null for exercises where the model is not found
+        });
 
-      const resolvedExercicios = await Promise.all(populatedExerciciosPromises);
-      
-      // Filter out the null values
-      const populatedExercicios = resolvedExercicios.filter((ex): ex is Exercicio => ex !== null);
+        const resolvedExercicios = await Promise.all(populatedExerciciosPromises);
+        
+        // Filter out the null values
+        const populatedExercicios = resolvedExercicios.filter((ex): ex is Exercicio => ex !== null);
 
-      treinoData.exercicios = populatedExercicios;
+        treinoData.exercicios = populatedExercicios;
+      }
+      return treinoData; // Return the fully populated Treino object
     }
-    return treinoData; // Return the fully populated Treino object
+    return null;
+  } catch (error) {
+    console.error('[TreinoService] Erro ao buscar treino:', error);
+    // Fallback: tenta recuperar do cache se offline
+    const cachedTreino = await getCachedTreinoById(treinoId);
+    if (cachedTreino) {
+      console.log('[TreinoService] Usando treino em cache (offline)');
+      return cachedTreino;
+    }
+    return null;
   }
-  return null;
 };
 
 /**

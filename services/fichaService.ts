@@ -16,6 +16,13 @@ import { db } from '../firebaseconfig';
 import { Ficha } from '../models/ficha';
 import { FichaModelo } from '../models/fichaModelo';
 import { TreinoModelo } from '../models/treinoModelo';
+import { getCachedFichaAtiva } from './offlineCacheService';
+
+/**
+ * Fetches all workout plan models from the 'fichas_modelos' collection in Firestore.
+ * This replaces reading from the local treinos.json file.
+ */
+
 
 /**
  * Fetches all workout plan models from the 'fichas_modelos' collection in Firestore.
@@ -111,17 +118,28 @@ export const getFichasModelos = async (): Promise<FichaModelo[]> => {
 };
 
 export const getFichaAtiva = async (userId: string): Promise<Ficha | null> => {
-  const fichasRef = collection(db, 'fichas');
-  const q = query(fichasRef, where('usuarioId', '==', userId), where('ativa', '==', true));
-  const querySnapshot = await getDocs(q);
+  try {
+    const fichasRef = collection(db, 'fichas');
+    const q = query(fichasRef, where('usuarioId', '==', userId), where('ativa', '==', true));
+    const querySnapshot = await getDocs(q);
 
-  if (querySnapshot.empty) {
+    if (querySnapshot.empty) {
+      return null;
+    }
+
+    // Assume there's only one active ficha per user
+    const docSnap = querySnapshot.docs[0];
+    return { id: docSnap.id, ...docSnap.data() } as Ficha;
+  } catch (error) {
+    console.error('[FichaService] Erro ao buscar ficha ativa:', error);
+    // Fallback: tenta recuperar do cache se offline
+    const cachedFicha = await getCachedFichaAtiva();
+    if (cachedFicha) {
+      console.log('[FichaService] Usando ficha ativa em cache (offline)');
+      return cachedFicha;
+    }
     return null;
   }
-
-  // Assume there's only one active ficha per user
-  const docSnap = querySnapshot.docs[0];
-  return { id: docSnap.id, ...docSnap.data() } as Ficha;
 };
 export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => {
   const fichasRef = collection(db, 'fichas');
@@ -160,15 +178,26 @@ export const addFicha = async (fichaData: Omit<Ficha, 'id'>): Promise<string> =>
 };
 
 export const getFichaById = async (fichaId: string): Promise<Ficha | null> => {
-  const fichaRef = doc(db, 'fichas', fichaId);
-  const docSnap = await getDoc(fichaRef);
+  try {
+    const fichaRef = doc(db, 'fichas', fichaId);
+    const docSnap = await getDoc(fichaRef);
 
-  if (!docSnap.exists()) {
-    console.log("Ficha document not found:", fichaId);
+    if (!docSnap.exists()) {
+      console.log("Ficha document not found:", fichaId);
+      return null;
+    }
+
+    return { id: docSnap.id, ...docSnap.data() } as Ficha;
+  } catch (error) {
+    console.error('[FichaService] Erro ao buscar ficha:', error);
+    // Fallback: tenta recuperar do cache se offline
+    const cachedFicha = await getCachedFichaAtiva();
+    if (cachedFicha && cachedFicha.id === fichaId) {
+      console.log('[FichaService] Usando ficha em cache (offline)');
+      return cachedFicha;
+    }
     return null;
   }
-
-  return { id: docSnap.id, ...docSnap.data() } as Ficha;
 };
 
 export const updateFicha = async (fichaId: string, data: Partial<Omit<Ficha, 'id'>>): Promise<void> => {

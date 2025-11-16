@@ -119,7 +119,7 @@ export default function LoginScreen() {
           // Importa os serviços necessários
           const { copyFichaModeloToUser, setFichaAtiva } = require('../../services/fichaService'); // Renomeado para evitar conflito
           const { getTreinosByIds } = require('../../services/treinoService');
-          const { cacheFichaCompleta } = require('../../services/offlineCacheService');
+          const { cacheFichaCompleta, cacheFichaAtiva, cacheUserSession } = require('../../services/offlineCacheService');
           
           // Copia a ficha e os treinos para o usuário
           const newFichaId = await copyFichaModeloToUser(statsData.recommendedFicha, user.uid, statsData.recommendedTreinos);
@@ -130,6 +130,7 @@ export default function LoginScreen() {
           // Busca os treinos recém-criados e salva tudo no cache para uso offline
           const treinosRecemCriados = await getTreinosByIds(fichaAtivada?.treinos || []);
           await cacheFichaCompleta(fichaAtivada, treinosRecemCriados);
+          await cacheFichaAtiva(fichaAtivada); // Salva a ficha ativa em cache
 
           // Limpa os dados do onboarding para não processar novamente
           const batch = writeBatch(db);

@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "GymBeat",
     slug: "GymBeat",
-    version: "1.1.2",
+    version: "1.1.3",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: "gymbeat",
@@ -12,7 +12,7 @@ export default {
       supportsTablet: false,
       icon: "./assets/images/icon.png",
       bundleIdentifier: "br.com.gymbeat",
-      buildNumber: "1",
+      buildNumber: "35",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
       },

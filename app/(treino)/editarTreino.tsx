@@ -49,11 +49,18 @@ interface SerieEdit extends Serie {
 
 export function VideoListItem({ uri, style }: { uri: string; style: any }) {
   const [localUri, setLocalUri] = useState<string | null>(null);
-  const isWebP = uri?.toLowerCase().includes('.webp');
+  const imageExtensions = ['.heic', '.jpg', '.jpeg', '.png', '.webp'];
+  const isImage = imageExtensions.some(ext => uri?.toLowerCase().endsWith(ext));
 
   useEffect(() => {
     const manageMedia = async () => {
       if (!uri) return;
+
+      if (uri.startsWith('file://')) {
+        setLocalUri(uri);
+        return;
+      }
+
       const fileName = uri.split('/').pop()?.split('?')[0];
       if (!fileName) return;
 
@@ -80,7 +87,7 @@ export function VideoListItem({ uri, style }: { uri: string; style: any }) {
     return <View style={[style, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color="#fff" /></View>;
   }
 
-  if (isWebP) {
+  if (isImage) {
     return <Image source={{ uri: localUri || uri }} style={style} />;
   }
 

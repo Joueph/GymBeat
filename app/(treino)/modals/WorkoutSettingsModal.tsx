@@ -1,86 +1,83 @@
 import { FontAwesome } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
-import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
-import { FlatList, Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { updateUserProfile } from '../../../userService';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { RestTimeDrawer } from '../../../components/RestTimeDrawer';
+import { getUserProfile, updateUserProfile } from '../../../userService';
 import { useAuth } from '../../authprovider';
+import { WorkoutScreenPreference } from './specifics/WorkoutScreenPreference';
 
 interface WorkoutSettingsModalProps {
   isVisible: boolean;
   onClose: () => void;
-  currentWorkoutScreenType: 'simplified' | 'complete' | undefined;
-  onWorkoutScreenTypeChange: (newType: 'simplified' | 'complete') => void;
 }
 
 export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
   isVisible,
   onClose,
-  currentWorkoutScreenType,
-  onWorkoutScreenTypeChange,
 }) => {
   const { user } = useAuth();
-  const scrollRef = useRef<FlatList<any>>(null);
-  const scrollY = useSharedValue(0);
-  const translationY = useSharedValue(0);
-  const isModalActive = useSharedValue(false);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPreferenceModalVisible, setPreferenceModalVisible] = useState(false);
+  const [isRestTimeDrawerVisible, setRestTimeDrawerVisible] = useState(false);
+
+  // Estados para as configurações
+  const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
+  const [defaultRestTime, setDefaultRestTime] = useState(90); // 90 segundos como padrão
+  const [restTimeNotificationEnabled, setRestTimeNotificationEnabled] = useState(false);
 
   useEffect(() => {
+    // Busca as configurações do usuário quando o modal se torna visível
     if (isVisible) {
-      translationY.value = 0;
-      // Verifica o estado inicial das permissões e configurações do usuário
-      const checkInitialStatus = async () => {
-        if (user?.settings?.notifications?.restTimeEnding) {
-          const { status } = await Notifications.getPermissionsAsync();
-          setNotificationsEnabled(status === 'granted');
-        } else {
-          setNotificationsEnabled(false);
+      const fetchSettings = async () => {
+        if (user) {
+          setIsLoading(true);
+          const profile = await getUserProfile(user.id);
+          if (profile) {
+            // Define o tipo de tela de treino
+            setWorkoutScreenType(profile.workoutScreenType || 'complete');
+
+            // Define o tempo de descanso padrão
+            const restTimeInSeconds = (profile.defaultRestTime?.min ?? 1) * 60 + (profile.defaultRestTime?.seg ?? 30);
+            setDefaultRestTime(restTimeInSeconds);
+
+            // Define a preferência de notificação
+            setRestTimeNotificationEnabled(profile.settings?.notifications?.restTimeEnding ?? false);
+          }
+          setIsLoading(false);
         }
       };
-      checkInitialStatus();
+      fetchSettings();
     }
   }, [isVisible, user]);
-
-  const panGesture = Gesture.Pan()
-    .onBegin(() => {
-      isModalActive.value = scrollY.value <= 0;
-    })
-    .onChange((event) => {
-      if (isModalActive.value && event.translationY > 0) {
-        translationY.value = event.translationY;
-      }
-    })
-    .onEnd(() => {
-      if (translationY.value > 150) {
-        runOnJS(onClose)();
-      } else {
-        translationY.value = withSpring(0);
-      }
-    });
-
-  const nativeScroll = Gesture.Native().shouldCancelWhenOutside(false);
-  const composed = Gesture.Simultaneous(panGesture, nativeScroll);
-
-  const animatedModalStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translationY.value }],
-  }));
 
   const handleWorkoutScreenPreferenceSelect = async (preference: 'simplified' | 'complete') => {
     if (user) {
       try {
         await updateUserProfile(user.id, { workoutScreenType: preference });
-        onWorkoutScreenTypeChange(preference);
+        setWorkoutScreenType(preference); // Atualiza o estado local
+        setPreferenceModalVisible(false); // Fecha o sub-modal
       } catch (error) {
         console.error('Erro ao salvar preferência de tela de treino:', error);
       }
     }
   };
 
-  const handleNotificationToggle = async (newValue: boolean) => {
+  const handleRestTimeSave = async (newSeconds: number) => {
+    if (user) {
+      const newMin = Math.floor(newSeconds / 60);
+      const newSeg = newSeconds % 60;
+      await updateUserProfile(user.id, { defaultRestTime: { min: newMin, seg: newSeg } });
+      setDefaultRestTime(newSeconds); // Atualiza o estado local
+    }
+    setRestTimeDrawerVisible(false); // Fecha o drawer
+  };
+
+  const handleRestTimeNotificationToggle = async (newValue: boolean) => {
     if (!user) return;
 
+    // Se estiver ativando, verifica as permissões primeiro
     if (newValue) {
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') {
@@ -92,74 +89,29 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
       }
     }
 
-    // Se a permissão foi concedida (ou já existia), ou se está desativando
-    setNotificationsEnabled(newValue);
+    // Se a permissão foi concedida ou se está desativando, atualiza o estado e salva
+    setRestTimeNotificationEnabled(newValue);
     try {
-      // Cria um objeto de configurações atualizado para salvar no perfil
-      const updatedSettings = {
-        ...user.settings,
-        notifications: {
-          ...user.settings?.notifications,
-          restTimeEnding: newValue,
+      // Para atualizar um campo aninhado com 'deep merge', passamos o objeto aninhado.
+      await updateUserProfile(user.id, {
+        settings: {
+          ...user.settings, // Mantém outras configurações existentes
+          notifications: { ...user.settings?.notifications, restTimeEnding: newValue },
         },
-      };
-      await updateUserProfile(user.id, { settings: updatedSettings });
+      });
     } catch (error) {
       console.error('Erro ao salvar configuração de notificação:', error);
+      // Reverte o estado visual em caso de erro
+      setRestTimeNotificationEnabled(!newValue);
+      Alert.alert("Erro", "Não foi possível salvar a configuração de notificação.");
     }
   };
 
-  const settingsOptions = [
-    {
-      id: 'workoutScreenType',
-      title: 'Tipo de Tela de Treino',
-    },
-    {
-      id: 'restTimeNotification',
-      title: 'Notificar ao fim do intervalo',
-    },
-  ];
-
-  const renderSettingItem = ({ item }: { item: (typeof settingsOptions)[0] }) => {
-    if (item.id === 'workoutScreenType') {
-      return (
-        <View style={styles.cardSettingItem}>
-          <Text style={styles.settingTitle}>{item.title}</Text>
-          <View style={styles.cardContainer}>
-            <TouchableOpacity
-              style={styles.cardOption}
-              onPress={() => handleWorkoutScreenPreferenceSelect('simplified')}
-            >
-              <Text style={[styles.cardOptionText, currentWorkoutScreenType === 'simplified' && styles.cardOptionTextSelected]}>
-                Simplificada
-              </Text>
-            </TouchableOpacity>
-            <View style={styles.separator} />
-            <TouchableOpacity
-              style={styles.cardOption}
-              onPress={() => handleWorkoutScreenPreferenceSelect('complete')}
-            >
-              <Text style={[styles.cardOptionText, currentWorkoutScreenType === 'complete' && styles.cardOptionTextSelected]}>
-                Completa
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      );
-    }
-
-    if (item.id === 'restTimeNotification') {
-      return (
-        <View style={styles.cardSettingItem}>
-          <View style={styles.switchSettingItem}>
-            <Text style={styles.settingTitle}>{item.title}</Text>
-            <Switch onValueChange={handleNotificationToggle} value={notificationsEnabled} />
-          </View>
-        </View>
-      );
-    }
-
-    return null; // Para outras configurações futuras
+  const formatRestTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes > 0 && remainingSeconds > 0) return `${minutes}m ${remainingSeconds}s`;
+    return minutes > 0 ? `${minutes} min` : `${remainingSeconds} seg`;
   };
 
   return (
@@ -169,60 +121,81 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
       visible={isVisible}
       onRequestClose={onClose}
     >
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <View style={styles.centeredView}>
-          <GestureDetector gesture={composed}>
-            <Animated.View style={[styles.modalView, animatedModalStyle]}>
-              <View style={styles.modalHeader}>
-                <TouchableOpacity onPress={onClose}>
-                  <FontAwesome name="arrow-down" size={24} color="#fff" />
-                </TouchableOpacity>
-                <Text style={styles.modalMainTitle}>Configurações</Text>
-                <View style={{ width: 24 }} />
-              </View>
+      <SafeAreaView style={styles.modalSafeArea}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Configurações do Treino</Text>
+            <TouchableOpacity onPress={onClose}>
+              <FontAwesome name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
 
-              <FlatList
-                ref={scrollRef}
-                onScroll={(e) => {
-                  scrollY.value = e.nativeEvent.contentOffset.y;
-                }}
-                scrollEventThrottle={16}
-                data={settingsOptions}
-                keyExtractor={(item) => item.id}
-                renderItem={renderSettingItem}
-                style={styles.settingsList}
+          <View style={styles.settingsList}>
+            <TouchableOpacity style={styles.settingItem} onPress={() => setPreferenceModalVisible(true)}>
+              <FontAwesome name="desktop" size={20} color="#ccc" style={styles.settingIcon} />
+              <View style={styles.settingTextContainer}>
+                <Text style={styles.settingLabel}>Experiência de Treino</Text>
+                <Text style={styles.settingValue}>{workoutScreenType === 'simplified' ? 'Simplificada' : 'Completa'}</Text>
+              </View>
+              <FontAwesome name="chevron-right" size={16} color="#555" />
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.settingItem} onPress={() => setRestTimeDrawerVisible(true)}>
+              <FontAwesome name="clock-o" size={20} color="#ccc" style={styles.settingIcon} />
+              <View style={styles.settingTextContainer}>
+                <Text style={styles.settingLabel}>Descanso Padrão</Text>
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#ccc" />
+                ) : (
+                  <Text style={styles.settingValue}>{formatRestTime(defaultRestTime)}</Text>
+                )}
+              </View>
+              <FontAwesome name="chevron-right" size={16} color="#555" />
+            </TouchableOpacity>
+
+            <View style={styles.settingItem}>
+              <FontAwesome name="bell-o" size={20} color="#ccc" style={styles.settingIcon} />
+              <View style={styles.settingTextContainer}>
+                <Text style={styles.settingLabel}>Notificar fim do descanso</Text>
+              </View>
+              <Switch
+                onValueChange={handleRestTimeNotificationToggle}
+                value={restTimeNotificationEnabled}
+                trackColor={{ false: "#767577", true: "#3B82F6" }}
               />
-            </Animated.View>
-          </GestureDetector>
+            </View>
+          </View>
+
+          {/* Sub-modal para a preferência de tela */}
+          <WorkoutScreenPreference
+            isVisible={isPreferenceModalVisible}
+            onClose={() => setPreferenceModalVisible(false)}
+            onSelectPreference={handleWorkoutScreenPreferenceSelect}
+            currentPreference={workoutScreenType}
+          />
+
+          {/* Drawer para o tempo de descanso */}
+          <RestTimeDrawer
+            visible={isRestTimeDrawerVisible}
+            onClose={() => setRestTimeDrawerVisible(false)}
+            onSave={handleRestTimeSave}
+            initialValue={defaultRestTime}
+          />
         </View>
-      </GestureHandlerRootView>
+      </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  centeredView: {
+  modalSafeArea: {
     flex: 1,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: "#030405",
   },
-  modalView: {
-    margin: 0,
-    backgroundColor: '#141414',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+  modalContainer: {
+    flexGrow: 1,
     padding: 20,
-    width: '100%',
-    height: '90%',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: -3,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    backgroundColor: "#030405",
   },
   modalHeader: {
     flexDirection: 'row',
@@ -230,54 +203,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalMainTitle: {
+  modalTitle: {
     color: '#fff',
     fontSize: 22,
     fontWeight: 'bold',
+    marginBottom: 20,
   },
   settingsList: {
     width: '100%',
   },
-  cardSettingItem: {
-    backgroundColor: '#2c2c2e',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-  },
-  switchSettingItem: {
+  settingItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    width: '100%',
+    backgroundColor: '#141414',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
   },
-  settingTitle: {
+  settingIcon: {
+    marginRight: 15,
+  },
+  settingTextContainer: {
+    flex: 1,
+  },
+  settingLabel: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
   },
-  cardContainer: {
-    flexDirection: 'row',
-    marginTop: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#555',
-    overflow: 'hidden',
-  },
-  cardOption: {
-    flex: 1,
-    padding: 15,
-    alignItems: 'center',
-  },
-  cardOptionText: {
+  settingValue: {
     color: '#aaa',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  cardOptionTextSelected: {
-    color: '#1cb0f6',
-  },
-  separator: {
-    width: 1,
-    backgroundColor: '#555',
+    fontSize: 14,
+    marginTop: 4,
   },
 });

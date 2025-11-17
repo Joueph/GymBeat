@@ -27,7 +27,7 @@ IOS
   ou
 
   ```
-  eas build --platform ios --profile development --local
+  eas build --platform ios --local
   ```
 
 

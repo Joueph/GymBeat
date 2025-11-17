@@ -1,10 +1,11 @@
 import { calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'; // Adicionado ThemedText
+import * as StoreReview from 'expo-store-review';
 // import { VideoView as Video, useVideoPlayer } from 'expo-video'; // Removido
 import { doc, getDoc } from 'firebase/firestore';
 import React, { memo, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'; // Adicionado Svg, Circle
 // import { BarChart, LineChart } from 'react-native-chart-kit'; // Removido
 import { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,11 +17,56 @@ import { getLogsByUsuarioId } from '../../services/logService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 // --- Imports dos novos componentes ---
-import { ThemedText } from '@/components/themed-text';
 import { Ficha } from '@/models/ficha';
+import { Treino } from '@/models/treino';
+import Svg, { Circle } from 'react-native-svg';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '../../components/exercicios/ExpandableExerciseItem';
 
+const StepIndicator = ({ currentStep, totalSteps }: { currentStep: number, totalSteps: number }) => (
+  <View style={styles.stepIndicatorContainer}>
+    {Array.from({ length: totalSteps }).map((_, index) => (
+      <View
+        key={index}
+        style={[styles.stepDot, index <= currentStep && styles.stepDotActive]}
+      />
+    ))}
+  </View>
+);
+
+const ProgressCircle = ({ progress, size = 32, strokeWidth = 2.5 }: { progress: number, size?: number, strokeWidth?: number }) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const strokeDashoffset = circumference - progress * circumference;
+
+  return (
+    <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
+      <Svg height={size} width={size} viewBox={`0 0 ${size} ${size}`}>
+        {/* Círculo de fundo */}
+        <Circle
+          stroke="#888"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          strokeWidth={strokeWidth}
+          opacity={0.3}
+        />
+        {/* Arco de progresso */}
+        <Circle
+          stroke="#3B82F6"
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Svg>
+    </View>
+  );
+};
 const ProgressBar = memo(({ progress }: { progress: number }) => (
 // ... (código existente da ProgressBar)
     <View style={styles.progressBarBackground}>
@@ -75,6 +121,7 @@ export default function TreinoCompletoScreen() {
     const router = useRouter();
 // ... (código existente de hooks)
     const { user } = useAuth();
+    const [step, setStep] = useState(0);
     const { logId } = useLocalSearchParams<{ logId: string }>();
 
     const [loading, setLoading] = useState(true);
@@ -82,6 +129,7 @@ export default function TreinoCompletoScreen() {
     const [log, setLog] = useState<Log | null>(null);
     const [duration, setDuration] = useState(0);
     const [weeklyProgress, setWeeklyProgress] = useState({ completed: 0, total: 2 });
+    const [scheduledTreinos, setScheduledTreinos] = useState<Treino[]>([]); // Novo estado para treinos da ficha
     const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
     const [weekStreak, setWeekStreak] = useState(0);
     const [currentVolume, setCurrentVolume] = useState(0);
@@ -221,6 +269,16 @@ export default function TreinoCompletoScreen() {
         } catch (error) { console.error("Error calculating completion data:", error); }
     };
 
+    const handleCloseAndReview = async () => {
+        // Verifica se o pop-up de avaliação está disponível no dispositivo
+        if (await StoreReview.isAvailableAsync()) {
+            // Solicita a avaliação. O sistema operacional decide se deve ou não mostrar o pop-up.
+            StoreReview.requestReview();
+        }
+        // Navega para a tela de treinos independentemente do resultado da avaliação
+        router.replace('/(tabs)/treinoHoje');
+    };
+
     if (loading) {
 // ... (código existente de loading)
         return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
@@ -234,46 +292,28 @@ export default function TreinoCompletoScreen() {
     // Config do gráfico movida para o componente
     
     const renderWeeklyCalendar = () => {
-      const weekDays = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];
+      const weekDays = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
       const today = new Date();
-      const currentDay = today.getDay();
+      const currentDayIndex = today.getDay();
   
-      const loggedDays = new Set(
-        allUserLogs.map(log => {
-          const logDate = toDate(log.horarioFim);
-          return logDate ? logDate.toDateString() : null;
-        })
-        .filter((d): d is string => d !== null)
-      );
+      const startOfWeek = getStartOfWeek(today);
   
-      const scheduledDays = activeFicha ? new Set(activeFicha.treinos.flatMap((t: any) => t.diasSemana)) : new Set();
-      
+      const logsThisWeek = allUserLogs.filter(log => {
+        const logDate = toDate(log.horarioFim);
+        return logDate && logDate >= startOfWeek;
+      });
+  
+      const trainedDays = new Set(logsThisWeek.map(log => toDate(log.horarioFim)?.getDay()));
+  
       return (
-        <View style={styles.calendarContainer}>
+        <View style={styles.weeklyCalendarContainer}>
           {weekDays.map((day, index) => {
-            const date = new Date();
-            date.setDate(today.getDate() - (currentDay - index));
-            const isToday = index === currentDay;
-            const isPast = index < currentDay;
-            
-            const isLogged = loggedDays.has(date.toDateString());
-            const dayString = DIAS_SEMANA_MAP[index] as any;
-            const isScheduled = scheduledDays.has(dayString);
-  
-            const isMissed = isPast && isScheduled && !isLogged;
-  
-            const dayStyles = [
-              styles.dayContainer,
-              (isPast || isToday) && styles.progressionOverlay,
-              isScheduled && !isLogged && !isMissed && styles.scheduledDay,
-              isLogged && styles.loggedDay,
-              isMissed && styles.missedDay,
-            ];
-            
+            const isToday = index === currentDayIndex;
+            const isTrained = trainedDays.has(index);
             return (
-              <View key={day} style={dayStyles}>
-                <ThemedText style={styles.dayText}>{day}</ThemedText>
-                <ThemedText style={styles.dateText}>{date.getDate()}</ThemedText>
+              <View key={index} style={[styles.dayContainer, isToday && styles.todayContainer]}>
+                <Text style={styles.dayText}>{day}</Text>
+                <View style={[styles.dayDot, isTrained && styles.dayDotFilled]} />
               </View>
             );
           })}
@@ -281,78 +321,107 @@ export default function TreinoCompletoScreen() {
       );
     };
 
-    const ListHeader = () => (
-// ... (código existente de ListHeader)
-        <>
-            <View style={styles.completeModalHeader}>
-              <Text style={styles.completeModalTitle}>Mandou Bem!</Text>
-// ... (código existente de ...Subtitle)
-              <Text style={styles.completeModalSubtitle}>Você completou o treino de hoje!</Text>
+    const StepProgress = () => (
+      <View style={styles.stepContainer}>
+        <View style={styles.statsSection}>
+          <Text style={styles.statsSectionTitle}>Seu Progresso</Text>
+          <View style={styles.progressItem}>
+            <Text style={styles.progressLabel}>Treinos da Semana ({weeklyProgress.completed}/{weeklyProgress.total})</Text>
+            {renderWeeklyCalendar()}
+          </View>
+          <View style={styles.progressItem}>
+            <Text style={styles.progressLabel}>Sequência de Semanas</Text>
+            <View style={styles.streakContainer}>
+              <FontAwesome name="fire" size={16} color="#FFA500" />
+              <Text style={styles.streakText}>{weekStreak} {weekStreak === 1 ? 'semana' : 'semanas'}</Text>
             </View>
-            <View style={styles.allStatsContainer}>
-// ... (código existente de ...statsSection Progresso)
-              <View style={styles.statsSection}>
-                <Text style={styles.statsSectionTitle}>Seu Progresso</Text>
-                <View style={styles.progressItem}><Text style={styles.progressLabel}>Treinos da Semana</Text>{renderWeeklyCalendar()}</View>
-                <View style={styles.progressItem}><Text style={styles.progressLabel}>Sequência de Semanas</Text><View style={styles.streakContainer}><FontAwesome name="fire" size={16} color="#FFA500" /><Text style={styles.streakText}>{weekStreak} {weekStreak === 1 ? 'semana' : 'semanas'}</Text></View></View>
-              </View>
-              <View style={styles.statsSection}>
-// ... (código existente de ...statsSection Desempenho)
-                <Text style={styles.statsSectionTitle}>Seu Desempenho</Text>
-                <View style={styles.performanceContainer}>
-                  <View style={styles.performanceCard}><FontAwesome name="clock-o" size={24} color="#1cb0f6" /><Text style={styles.performanceValue}>{formatDuration(duration)}</Text><Text style={styles.performanceLabel}>Tempo de Treino</Text></View>
-                  <View style={styles.performanceCard}><FontAwesome name="trophy" size={24} color="#1cb0f6" /><Text style={styles.performanceValue}>{log.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido)).length}</Text><Text style={styles.performanceLabel}>Exercícios Feitos</Text></View>
-                </View>
-              </View>
-              {currentVolume > 0 && (
-                <View style={styles.statsSection}>
-                  <Text style={styles.statsSectionTitle}>Evolução de Carga</Text>
-                  <View style={styles.volumeCard}>
-                    <Text style={styles.volumeValue}>{currentVolume.toLocaleString('pt-BR')} kg</Text>
-                    <Text style={styles.volumeLabel}>Carga total neste treino</Text>
-                    
-                    {/* --- SUBSTITUIÇÃO DO GRÁFICO --- */}
-                    {allUserLogs.length > 0 && (
-                        <HistoricoCargaTreinoChart
-                            currentLog={log}
-                            allUserLogs={allUserLogs}
-                            style={[styles.historyContainer, animatedChartStyle]}
-                            onDataReady={handleChartDataReady}
-                        />
-                    )}
-                    {/* --- FIM DA SUBSTITUIÇÃO --- */}
-                  </View>
-                </View>
+          </View>
+        </View>
+      </View>
+    );
+
+    const StepPerformance = () => (
+      <View style={styles.stepContainer}>
+        <View style={styles.statsSection}>
+          <Text style={styles.statsSectionTitle}>Seu Desempenho</Text>
+          <View style={styles.performanceContainer}><View style={styles.performanceCard}><FontAwesome name="clock-o" size={24} color="#3B82F6" /><Text style={styles.performanceValue}>{formatDuration(duration)}</Text><Text style={styles.performanceLabel}>Tempo de Treino</Text></View><View style={styles.performanceCard}><FontAwesome name="trophy" size={24} color="#3B82F6" /><Text style={styles.performanceValue}>{log.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido)).length}</Text><Text style={styles.performanceLabel}>Exercícios Feitos</Text></View>
+          </View>
+        </View>
+        {currentVolume > 0 && (
+          <View style={styles.statsSection}>
+            <Text style={styles.statsSectionTitle}>Evolução de Carga</Text>
+            <View style={styles.volumeCard}>
+              <Text style={styles.volumeValue}>{currentVolume.toLocaleString('pt-BR')} kg</Text>
+              <Text style={styles.volumeLabel}>Carga total neste treino</Text>
+              {allUserLogs.length > 0 && (
+                <HistoricoCargaTreinoChart
+                  currentLog={log}
+                  allUserLogs={allUserLogs}
+                  style={[styles.historyContainer, animatedChartStyle]}
+                  onDataReady={handleChartDataReady}
+                />
               )}
             </View>
-            <Text style={[styles.statsSectionTitle, { marginTop: 25, marginBottom: 15 }]}>Resumo dos Exercícios</Text>
-        </>
+          </View>
+        )}
+      </View>
     );
+
+    const StepExerciseSummary = () => (
+      <View style={styles.stepContainer}>
+        <Text style={[styles.statsSectionTitle, { marginTop: 0, marginBottom: 15 }]}>Resumo dos Exercícios</Text>
+        <FlatList
+          data={log.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido))}
+          keyExtractor={(item) => item.modeloId}
+          renderItem={({ item }) => (
+            <ExpandableExerciseItem
+              item={item}
+              allUserLogs={allUserLogs}
+              log={log}
+              userWeight={userWeight}
+            />
+          )}
+          scrollEnabled={false} // A rolagem principal cuida disso
+        />
+      </View>
+    );
+
+    const steps = [
+      <StepProgress key="progress" />,
+      <StepPerformance key="performance" />,
+      <StepExerciseSummary key="summary" />,
+    ];
 
     return (
         <SafeAreaView style={styles.container}>
             <Stack.Screen options={{ headerShown: false }} />
-            <FlatList
-                data={log.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido))} 
-                keyExtractor={(item) => item.modeloId}
-                // --- SUBSTITUIÇÃO DO RENDERITEM ---
-                renderItem={({ item }) => (
-                    <ExpandableExerciseItem 
-                        item={item} 
-                        allUserLogs={allUserLogs} 
-                        log={log}
-                        userWeight={userWeight}
-                    />
-                )}
-                // --- FIM DA SUBSTITUIÇÃO ---
-                ListHeaderComponent={ListHeader}
+            <View style={styles.completeModalHeader}>
+              <Text style={styles.completeModalTitle}>Mandou Bem!</Text>
+              <Text style={styles.completeModalSubtitle}>Você completou o treino de hoje!</Text>
+              <StepIndicator currentStep={step} totalSteps={steps.length} />
+            </View>
+            <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 80 }} // Space for the button
-            />
-            <TouchableOpacity style={styles.continueButton} onPress={() => router.replace('/(tabs)/treinoHoje')}>
-
-              <Text style={styles.continueButtonText}>Fechar</Text>
-            </TouchableOpacity>
+            >
+              {steps[step]}
+            </ScrollView>
+            <View style={styles.navigationButtonsContainer}>
+              {step > 0 && (
+                <TouchableOpacity style={[styles.navButton, styles.prevButton]} onPress={() => setStep(s => s - 1)}>
+                  <Text style={styles.navButtonText}>Voltar</Text>
+                </TouchableOpacity>
+              )}
+              {step < steps.length - 1 ? (
+                <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={() => setStep(s => s + 1)}>
+                  <Text style={styles.navButtonText}>Próximo</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={handleCloseAndReview}>
+                  <Text style={styles.navButtonText}>Fechar</Text>
+                </TouchableOpacity>
+              )}
+            </View>
         </SafeAreaView>
     );
 }
@@ -371,8 +440,8 @@ const styles = StyleSheet.create({
     },
     container: {
         flex: 1,
-        backgroundColor: '#141414',
-        paddingHorizontal: 15,
+        backgroundColor: '#0B0D10',
+        paddingHorizontal: 0,
         justifyContent: 'space-between',
     },
     completeModalHeader: {
@@ -380,6 +449,7 @@ const styles = StyleSheet.create({
         width: '100%',
         paddingBottom: 30,
         paddingTop: 30,
+        paddingHorizontal: 15,
     },
     completeModalTitle: {
         color: '#fff',
@@ -406,10 +476,16 @@ const styles = StyleSheet.create({
         fontSize: 20,
         fontWeight: 'bold',
         marginBottom: 15,
+        paddingHorizontal: 15,
         textAlign: 'left',
     },
     progressItem: {
         marginBottom: 15,
+        backgroundColor: '#1A1D23',
+        borderRadius: 12,
+        borderWidth: 0.5,
+        borderColor: '#2A2E37',
+        padding: 20,
     },
     progressLabel: {
         color: '#ccc',
@@ -435,7 +511,7 @@ const styles = StyleSheet.create({
     },
     streakContainer: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         backgroundColor: '#222',
         padding: 10,
         borderRadius: 8,
@@ -449,12 +525,14 @@ const styles = StyleSheet.create({
     performanceContainer: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        gap: 15,
+        gap: 8,
     },
     performanceCard: {
         flex: 1,
-        backgroundColor: '#222',
+        backgroundColor: '#1A1D23',
         borderRadius: 12,
+        borderWidth: 0.5,
+        borderColor: '#2A2E37',
         padding: 15,
         alignItems: 'center',
         justifyContent: 'center',
@@ -470,26 +548,13 @@ const styles = StyleSheet.create({
         fontSize: 14,
         marginTop: 4,
     },
-    continueButton: {
-        backgroundColor: '#1cb0f6',
-        paddingVertical: 15,
-        borderRadius: 10,
-        width: '100%',
-        alignItems: 'center',
-        position: 'absolute',
-        bottom: 20,
-        left: 15,
-    },
-    continueButtonText: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: 'bold',
-    },
     volumeCard: {
-        backgroundColor: '#1f1f1f',
+        backgroundColor: '#1A1D23',
         borderRadius: 12,
+        borderWidth: 0.5,
+        borderColor: '#2A2E37',
         padding: 20,
-        alignItems: 'center',
+        alignItems: 'flex-start',
         width: '100%',
     },
     volumeValue: {
@@ -529,57 +594,84 @@ const styles = StyleSheet.create({
         paddingTop: 15,
         overflow: 'hidden', 
     },
-    // Calendar Styles
-    calendarContainer: {
+    weeklyCalendarContainer: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      padding: 8,
-      backgroundColor: '#1f1f1f',
-      borderRadius: 15,
-      borderWidth: 1,
-      borderTopColor: '#ffffff2a',
-      borderLeftColor: '#ffffff2a', 
-      borderBottomColor: '#ffffff1a',
-      borderRightColor: '#ffffff1a',
-      width: '100%',
+      backgroundColor: 'transparent',
+      padding: 10,
+      borderRadius: 8,
     },
     dayContainer: {
       alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      flex: 1,
       paddingVertical: 8,
-      paddingHorizontal: 2 ,
-      borderRadius: 10,
-      flexDirection: 'column',
-      justifyContent: 'space-between',
-      gap: 1,
-      flexBasis: '13%',  
+      borderRadius: 6,
     },
-    progressionOverlay: {
-      backgroundColor: '#ffffff1a',
+    todayContainer: {
+      backgroundColor: '#1A1D23',
     },
-    loggedDay: {
-      backgroundColor: '#00A6FF33',
-      borderColor: '#00A6FF',
-      borderWidth: 1.5,
+    dayDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: '#555',
     },
-    missedDay: {
-      borderColor: '#FFA500',
-      borderWidth: 1.5,
-    },
-    scheduledDay: {
-      borderWidth: 1.5,
-      borderTopColor: '#ffffff2a',
-      borderLeftColor: '#ffffff2a', 
-      borderBottomColor: '#ffffff1a',
-      borderRightColor: '#ffffff1a',
-      backgroundColor: '#ffffff0d',
+    dayDotFilled: {
+      backgroundColor: '#3B82F6',
     },
     dayText: {
+      color: '#ccc',
+      fontSize: 12,
       fontWeight: 'bold',
-      color: '#E0E0E0',
     },
-    dateText: {
-      marginTop: 5,
-      color: '#FFFFFF',
+    stepContainer: {
+      paddingHorizontal: 15,
+    },
+    navigationButtonsContainer: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      padding: 15,
+      borderTopWidth: 1,
+      borderTopColor: '#2A2E37',
+      backgroundColor: '#141414',
+    },
+    navButton: {
+      paddingVertical: 12,
+      paddingHorizontal: 30,
+      borderRadius: 8,
+      flex: 1,
+      alignItems: 'center',
+    },
+    prevButton: {
+      backgroundColor: '#1A1D23',
+      borderWidth: 0.5,
+      borderColor: '#2A2E37',
+      marginRight: 10,
+    },
+    nextButton: {
+      backgroundColor: '#3B82F6',
+    },
+    navButtonText: {
+      color: '#fff',
+      fontSize: 16,
+      fontWeight: 'bold',
+    },
+    stepIndicatorContainer: {
+      flexDirection: 'row',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 20,
+    },
+    stepDot: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: '#444',
+    },
+    stepDotActive: {
+      backgroundColor: '#3B82F6',
     },
     // Estilos de exerciseItem removidos (agora estão no componente)
 });

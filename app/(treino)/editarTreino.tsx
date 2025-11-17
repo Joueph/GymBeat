@@ -285,6 +285,7 @@ export default function EditarTreinoScreen() {
   const [isDaySelectorVisible, setDaySelectorVisible] = useState(false);
   // Estados para controlar o RepetitionsDrawer
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
+  const [isDefaultRestTimeDrawerVisible, setDefaultRestTimeDrawerVisible] = useState(false);
   const [isRestTimeModalVisible, setIsRestTimeModalVisible] = useState(false);
   const [editingIndices, setEditingIndices] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
@@ -425,6 +426,27 @@ export default function EditarTreinoScreen() {
     const updatedExercise = { ...treino.exercicios[exerciseIndex], restTime: newRestTime };
     handleUpdateExercise(updatedExercise, exerciseIndex);
     setIsRestTimeModalVisible(false);
+  };
+
+  const handleDefaultRestTimeSave = (newSeconds: number) => {
+    if (!treino) return;
+
+    const oldDefaultSeconds = (treino.intervalo.min * 60) + treino.intervalo.seg;
+
+    const updatedExercicios = treino.exercicios.map(ex => {
+      // Se o tempo de descanso do exercício for o padrão antigo, atualiza para o novo.
+      // Se for diferente, mantém o valor customizado pelo usuário.
+      if (ex.restTime === oldDefaultSeconds) {
+        return { ...ex, restTime: newSeconds };
+      }
+      return ex;
+    });
+
+    const newMin = Math.floor(newSeconds / 60);
+    const newSeg = newSeconds % 60;
+
+    setTreino({ ...treino, exercicios: updatedExercicios, intervalo: { min: newMin, seg: newSeg } });
+    setDefaultRestTimeDrawerVisible(false);
   };
 
   // Obtém o valor inicial de repetições para passar ao drawer
@@ -674,16 +696,26 @@ export default function EditarTreinoScreen() {
                 placeholder="Nome do Treino"
                 placeholderTextColor="#888"
               />
-              <TouchableOpacity
-                style={styles.daySelectorContainer}
-                onPress={() => setDaySelectorVisible(true)}
-              >
-                <Text style={styles.daySelectorText} numberOfLines={1}>
-                  {treino.diasSemana.length > 0
-                    ? treino.diasSemana.join(', ').toUpperCase() : 'Dias da semana'}
-                </Text>
-                <FontAwesome name={treino.diasSemana.length > 0 ? "calendar" : "chevron-down"} size={16} color="#ccc" />
-              </TouchableOpacity>
+              <View style={styles.headerActionsContainer}>
+                <TouchableOpacity
+                  style={styles.daySelectorContainer}
+                  onPress={() => setDefaultRestTimeDrawerVisible(true)}
+                >
+                  <FontAwesome name="clock-o" size={16} color="#ccc" />
+                  <Text style={styles.daySelectorText} numberOfLines={1}>
+                    {formatRestTime((treino.intervalo.min * 60) + treino.intervalo.seg)}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.daySelectorContainer}
+                  onPress={() => setDaySelectorVisible(true)}
+                >
+                  <Text style={styles.daySelectorText} numberOfLines={1}>
+                    {treino.diasSemana.length > 0 ? treino.diasSemana.join(', ').toUpperCase() : 'Dias'}
+                  </Text>
+                  <FontAwesome name="calendar" size={16} color="#ccc" />
+                </TouchableOpacity>
+              </View>
             </View>
           }
           ListFooterComponent={
@@ -759,12 +791,17 @@ export default function EditarTreinoScreen() {
         onSave={handleRestTimeSave}
         initialValue={getRestTimeValue()}
       />
+      
+      <RestTimeDrawer
+        visible={isDefaultRestTimeDrawerVisible}
+        onClose={() => setDefaultRestTimeDrawerVisible(false)}
+        onSave={handleDefaultRestTimeSave}
+        initialValue={treino ? (treino.intervalo.min * 60) + treino.intervalo.seg : 90}
+      />
 
       <WorkoutSettingsModal
         isVisible={isSettingsModalVisible}
         onClose={() => setSettingsModalVisible(false)}
-        currentWorkoutScreenType={workoutScreenType}
-        onWorkoutScreenTypeChange={setWorkoutScreenType}
       />
 
     </SafeAreaView>
@@ -841,9 +878,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 16,
-
+    paddingTop: 16,
+    paddingBottom: 8,
     borderBottomColor: '#222',
+  },
+  headerActionsContainer: {
+    flexDirection: 'row',
   },
   titleInput: {
     color: '#fff',
@@ -852,7 +892,6 @@ const styles = StyleSheet.create({
     flex: 1, // Allows the input to take available space
     borderBottomWidth: 1,
     borderColor: '#222',
-    paddingHorizontal: 10,
     paddingBottom: 5,
   },
   exercicioCard: {
@@ -1068,9 +1107,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderRadius: 8,
     gap: 8,
+    backgroundColor: '#1A1D23',
+    marginLeft: 8,
   },
   daySelectorText: {
     color: '#fff',

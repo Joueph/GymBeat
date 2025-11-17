@@ -40,7 +40,7 @@ const toDate = (date: any): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
-interface UserSettings {
+export interface UserSettings {
   notifications: NotificationSettings;
   privacy: PrivacySettings & { profileVisibility: 'todos' | 'amigos' | 'ninguem' };
 }
@@ -49,6 +49,20 @@ type ProfileWithSettings = Partial<Usuario> & {
   settings?: UserSettings;
   expoPushToken?: string;
   novoPeso?: string; // Propriedade para o campo de input do novo peso
+};
+
+const defaultNotificationSettings: NotificationSettings = {
+  workoutReminders: true,
+  workoutReminderTime: { hour: 9, minute: 0 },
+  restTimeEnding: true,
+  creatine: true,
+  protein: true,
+  hypercaloric: false,
+  friendWorkoutDone: true,
+};
+
+const defaultPrivacySettings: PrivacySettings = {
+  profileVisibility: 'amigos', weekStreak: 'todos', workoutDays: 'todos', workoutDetails: 'amigos', autoAcceptFriendRequests: false
 };
 
 export default function PerfilScreen() {
@@ -494,12 +508,11 @@ const handleUpdate = async () => {
             </TouchableOpacity>
           </View>
           <SettingsPage
-            initialSettings={profile.settings ?? {
-              notifications: {
-                restTimeEnding: true, morningWorkout: false, afternoonWorkout: true, nightWorkout: false, creatine: true, protein: true, hypercaloric: false, friendWorkoutDone: true,
-              },
-              privacy: { profileVisibility: 'amigos', weekStreak: 'todos', workoutDays: 'todos', workoutDetails: 'amigos', autoAcceptFriendRequests: false }
-            }}
+            initialSettings={{
+              // Merge saved settings with defaults to prevent crashes on missing properties
+              notifications: { ...defaultNotificationSettings, ...profile.settings?.notifications },
+              privacy: { ...defaultPrivacySettings, ...profile.settings?.privacy }
+            } as UserSettings}
             onSettingsChange={handleSettingsChange}
           />
         </SafeAreaView>

@@ -66,7 +66,6 @@ export const TimeBasedSetDrawer = ({ visible, onClose, onSave, initialValue }: T
                   step={5} // Garante que os valores sejam múltiplos de 5
                   value={seconds}
                   onChange={handleSecondsChange}
-                  initialValue={seconds}
                   vertical
                 />
               </View>

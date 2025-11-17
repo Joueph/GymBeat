@@ -15,6 +15,7 @@ import React, { useCallback, useState } from 'react'; // Adicionado ScrollView
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import { useAuth } from '../authprovider';
+import { ConfigIcon } from '../icon/ConfigIcon';
 
 import { MetricCard } from '@/components/MetricCard';
 const ProgressCircle = ({ progress, size = 32, strokeWidth = 2.5 }: { progress: number, size?: number, strokeWidth?: number }) => {
@@ -412,6 +413,9 @@ export default function HomeScreen() {
       <ScrollView contentContainerStyle={styles.scrollContentContainer}>
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>Progresso</Text>
+          <TouchableOpacity style={styles.framedConfigButton} onPress={() => router.push('/settings')}>
+            <ConfigIcon width={16} height={16} rotation={90} />
+          </TouchableOpacity>
         </View>
         {renderWeeklyCalendar()}
         <Text style={styles.sectionTitle}>Minha semana</Text>
@@ -474,6 +478,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
 
     marginBottom: 10,
+  },
+  framedConfigButton: {
+    backgroundColor: '#141414',
+    borderRadius: 110,
+    borderColor: '#ffffff1a',
+    borderWidth: 0.5,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerTitle: {
     color: '#EAEAEA',

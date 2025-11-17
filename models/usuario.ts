@@ -18,6 +18,7 @@ export interface Usuario {
   nivel?: 'Iniciante' | 'Intermediário' | 'Avançado';
   fichas?: Ficha[];
 // --- ADICIONE ESTES CAMPOS ---
+  defaultRestTime?: { min: number; seg: number }; // Tempo de descanso padrão em minutos e segundos
   objetivoPrincipal?: string | null;
   localTreino?: string | null;
   possuiEquipamentosCasa?: boolean | null;

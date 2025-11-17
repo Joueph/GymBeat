@@ -152,7 +152,6 @@ export const RepetitionsDrawer = ({ visible, onClose, onSave, initialValue }: Re
                       max={50}
                       value={minReps}
                       onChange={handleMinRepsChange}
-                      initialValue={minReps}
                       vertical
                       validRange={{ min: 1, max: maxReps - 1 }}
                     />
@@ -168,7 +167,6 @@ export const RepetitionsDrawer = ({ visible, onClose, onSave, initialValue }: Re
                       max={50}
                       value={maxReps}
                       onChange={handleMaxRepsChange}
-                      initialValue={maxReps}
                       vertical
                       // Passando os limites válidos para o componente
                       validRange={{ min: minReps + 1, max: minReps + MAX_REP_DIFF }}
@@ -184,7 +182,6 @@ export const RepetitionsDrawer = ({ visible, onClose, onSave, initialValue }: Re
                     max={50}
                     value={singleRep}
                     onChange={setSingleRep}
-                    initialValue={singleRep}
                     vertical
                   />
                 </View>

@@ -1,6 +1,7 @@
 import { RepetitionsDrawer } from '@/components/RepetitionsDrawer';
 import { RestTimeDrawer } from '@/components/RestTimeDrawer';
 import { SetOptionsMenu } from '@/components/SetOptionsMenu';
+import { VideoListItem } from '@/components/VideoListItem';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { Log } from '@/models/log';
 import { Treino } from '@/models/treino';
@@ -86,9 +87,6 @@ const LoggedExerciseCard = ({
   startRestTimer: (duration: number, isExercise: boolean, timedSetInfo?: { exerciseIndex: number, setIndex: number }) => void;
   onMenuStateChange: (isOpen: boolean) => void;
 }) => {
-  // CORREÇÃO: Usa o componente VideoListItem de 'ongoingWorkout' que já foi corrigido.
-  const { VideoListItem } = require('./ongoingWorkout');
-
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
   const [exerciseNotes, setExerciseNotes] = useState(item.notes || '');
@@ -1265,8 +1263,6 @@ useEffect(() => {
                                                       <WorkoutSettingsModal
                                                         isVisible={isSettingsModalVisible}
                                                         onClose={() => setSettingsModalVisible(false)}
-                                                        currentWorkoutScreenType={workoutScreenType}
-                                                        onWorkoutScreenTypeChange={setWorkoutScreenType}
                                                       />
                   
                                                       </SafeAreaView>                  

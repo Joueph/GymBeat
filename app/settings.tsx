@@ -1,16 +1,19 @@
 import * as Notifications from 'expo-notifications';
 import React, { ReactNode, useEffect, useState } from "react";
 import { Linking, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
-
+import { TimePickerDrawer } from '../components/TimePickerDrawer';
+import { getUserProfile, updateUserProfile } from '../userService';
+import { useAuth } from './authprovider';
 // --- Tipos para as Configurações ---
 type PrivacyLevel = 'todos' | 'amigos' | 'ninguem';
+type UserSettings = { notifications: NotificationSettings; privacy: PrivacySettings; };
 
 export interface NotificationSettings {
   // Treinos
+  workoutReminders: boolean;
+  workoutReminderTime?: { hour: number; minute: number };
   restTimeEnding: boolean;
-  morningWorkout: boolean;
-  afternoonWorkout: boolean;
-  nightWorkout: boolean;
+
   // Lembretes
   creatine: boolean;
   protein: boolean;
@@ -79,10 +82,9 @@ const CollapsibleSection = ({ title, children }: { title: string; children: Reac
 // --- Componente Principal da Página de Opções ---
 
 const defaultNotificationSettings: NotificationSettings = {
+    workoutReminders: true,
+    workoutReminderTime: { hour: 9, minute: 0 },
     restTimeEnding: true,
-    morningWorkout: false,
-    afternoonWorkout: true,
-    nightWorkout: false,
     creatine: true,
     protein: true,
     hypercaloric: false,
@@ -105,10 +107,39 @@ interface SettingsPageProps {
     onSettingsChange: (newSettings: { notifications: NotificationSettings; privacy: PrivacySettings }) => void;
 }
 
-const SettingsPage = ({ initialSettings, onSettingsChange }: SettingsPageProps) => {
-  const [notifications, setNotifications] = useState(initialSettings?.notifications || defaultNotificationSettings);
-  const [privacy, setPrivacy] = useState(initialSettings?.privacy || defaultPrivacySettings);
+const SettingsPage = ({ initialSettings, onSettingsChange }: Partial<SettingsPageProps>) => {
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState(initialSettings?.notifications ?? defaultNotificationSettings);
+  const [privacy, setPrivacy] = useState(initialSettings?.privacy ?? defaultPrivacySettings);
   const [permissionStatus, setPermissionStatus] = useState<Notifications.PermissionStatus | null>(null);
+  const [isTimePickerVisible, setTimePickerVisible] = useState(false);
+
+  useEffect(() => {
+    // If the component is used as a standalone page, initialSettings will be undefined.
+    // We should fetch the settings from the user profile.
+    if (!initialSettings && user) {
+      getUserProfile(user.id).then(profile => {
+        if (profile?.settings) {
+          // Merge fetched settings with defaults to ensure all keys exist
+          const mergedNotifications = { ...defaultNotificationSettings, ...profile.settings.notifications };
+          const mergedPrivacy = { ...defaultPrivacySettings, ...profile.settings.privacy };
+          setNotifications(mergedNotifications);
+          setPrivacy(mergedPrivacy);
+        }
+      });
+    }
+  }, [initialSettings, user]);
+
+  const handleSettingsSave = async (newSettings: UserSettings) => {
+    if (onSettingsChange) {
+      // If used as a modal component, just call the callback
+      onSettingsChange(newSettings);
+    } else if (user) {
+      // If used as a standalone page, update the profile directly
+      await updateUserProfile(user.id, { settings: newSettings });
+    }
+  };
+
 
   useEffect(() => {
     const checkPermissions = async () => {
@@ -131,22 +162,27 @@ const SettingsPage = ({ initialSettings, onSettingsChange }: SettingsPageProps) 
     }
   };
 
-  const handleNotificationChange = (key: keyof NotificationSettings, value: boolean) => {
+  const handleNotificationChange = <K extends keyof NotificationSettings>(key: K, value: NotificationSettings[K]) => {
     const newSettings = { ...notifications, [key]: value };
     setNotifications(newSettings);
-    onSettingsChange({ notifications: newSettings, privacy });
+    handleSettingsSave({ notifications: newSettings, privacy });
+  };
+
+  const handleTimeChange = (time: { hour: number; minute: number }) => {
+    handleNotificationChange('workoutReminderTime', time); // Corrigido
+    setTimePickerVisible(false);
   };
 
   const handlePrivacyChange = (key: keyof PrivacySettings, value: PrivacyLevel) => {
     const newSettings = { ...privacy, [key]: value };
     setPrivacy(newSettings);
-    onSettingsChange({ notifications, privacy: newSettings });
+    handleSettingsSave({ notifications, privacy: newSettings });
   };
 
   const handlePrivacySwitchChange = (key: keyof PrivacySettings, value: boolean) => {
     const newSettings = { ...privacy, [key]: value };
     setPrivacy(newSettings);
-    onSettingsChange({ notifications, privacy: newSettings });
+    handleSettingsSave({ notifications, privacy: newSettings });
   };
 
   return (
@@ -167,11 +203,23 @@ const SettingsPage = ({ initialSettings, onSettingsChange }: SettingsPageProps) 
       {/* Seção de Notificações */}
       <CollapsibleSection title="Notificações">
         <Text style={styles.subHeader}>Treinos</Text>
+        <View style={styles.settingItem}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.settingLabel}>Lembretes de treinos</Text>
+            <Text style={styles.settingDescription}>Vamos te enviar uma notificação nos dias que sua ficha ativa tiver treinos marcados.</Text>
+          </View>
+          <Switch trackColor={{ false: "#767577", true: "#81b0ff" }} thumbColor={notifications.workoutReminders ? "#ffffff" : "#f4f3f4"} ios_backgroundColor="#3e3e3e" onValueChange={(v) => handleNotificationChange('workoutReminders', v)} value={notifications.workoutReminders} />
+        </View>
+        {notifications.workoutReminders && (
+          <TouchableOpacity style={styles.settingItem} onPress={() => setTimePickerVisible(true)}>
+            <Text style={styles.settingLabel}>Horário do lembrete</Text>
+            <Text style={styles.timeValueText}>{/* Ensure workoutReminderTime exists before accessing its properties */}
+              {String(notifications.workoutReminderTime?.hour ?? 9).padStart(2, '0')}:{String(notifications.workoutReminderTime?.minute ?? 0).padStart(2, '0')}
+            </Text>
+          </TouchableOpacity>
+        )}
         <SwitchSetting label="Acabando o tempo do intervalo" isEnabled={notifications.restTimeEnding} onToggle={(v) => handleNotificationChange('restTimeEnding', v)} />
-        <SwitchSetting label="Notificação matinal" isEnabled={notifications.morningWorkout} onToggle={(v) => handleNotificationChange('morningWorkout', v)} />
-        <SwitchSetting label="Lembrete de treino vespertino" isEnabled={notifications.afternoonWorkout} onToggle={(v) => handleNotificationChange('afternoonWorkout', v)} />
-        <SwitchSetting label="Lembrete de treino noturno" isEnabled={notifications.nightWorkout} onToggle={(v) => handleNotificationChange('nightWorkout', v)} />
-
+        
         <Text style={styles.subHeader}>Lembretes</Text>
         <SwitchSetting label="Lembrete para tomar creatina" isEnabled={notifications.creatine} onToggle={(v) => handleNotificationChange('creatine', v)} />
         <SwitchSetting label="Lembrete de suplementos proteicos" isEnabled={notifications.protein} onToggle={(v) => handleNotificationChange('protein', v)} />
@@ -189,6 +237,13 @@ const SettingsPage = ({ initialSettings, onSettingsChange }: SettingsPageProps) 
         <PrivacySetting label="Quem pode ver detalhes do meu treino" value={privacy.workoutDetails} onChange={(v) => handlePrivacyChange('workoutDetails', v)} />
         <SwitchSetting label="Aceitar pedidos de amizade automaticamente" isEnabled={privacy.autoAcceptFriendRequests} onToggle={(v) => handlePrivacySwitchChange('autoAcceptFriendRequests', v)} />
       </CollapsibleSection>
+
+      <TimePickerDrawer
+        visible={isTimePickerVisible}
+        onClose={() => setTimePickerVisible(false)}
+        onSave={handleTimeChange}
+        initialTime={notifications.workoutReminderTime ?? { hour: 9, minute: 0 }}
+      />
     </ScrollView>
   );
 };
@@ -247,6 +302,11 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 10,
   },
+  settingDescription: {
+    color: '#aaa',
+    fontSize: 12,
+    marginTop: 4,
+  },
   permissionStatusText: {
     color: '#aaa',
     fontSize: 12,
@@ -283,6 +343,11 @@ const styles = StyleSheet.create({
   privacyOptionText: {
     color: '#fff',
     fontWeight: '500',
+  },
+  timeValueText: {
+    color: '#1cb0f6',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 

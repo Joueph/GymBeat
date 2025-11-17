@@ -76,6 +76,7 @@ function MainNavigation() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="perfil" options={{ title: 'Meu Perfil', presentation: 'modal' }} />
+        <Stack.Screen name="settings" options={{ title: 'Configurações', presentation: 'modal' }} />
         <Stack.Screen name="(treino)" options={{ headerShown: false }} />
         <Stack.Screen name="(projetos)" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />

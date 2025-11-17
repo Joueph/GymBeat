@@ -47,7 +47,7 @@ export const RestTimeDrawer = ({ visible, onClose, onSave, initialValue }: RestT
   return (
     <Modal
       animationType="slide"
-      transparent={true}
+      transparent={true} // Permite que o overlay seja visto
       visible={visible}
       onRequestClose={onClose}
     >
@@ -69,7 +69,6 @@ export const RestTimeDrawer = ({ visible, onClose, onSave, initialValue }: RestT
                   max={10}
                   value={minutes}
                   onChange={setMinutes}
-                  initialValue={minutes}
                   vertical
                 />
               </View>
@@ -84,8 +83,7 @@ export const RestTimeDrawer = ({ visible, onClose, onSave, initialValue }: RestT
                   max={55}
                   step={5} // Garante que os valores sejam múltiplos de 5
                   value={seconds}
-                  onChange={handleSecondsChange}
-                  initialValue={seconds}
+                  onChange={setSeconds}
                   vertical
                 />
               </View>
@@ -110,7 +108,7 @@ const styles = StyleSheet.create({
   },
   drawerContainer: {
     height: '65%',
-    backgroundColor: '#000',
+    backgroundColor: '#0B0D10',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     padding: 20,
@@ -134,7 +132,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    height: 300,
+    height: 300, // Altura fixa para a área do slider
     overflow: 'hidden',
   },
   listContainer: {
@@ -155,11 +153,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 36,
     fontWeight: 'bold',
-    marginHorizontal: 25,
-    paddingBottom: 20, // Ajuste para alinhar com os números
+    marginHorizontal: 25, // Espaçamento entre os sliders
   },
   saveButton: {
-    backgroundColor: '#1cb0f6',
+    backgroundColor: '#3B82F6',
     height: 60,
     borderRadius: 10,
     alignItems: 'center',

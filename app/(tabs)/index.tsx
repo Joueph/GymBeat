@@ -18,6 +18,7 @@ import { useAuth } from '../authprovider';
 import { ConfigIcon } from '../icon/ConfigIcon';
 
 import { MetricCard } from '@/components/MetricCard';
+import { FeatureUpvoteModal } from '../FeatureUpvoteModal';
 const ProgressCircle = ({ progress, size = 32, strokeWidth = 2.5 }: { progress: number, size?: number, strokeWidth?: number }) => {
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
@@ -60,6 +61,7 @@ export default function HomeScreen() {
   const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
   const [userProfile, setUserProfile] = useState<Usuario | null>(null);
   const [isWeightDrawerVisible, setWeightDrawerVisible] = useState(false);
+  const [isFeatureUpvoteModalVisible, setFeatureUpvoteModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -413,9 +415,14 @@ export default function HomeScreen() {
       <ScrollView contentContainerStyle={styles.scrollContentContainer}>
         <View style={styles.headerContainer}>
           <Text style={styles.headerTitle}>Progresso</Text>
-          <TouchableOpacity style={styles.framedConfigButton} onPress={() => router.push('/settings')}>
-            <ConfigIcon width={16} height={16} rotation={90} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.framedConfigButton} onPress={() => setFeatureUpvoteModalVisible(true)}>
+                <Ionicons name="arrow-up" size={16} color="#EAEAEA" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.framedConfigButton} onPress={() => router.push('/settings')}>
+              <ConfigIcon width={16} height={16} rotation={90} />
+            </TouchableOpacity>
+          </View>
         </View>
         {renderWeeklyCalendar()}
         <Text style={styles.sectionTitle}>Minha semana</Text>
@@ -456,6 +463,12 @@ export default function HomeScreen() {
           onSave={handleSaveWeight}
           initialValue={getLatestWeight()}
         />
+
+        <FeatureUpvoteModal
+          visible={isFeatureUpvoteModalVisible}
+          onClose={() => setFeatureUpvoteModalVisible(false)}
+        />
+
       </ScrollView>
       <OngoingWorkoutFooter />
     </View>
@@ -478,6 +491,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
 
     marginBottom: 10,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   framedConfigButton: {
     backgroundColor: '#141414',

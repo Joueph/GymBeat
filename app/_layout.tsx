@@ -75,6 +75,8 @@ function MainNavigation() {
         }}
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="FeatureUpvoteModal" options={{ title: 'FeatureUpvoteModal', presentation: 'modal' }} />
+        <Stack.Screen name="SuggestFeatureModal" options={{ title: 'SuggestFeatureModal', presentation: 'modal' }} />
         <Stack.Screen name="perfil" options={{ title: 'Meu Perfil', presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ title: 'Configurações', presentation: 'modal' }} />
         <Stack.Screen name="(treino)" options={{ headerShown: false }} />

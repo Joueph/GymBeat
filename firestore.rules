@@ -132,7 +132,29 @@ match /exerciciosModelos/{exercicioModeloId} {
   allow read: if request.auth != null;
   allow create: if isOwner(request.resource.data.userId);
   allow update, delete: if isOwner(resource.data.userId) && resource.data.isCustom == true;
+  allow write: if false;
 }
 
+// =================================================================
+// Regras para a Coleção de Sugestão de Funcionalidades (feature_suggestions)
+// =================================================================
+match /feature_suggestions/{suggestionId} {
+  // Qualquer usuário autenticado pode ler as sugestões.
+  allow read: if request.auth != null;
+
+  // Permite que um usuário autenticado crie uma nova sugestão,
+  // validando que ele é o criador e que o voto inicial é 1.
+  allow create: if request.auth != null
+                && request.resource.data.createdBy == request.auth.uid
+                && request.resource.data.votes == 1
+                && request.resource.data.votedBy[0] == request.auth.uid;
+
+  // Permite que um usuário autenticado atualize uma sugestão (vote),
+  // mas apenas se ele ainda não votou.
+  // Garante que apenas o campo 'votes' e 'votedBy' sejam alterados.
+  allow update: if request.auth != null
+                && !(request.auth.uid in resource.data.votedBy)
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'votedBy']);
+}
 }
 }

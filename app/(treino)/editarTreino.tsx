@@ -431,7 +431,8 @@ export default function EditarTreinoScreen() {
   const handleDefaultRestTimeSave = (newSeconds: number) => {
     if (!treino) return;
 
-    const oldDefaultSeconds = (treino.intervalo.min * 60) + treino.intervalo.seg;
+    // Adiciona um fallback para o caso de o intervalo não estar definido no treino.
+    const oldDefaultSeconds = (treino.intervalo?.min ?? 1) * 60 + (treino.intervalo?.seg ?? 30);
 
     const updatedExercicios = treino.exercicios.map(ex => {
       // Se o tempo de descanso do exercício for o padrão antigo, atualiza para o novo.
@@ -703,7 +704,9 @@ export default function EditarTreinoScreen() {
                 >
                   <FontAwesome name="clock-o" size={16} color="#ccc" />
                   <Text style={styles.daySelectorText} numberOfLines={1}>
-                    {formatRestTime((treino.intervalo.min * 60) + treino.intervalo.seg)}
+                    {treino && treino.intervalo
+                      ? formatRestTime((treino.intervalo.min * 60) + treino.intervalo.seg)
+                      : '...'}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -796,7 +799,7 @@ export default function EditarTreinoScreen() {
         visible={isDefaultRestTimeDrawerVisible}
         onClose={() => setDefaultRestTimeDrawerVisible(false)}
         onSave={handleDefaultRestTimeSave}
-        initialValue={treino ? (treino.intervalo.min * 60) + treino.intervalo.seg : 90}
+        initialValue={treino && treino.intervalo ? (treino.intervalo.min * 60) + treino.intervalo.seg : 90}
       />
 
       <WorkoutSettingsModal

@@ -1,14 +1,11 @@
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { addTreino, deleteTreino, getTreinoById, updateTreino } from '@/services/treinoService';
 import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
-import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   LayoutAnimation,
   Modal,
   Platform,
@@ -25,6 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { RepetitionsDrawer } from '../../components/RepetitionsDrawer';
 import { RestTimeDrawer } from '../../components/RestTimeDrawer'; // Importa o novo componente
 import { SetOptionsMenu } from '../../components/SetOptionsMenu';
+import { VideoListItem } from '../../components/VideoListItem';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
 import { getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
@@ -45,62 +43,6 @@ interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
   isWarmup?: boolean;
-}
-
-export function VideoListItem({ uri, style }: { uri: string; style: any }) {
-  const [localUri, setLocalUri] = useState<string | null>(null);
-  const imageExtensions = ['.heic', '.jpg', '.jpeg', '.png', '.webp'];
-  const isImage = imageExtensions.some(ext => uri?.toLowerCase().endsWith(ext));
-
-  useEffect(() => {
-    const manageMedia = async () => {
-      if (!uri) return;
-
-      if (uri.startsWith('file://')) {
-        setLocalUri(uri);
-        return;
-      }
-
-      const fileName = uri.split('/').pop()?.split('?')[0];
-      if (!fileName) return;
-
-      const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
-      const fileInfo = await FileSystem.getInfoAsync(localFileUri);
-
-      if (fileInfo.exists) {
-        setLocalUri(localFileUri);
-      } else {
-        try {
-          await FileSystem.downloadAsync(uri, localFileUri);
-          setLocalUri(localFileUri);
-        } catch (e) {
-          console.error("Erro ao baixar a mídia:", e);
-          setLocalUri(uri);
-        }
-      }
-    };
-
-    manageMedia();
-  }, [uri]);
-
-  if (!localUri) {
-    return <View style={[style, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color="#fff" /></View>;
-  }
-
-  if (isImage) {
-    return <Image source={{ uri: localUri || uri }} style={style} />;
-  }
-
-  return (
-    <Video
-      source={{ uri: localUri || uri }}
-      isMuted={true}
-      isLooping={true}
-      shouldPlay={true}
-      resizeMode={ResizeMode.COVER}
-      style={style}
-    />
-  );
 }
 
 // Define uma interface para as props do componente para melhor tipagem

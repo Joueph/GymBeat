@@ -15,8 +15,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { VideoListItem } from '../../../components/VideoListItem';
 import { useAuth } from '../../authprovider';
-import { VideoListItem } from '../editarTreino';
 
 interface CreateExerciseModalProps {
   visible: boolean;

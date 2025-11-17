@@ -5,10 +5,9 @@ import { useRouter } from "expo-router";
 import { sendPasswordResetEmail, signInWithEmailAndPassword, User } from "firebase/auth";
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, Image, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { auth } from "../../firebaseconfig";
+import { auth , db } from "../../firebaseconfig";
 // import { createUserProfileDocument, getUserProfile } from "../../userService";
 import { doc, getDoc, writeBatch } from "firebase/firestore";
-import { db } from "../../firebaseconfig";
 import { Ficha } from "../../models/ficha";
 
 // Configuração do Google Sign-In

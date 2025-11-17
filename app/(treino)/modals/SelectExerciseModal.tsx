@@ -4,7 +4,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import { DocumentSnapshot } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { VideoListItem } from '../editarTreino';
+import { VideoListItem } from '../../../components/VideoListItem';
 
 interface SelectExerciseModalProps {
   visible: boolean;

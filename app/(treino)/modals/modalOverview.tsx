@@ -3,68 +3,17 @@ import { Log } from '@/models/log';
 import { Treino } from '@/models/treino';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
-import * as FileSystem from 'expo-file-system/legacy';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Modal, Platform, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
-import Svg, { Circle } from 'react-native-svg'; // Import Svg and Circle
+import { FlatList, Modal, StyleSheet, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
+import { VideoListItem } from '../../../components/VideoListItem';
 
 // Flag para detecção do Expo Go
-const IS_EXPO_GO = !__DEV__ || Platform.OS === 'ios';
 
 // Adiciona a propriedade 'conclido' à interface Serie localmente
 interface SerieComStatus extends Serie {
   conclido?: boolean;
 }
-
-// VideoListItem simplificado para Expo Go
-const VideoListItem = React.memo(({ uri, style }: { uri: string; style: any }) => {
-    const [localUri, setLocalUri] = useState<string | null>(null);
-    const isWebP = uri?.toLowerCase().includes('.webp');
-  
-    useEffect(() => { 
-      const manageMedia = async () => {
-        if (!uri) return;
-        const fileName = uri.split('/').pop()?.split('?')[0];
-        if (!fileName) return;
-  
-        const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
-        const fileInfo = await FileSystem.getInfoAsync(localFileUri);
-  
-        if (fileInfo.exists) {
-          setLocalUri(localFileUri);
-        } else {
-          try {
-            await FileSystem.downloadAsync(uri, localFileUri);
-            setLocalUri(localFileUri);
-          } catch (e) {
-            console.error("Erro ao baixar a mídia:", e);
-            setLocalUri(uri); // Fallback
-          }
-        }
-      };
-      manageMedia();
-    }, [uri]);
-
-    if (!localUri) {
-      return <View style={[style, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color="#fff" /></View>;
-    }
-
-    if (isWebP) { // Handle WebP as Image
-      return <Image source={{ uri: localUri || uri }} style={style} resizeMode="cover" />;
-    }
-
-    return (
-      <Video
-        source={{ uri: localUri || uri }}
-        isMuted={true}
-        isLooping={true}
-        shouldPlay={true}
-        resizeMode={ResizeMode.COVER}
-        style={style}
-      />
-    );
-});
 
 // New CircularProgressBar component
 const CircularProgressBar = ({ progress, completed, total }: { progress: number; completed: number; total: number }) => {

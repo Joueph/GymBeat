@@ -6,8 +6,8 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import LottieView from "lottie-react-native";
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'; // Removido FlatList
-import { ActivityIndicator, Alert, AppState, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, AppState, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { Log } from '@/models/log';
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
@@ -26,6 +26,8 @@ import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 // **INÍCIO DA CORREÇÃO**
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
 import { getTreinoById } from '../../services/treinoService';
+
+import { VideoListItem } from '@/components/VideoListItem';
 // Adiciona a propriedade 'concluido' à interface Serie localmente
 interface SerieComStatus extends Omit<Serie, 'concluido'> {
   id: string; // Garante que toda série tenha um ID
@@ -39,56 +41,6 @@ interface SerieEdit extends Omit<Serie, 'id'> {
   type: 'normal' | 'dropset';
   showMenu?: boolean;
   concluido: boolean;
-}
-
-// A new component to manage each video player instance, now with WebP support
-export function VideoListItem({ uri, style }: { uri: string; style: any }) {
-  const [localUri, setLocalUri] = useState<string | null>(null);
-  const isWebP = uri?.toLowerCase().includes('.webp');
-
-  useEffect(() => {
-    const manageMedia = async () => {
-      if (!uri) return;
-      const fileName = uri.split('/').pop()?.split('?')[0]; // Ensure filename is clean
-      if (!fileName) return;
-
-      const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
-      const fileInfo = await FileSystem.getInfoAsync(localFileUri);
-
-      if (fileInfo.exists) {
-        setLocalUri(localFileUri);
-      } else {
-        try {
-          await FileSystem.downloadAsync(uri, localFileUri);
-          setLocalUri(localFileUri);
-        } catch (e) {
-          console.error("Erro ao baixar a mídia:", e);
-          setLocalUri(uri); // Fallback para a URL remota em caso de erro
-        }
-      }
-    };
-
-    manageMedia();
-  }, [uri]);
-
-  if (!localUri) {
-    return <View style={[style, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color="#fff" /></View>;
-  }
-
-  if (isWebP) {
-    const { Image } = require('react-native');
-    return <Image source={{ uri: localUri || uri }} style={style} />;
-  }
-  return (
-    <Video
-      source={{ uri: localUri || uri }}
-      isMuted={true}
-      isLooping={true}
-      shouldPlay={true}
-      resizeMode={ResizeMode.COVER}
-      style={style}
-    />
-  );
 }
 
 // Componente para exibir os detalhes de uma série normal.
@@ -1118,3 +1070,4 @@ const styles = StyleSheet.create({
     detailModalSetInfoContainer: { flexDirection: 'row', alignItems: 'center' },
     detailModalSetInfo: { color: '#ccc', fontSize: 16, marginLeft: 20 },
 });
+

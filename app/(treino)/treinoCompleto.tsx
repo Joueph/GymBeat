@@ -170,8 +170,11 @@ export default function TreinoCompletoScreen() {
             ]);
             setAllUserLogs(userLogs); // Guarda todos os logs para os componentes filhos
             
-            if (userProfile?.peso) {
-                setUserWeight(userProfile.peso);
+            // CORREÇÃO: Obter o peso mais recente do histórico de peso.
+            const latestWeight = userProfile?.historicoPeso && userProfile.historicoPeso.length > 0
+                ? userProfile.historicoPeso[userProfile.historicoPeso.length - 1].valor : null;
+            if (latestWeight) {
+                setUserWeight(latestWeight);
             }
 
             setActiveFicha(fichaAtiva);
@@ -211,7 +214,7 @@ export default function TreinoCompletoScreen() {
             setWeekStreak(currentStreak);
 
             // --- Lógica de cálculo de volume ---
-            const volAtual = completedLog.cargaAcumulada || calculateTotalVolume(completedLog.exercicios, userProfile?.peso || 70, true);
+            const volAtual = completedLog.cargaAcumulada || calculateTotalVolume(completedLog.exercicios, latestWeight || 70, true);
             setCurrentVolume(volAtual);
             // --- Fim da lógica ---
 

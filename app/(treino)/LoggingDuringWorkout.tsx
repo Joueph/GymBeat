@@ -86,7 +86,9 @@ const LoggedExerciseCard = ({
   startRestTimer: (duration: number, isExercise: boolean, timedSetInfo?: { exerciseIndex: number, setIndex: number }) => void;
   onMenuStateChange: (isOpen: boolean) => void;
 }) => {
-  const { VideoListItem } = require('./editarTreino');
+  // CORREÇÃO: Usa o componente VideoListItem de 'ongoingWorkout' que já foi corrigido.
+  const { VideoListItem } = require('./ongoingWorkout');
+
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
   const [exerciseNotes, setExerciseNotes] = useState(item.notes || '');

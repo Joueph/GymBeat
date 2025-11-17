@@ -17,7 +17,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { VideoListItem } from '../editarTreino';
+import { VideoListItem } from '@/components/VideoListItem';
 import { CreateExerciseModal } from './CreateExerciseModal';
 
 interface MultiSelectExerciseModalProps {

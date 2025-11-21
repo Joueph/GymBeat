@@ -29,6 +29,7 @@ import { MenuProvider } from 'react-native-popup-menu';
 import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
+import * as NotificationsLiveActivity from '../../modules/notifications-live-activity'; // Adjust path if needed
 import { addLog } from '../../services/logService';
 import { cancelNotification, scheduleNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
@@ -91,7 +92,6 @@ const LoggedExerciseCard = ({
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
   const [exerciseNotes, setExerciseNotes] = useState(item.notes || '');
   const [isExerciseTimeDrawerVisible, setIsExerciseTimeDrawerVisible] = useState(false);
-
   const [isRestTimePickerVisible, setIsRestTimePickerVisible] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
   const [isAdvancedOptionsVisible, setIsAdvancedOptionsVisible] = useState(false);
@@ -589,6 +589,7 @@ export default function LoggingDuringWorkoutScreen() {
   const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
   const [setBeingTimed, setSetBeingTimed] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const progress = useSharedValue(0);
+  const [currentActivityId, setCurrentActivityId] = useState<string | null>(null);
   const scrollY = useSharedValue(0); // Restaurado
 
   const appState = React.useRef(AppState.currentState);
@@ -767,7 +768,7 @@ useEffect(() => {
   }, [loggedExercises, workoutName, startTime, totalLoad, activeLogId, user]);
 
 
-  const startTimer = (
+  const startTimer = async(
     duration: number,
     isExerciseTimer: boolean,
     timedSetInfo?: { exerciseIndex: number; setIndex: number }
@@ -776,6 +777,72 @@ useEffect(() => {
     cancelAnimation(progress);
     setIsResting(false);
     setIsDoingExercise(false);
+
+    // Iniciando live activity no IOS
+    // --- LIVE ACTIVITY LOGIC ---
+    if (Platform.OS === 'ios') {
+
+      const now = Date.now();
+      const deadline = now + (duration * 1000);
+        // Stop previous activity to be clean
+        if (currentActivityId) {
+            await NotificationsLiveActivity.endActivity(String(currentActivityId));
+        }
+
+        // Determine Data to Show
+        let exerciseName = "Treino Livre";
+        let currentSet = 1;
+        let totalSets = 4;
+        let stateLabel = isExerciseTimer ? "Tempo de Exercício" : "Tempo de Descanso";
+
+        // If it's a specific set (Exercise Timer)
+        if (timedSetInfo) {
+            const exercise = loggedExercises[timedSetInfo.exerciseIndex];
+            exerciseName = exercise.modelo.nome;
+            currentSet = timedSetInfo.setIndex + 1;
+            totalSets = exercise.series.length;
+        } 
+        // If it's a Rest Timer (Usually happens AFTER a set)
+        else if (!isExerciseTimer) {
+            // Logic to find which exercise we just finished or are about to do
+            // For now, let's use the last exercise in the list or the one with focus
+            // A simple heuristic: Use the first exercise that isn't fully complete
+            const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+            if (currentExercise) {
+                exerciseName = currentExercise.modelo.nome;
+                const completedSets = currentExercise.series.filter(s => s.concluido).length;
+                currentSet = completedSets; // We just finished this set
+                totalSets = currentExercise.series.length;
+            }
+        }
+
+        console.log('[LiveActivity] 🟢 Tentando iniciar Live Activity com os seguintes dados:');
+        console.log(`[LiveActivity] -> Deadline: ${new Date(deadline).toISOString()} (${deadline})`);
+        console.log(`[LiveActivity] -> Nome do Exercício: ${exerciseName}`);
+        console.log(`[LiveActivity] -> Série Atual: ${currentSet}`);
+        console.log(`[LiveActivity] -> Total de Séries: ${totalSets}`);
+        console.log(`[LiveActivity] -> Rótulo de Estado: ${stateLabel}`);
+
+        // ... dentro de startTimer
+
+// ... dentro de startTimer
+
+      try {
+        // ATUALIZAÇÃO: Passando APENAS os 3 argumentos da versão simplificada
+        const activityId = await NotificationsLiveActivity.startActivity(
+          exerciseName,  
+          currentSet,    
+          stateLabel, 
+        );
+        
+        console.log("Live Activity iniciada:", activityId);
+        setCurrentActivityId(activityId);
+      } catch (e) {
+        console.error("Erro ao iniciar:", e);
+      }
+    }
+
+    // Finalizando liveActivity
 
     if (isExerciseTimer && timedSetInfo) {
       console.log('[Timer] Iniciando timer de exercício:', { duration, setIndex: timedSetInfo.setIndex });

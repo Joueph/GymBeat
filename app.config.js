@@ -12,6 +12,7 @@ export default {
       supportsTablet: false,
       icon: "./assets/images/icon.png",
       bundleIdentifier: "br.com.gymbeat",
+      appleTeamId: "M4M9UUR2NT",
       buildNumber: "35",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
@@ -35,6 +36,7 @@ export default {
       favicon: "./assets/images/favicon.png",
     },
     plugins: [
+      "@bacons/apple-targets",
       "expo-router",
       [
         "expo-splash-screen",
@@ -71,6 +73,7 @@ export default {
         {
           ios: {
             useFrameworks: "static",
+            deploymentTarget: "16.2",
           },
         },
       ],

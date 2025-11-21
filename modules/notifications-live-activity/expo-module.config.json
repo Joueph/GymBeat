@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android", "web"],
+  "apple": {
+    "modules": ["NotificationsLiveActivityModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.notificationsliveactivity.NotificationsLiveActivityModule"]
+  }
+}

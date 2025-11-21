@@ -9,6 +9,7 @@ type PrivacyLevel = 'todos' | 'amigos' | 'ninguem';
 type UserSettings = { notifications: NotificationSettings; privacy: PrivacySettings; };
 
 export interface NotificationSettings {
+  morningWorkout: any;
   // Treinos
   workoutReminders: boolean;
   workoutReminderTime?: { hour: number; minute: number };
@@ -82,13 +83,14 @@ const CollapsibleSection = ({ title, children }: { title: string; children: Reac
 // --- Componente Principal da Página de Opções ---
 
 const defaultNotificationSettings: NotificationSettings = {
-    workoutReminders: true,
-    workoutReminderTime: { hour: 9, minute: 0 },
-    restTimeEnding: true,
-    creatine: true,
-    protein: true,
-    hypercaloric: false,
-    friendWorkoutDone: true,
+  workoutReminders: true,
+  workoutReminderTime: { hour: 9, minute: 0 },
+  restTimeEnding: true,
+  creatine: true,
+  protein: true,
+  hypercaloric: false,
+  friendWorkoutDone: true,
+  morningWorkout: undefined
 };
 
 const defaultPrivacySettings: PrivacySettings = {

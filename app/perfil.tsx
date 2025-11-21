@@ -59,6 +59,7 @@ const defaultNotificationSettings: NotificationSettings = {
   protein: true,
   hypercaloric: false,
   friendWorkoutDone: true,
+  morningWorkout: undefined
 };
 
 const defaultPrivacySettings: PrivacySettings = {

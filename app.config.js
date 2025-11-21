@@ -15,6 +15,7 @@ export default {
       buildNumber: "35",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSSupportsLiveActivities: true,
       },
       googleServicesFile: "./GoogleService-Info.plist",
     },
@@ -64,6 +65,7 @@ export default {
           ios_set_modular_headers: true,
         },
       ],
+      
       [
         "expo-build-properties",
         {

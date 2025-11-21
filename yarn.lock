@@ -7929,6 +7929,11 @@ react-native-is-edge-to-edge@^1.1.6, react-native-is-edge-to-edge@^1.2.1:
   resolved "https://registry.npmjs.org/react-native-is-edge-to-edge/-/react-native-is-edge-to-edge-1.2.1.tgz"
   integrity sha512-FLbPWl/MyYQWz+KwqOZsSyj2JmLKglHatd3xLZWskXOpRaio4LfEDEz8E/A6uD8QoTHW6Aobw1jbEwK7KMgR7Q==
 
+react-native-live-activity@^0.1.0:
+  version "0.1.0"
+  resolved "https://registry.yarnpkg.com/react-native-live-activity/-/react-native-live-activity-0.1.0.tgz#2566aaeb0a795584519d8d5781e7b825d92bec6c"
+  integrity sha512-Lz3ilYEIykiH7XebSAEpXaMqdQ1MAiBK8f/QH4ZC+BQ5cdpfuVzyU3Jzrzpg++NxGPMuhbuTdvaMp53SQSqPWQ==
+
 react-native-popup-menu@^0.18.0:
   version "0.18.0"
   resolved "https://registry.npmjs.org/react-native-popup-menu/-/react-native-popup-menu-0.18.0.tgz"

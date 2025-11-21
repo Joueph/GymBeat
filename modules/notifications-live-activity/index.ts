@@ -7,11 +7,13 @@ const NotificationsLiveActivityModule = requireNativeModule('NotificationsLiveAc
  * Inicia uma Live Activity com os dados do treino.
  * @returns O ID da atividade iniciada, ou null se não puder ser iniciada.
  */
-export async function startActivity(exerciseName: string, currentSet: number, stateLabel: string): Promise<string | null> {
+export async function startActivity(deadline: number, exerciseName: string, statelabel: string, currentSet: number, totalSets: number): Promise<string | null> {
 return await NotificationsLiveActivityModule.startActivity(
+    deadline,
     exerciseName, 
-    stateLabel,   // 2º argumento deve ser String
-    currentSet    // 3º argumento deve ser Int
+    statelabel,
+    currentSet,
+    totalSets
   );}
 
 /**

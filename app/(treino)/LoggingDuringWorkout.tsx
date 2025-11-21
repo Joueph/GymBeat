@@ -830,9 +830,11 @@ useEffect(() => {
       try {
         // ATUALIZAÇÃO: Passando APENAS os 3 argumentos da versão simplificada
         const activityId = await NotificationsLiveActivity.startActivity(
-          exerciseName,  
-          currentSet,    
-          stateLabel, 
+          deadline,      // 1. Timestamp (Number)
+          exerciseName,  // 2. Nome (String)
+          stateLabel,    // 3. Rótulo (String)
+          currentSet,    // 4. Série (Int)
+          totalSets,      // 5. Total (Int), 
         );
         
         console.log("Live Activity iniciada:", activityId);

@@ -4,20 +4,28 @@ import SwiftUI
 
 struct GymBeatWidgetLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        // ATENÇÃO: Usando GymBeatAttributes (o novo)
         ActivityConfiguration(for: GymBeatAttributes.self) { context in
             // --- LOCK SCREEN ---
-            VStack {
+            VStack(spacing: 8) {
                 HStack {
                     Image(systemName: "dumbbell.fill").foregroundColor(.orange)
                     Text(context.state.exerciseName)
                         .font(.headline)
                         .foregroundColor(.white)
+                    Spacer()
+                    // Exibe Série X/Y
+                    Text("Série \(context.state.currentSet)/\(context.state.totalSets)")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
                 }
+                
+                // O CRONÔMETRO NATIVO
+                Text(timerInterval: Date()...context.state.endTime, countsDown: true)
+                    .font(.system(size: 48, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundColor(Color(red: 1.0, green: 0.58, blue: 0.0))
+                
                 Text(context.state.stateLabel)
-                    .font(.largeTitle)
-                    .foregroundColor(.yellow)
-                Text("Série \(context.state.currentSet)")
                     .font(.caption)
                     .foregroundColor(.gray)
             }
@@ -27,21 +35,39 @@ struct GymBeatWidgetLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 // --- EXPANDED ---
-                DynamicIslandExpandedRegion(.center) {
-                    Text(context.state.exerciseName)
-                        .foregroundColor(.white)
+                DynamicIslandExpandedRegion(.leading) {
+                     HStack {
+                        Image(systemName: "dumbbell.fill").foregroundColor(.orange)
+                        Text(context.state.exerciseName).foregroundColor(.white)
+                     }.padding(.leading)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                     Text("\(context.state.currentSet)/\(context.state.totalSets)")
+                        .foregroundColor(.gray)
+                        .padding(.trailing)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.state.stateLabel)
-                        .font(.title)
+                    // Timer Grande na Ilha Expandida
+                    Text(timerInterval: Date()...context.state.endTime, countsDown: true)
+                        .font(.system(size: 40, weight: .semibold))
+                        .monospacedDigit()
                         .foregroundColor(.yellow)
+                        .frame(height: 50)
                 }
             } compactLeading: {
-                Image(systemName: "dumbbell.fill").foregroundColor(.orange)
+                Image(systemName: "timer").foregroundColor(.orange)
             } compactTrailing: {
-                Text("\(context.state.currentSet)")
+                // Timer Pequeno na Ilha Compacta
+                Text(timerInterval: Date()...context.state.endTime, countsDown: true)
+                    .monospacedDigit()
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.yellow)
+                    .frame(width: 42)
             } minimal: {
-                Image(systemName: "timer")
+                Text(timerInterval: Date()...context.state.endTime, countsDown: true)
+                    .monospacedDigit()
+                    .font(.system(size: 12))
+                    .foregroundColor(.yellow)
             }
         }
     }

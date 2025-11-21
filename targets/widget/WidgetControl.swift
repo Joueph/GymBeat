@@ -2,10 +2,15 @@ import AppIntents
 import SwiftUI
 import WidgetKit
 
+// Adicione 'public' na struct
 public struct widgetControl: ControlWidget {
     static let kind: String = "com.developer.example.widget"
 
-    var body: some ControlWidgetConfiguration {
+    // Adicione um init public explícito
+    public init() {}
+
+    // Adicione 'public' na var body
+    public var body: some ControlWidgetConfiguration {
         AppIntentControlConfiguration(
             kind: Self.kind,
             provider: Provider()
@@ -35,7 +40,7 @@ extension widgetControl {
         }
 
         func currentValue(configuration: TimerConfiguration) async throws -> Value {
-            let isRunning = true // Check if the timer is running
+            let isRunning = true
             return widgetControl.Value(isRunning: isRunning, name: configuration.timerName)
         }
     }
@@ -64,7 +69,6 @@ struct StartTimerIntent: SetValueIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        // Start the timer…
         return .result()
     }
 }

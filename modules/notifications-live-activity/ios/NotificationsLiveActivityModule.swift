@@ -1,51 +1,61 @@
 import ExpoModulesCore
 import ActivityKit
 
-// --- CÓPIA IDÊNTICA DO GymBeatAttributes ---
+// --- MANTENHA A CÓPIA IDÊNTICA DO STRUCT AQUI ---
 struct GymBeatAttributes: ActivityAttributes {
     public struct ContentState: Codable, Hashable {
         public var exerciseName: String
-        public var stateLabel: String
         public var currentSet: Int
-        public var totalSets: Int       // <--- IDÊNTICO
-        public var endTime: Date        // <--- IDÊNTICO
+        public var totalSets: Int
+        
+        public var isRestMode: Bool
+        public var endTime: Date?
+        
+        public var weight: String
+        public var reps: String
+        public var dropsetCount: Int
     }
     public var timerName: String
 }
-// -------------------------------------------
+// ------------------------------------------------
 
 public class NotificationsLiveActivityModule: Module {
   public func definition() -> ModuleDefinition {
     Name("NotificationsLiveActivity")
 
-    // Nova Assinatura: 5 Argumentos
-    // Ordem: Timestamp, Nome, Rótulo, Série Atual, Total Séries
-    AsyncFunction("startActivity") { (timestamp: Double, exerciseName: String, stateLabel: String, currentSet: Int, totalSets: Int) -> String? in
+    // Nova assinatura com TODOS os parâmetros
+    AsyncFunction("startActivity") { (timestamp: Double?, exerciseName: String, currentSet: Int, totalSets: Int, weight: String, reps: String, dropsetCount: Int) -> String? in
       if #available(iOS 16.2, *) {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return nil }
         
-        // Converter Timestamp (ms) para Date (s)
-        let endDate = Date(timeIntervalSince1970: timestamp / 1000)
+        // Lógica: Se timestamp vier > 0, é modo descanso. Se vier 0 ou nil, é modo exercício.
+        let isRestMode = (timestamp ?? 0) > 0
+        let endDate = isRestMode ? Date(timeIntervalSince1970: (timestamp ?? 0) / 1000) : nil
         
         let contentState = GymBeatAttributes.ContentState(
             exerciseName: exerciseName,
-            stateLabel: stateLabel,
             currentSet: currentSet,
             totalSets: totalSets,
-            endTime: endDate
+            isRestMode: isRestMode,
+            endTime: endDate,
+            weight: weight,
+            reps: reps,
+            dropsetCount: dropsetCount
         )
         
-        let attributes = GymBeatAttributes(timerName: "GymBeat Timer")
+        let attributes = GymBeatAttributes(timerName: "GymBeat")
         
-        // staleDate: nil deixa o iOS decidir. Se quiser que suma ao acabar, use 'endDate'
-        let activityContent = ActivityContent(state: contentState, staleDate: nil)
+        // Define a política de descarte.
+        // Para o modo descanso, a LA será removida automaticamente após o 'endDate'.
+        // Para o modo exercício, a política é a padrão (permanece até ser encerrada manualmente).
+        let activityContent = ActivityContent(state: contentState, staleDate: endDate)
+
         
         do {
           let activity = try Activity.request(attributes: attributes, content: activityContent, pushType: nil)
-          print("[LiveActivity] ✅ ID: \(activity.id)")
           return activity.id
         } catch {
-          print("[LiveActivity] ❌ Erro: \(error.localizedDescription)")
+          print("[LiveActivity] Error: \(error.localizedDescription)")
           return nil
         }
       } else {

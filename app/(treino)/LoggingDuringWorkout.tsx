@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   Alert, AppState, AppStateStatus, FlatList,
   Image,
+  KeyboardAvoidingView,
   LayoutAnimation, Platform,
   StyleSheet,
   Text,
@@ -36,8 +37,10 @@ import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services
 import { addTreino, getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
+import { ExerciseDetailModal } from './modals/ExerciseDetailModal';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
 import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
+import { WorkoutOverviewModal } from './modals/modalOverview';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -88,6 +91,7 @@ const LoggedExerciseCard = ({
   startRestTimer: (duration: number, isExercise: boolean, timedSetInfo?: { exerciseIndex: number, setIndex: number }) => void;
   onMenuStateChange: (isOpen: boolean) => void;
 }) => {
+  const [isDetailModalVisible, setDetailModalVisible] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
   const [exerciseNotes, setExerciseNotes] = useState(item.notes || '');
@@ -331,21 +335,22 @@ const LoggedExerciseCard = ({
   const exerciseVolume = calculateTotalVolume([{ ...item, series: series }], userWeight, true);
 
   return (
-    <View style={styles.exercicioCard}>
-      <TouchableOpacity
+    <>
+      <View style={styles.exercicioCard}>
+      <View
         style={styles.exercicioHeader}
-        onPress={() => {
+      ><TouchableOpacity style={{flex: 1, flexDirection: 'row', alignItems: 'center'}} onPress={() => setDetailModalVisible(true)}>
+          <VideoListItem uri={item.modelo.imagemUrl} style={styles.exerciseVideo} />
+          <View style={styles.exerciseInfo}>
+            <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
+            <Text style={styles.muscleGroup}>{item.modelo.grupoMuscular}</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => {
           LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
           setIsExpanded(!isExpanded);
-        }}
-      >
-        <VideoListItem uri={item.modelo.imagemUrl} style={styles.exerciseVideo} />
-        <View style={styles.exerciseInfo}>
-          <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
-          <Text style={styles.muscleGroup}>{item.modelo.grupoMuscular}</Text>
-        </View>
-        <FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#fff" />
-      </TouchableOpacity>
+        }}><FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#fff" /></TouchableOpacity>
+      </View>
 
       {isExpanded ? (
         <>
@@ -556,7 +561,13 @@ const LoggedExerciseCard = ({
         }}
         initialValue={editingSetIndex !== null ? parseInt(String(series[editingSetIndex]?.repeticoes), 10) || 60 : 60}
       />
-    </View>
+      </View>
+      <ExerciseDetailModal
+        visible={isDetailModalVisible}
+        onClose={() => setDetailModalVisible(false)}
+        exercise={item}
+      />
+    </>
   );
 };
 
@@ -569,6 +580,7 @@ export default function LoggingDuringWorkoutScreen() {
   const [isFinishing, setIsFinishing] = useState(false);
   const [workoutName, setWorkoutName] = useState('');
   const [isNameEdited, setIsNameEdited] = useState(false);
+  const [isOverviewModalVisible, setOverviewModalVisible] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0); // in seconds
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -576,6 +588,7 @@ export default function LoggingDuringWorkoutScreen() {
   const [userWeight, setUserWeight] = useState(70); // default fallback
   const { user } = useAuth();
   const [activeLogId, setActiveLogId] = useState<string | null>(null);
+  const [userLogs, setUserLogs] = useState<Log[]>([]);
   const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
   // Estados para o timer de descanso
   const [isResting, setIsResting] = useState(false);
@@ -768,6 +781,42 @@ useEffect(() => {
   }, [loggedExercises, workoutName, startTime, totalLoad, activeLogId, user]);
 
 
+const launchLiveActivity = async (
+    isRest: boolean, 
+    durationOrTimestamp: number, 
+    exerciseName: string, 
+    setIndex: number, 
+    totalSets: number, 
+    weight: string, 
+    reps: string,
+    dropsetCount: number
+  ) => {
+    if (Platform.OS !== 'ios') return;
+
+    // Se já existe uma activity, encerra a anterior
+    if (currentActivityId) {
+       await NotificationsLiveActivity.endActivity(currentActivityId);
+    }
+
+    // Se for descanso, timestamp é agora + duração. Se for exercício, é 0.
+    const timestamp = isRest ? Date.now() + (durationOrTimestamp * 1000) : 0;
+
+    try {
+      const id = await NotificationsLiveActivity.startActivity(
+        timestamp,      
+        exerciseName,   
+        setIndex + 1,   // Ajuste para base 1 (humana)
+        totalSets,      
+        weight,         
+        reps,           
+        dropsetCount    
+      );
+      setCurrentActivityId(id);
+    } catch (e) {
+      console.warn("Falha ao iniciar Live Activity", e);
+    }
+  };
+
   const startTimer = async(
     duration: number,
     isExerciseTimer: boolean,
@@ -778,6 +827,32 @@ useEffect(() => {
     setIsResting(false);
     setIsDoingExercise(false);
 
+      // Inicia Timer de Descanso na Live Activity
+if (!isExerciseTimer && Platform.OS === 'ios') {
+        // Lógica para pegar o exercício atual durante o descanso
+        // Tenta pegar o exercício onde o timer foi acionado, ou o primeiro não concluído
+        let currentExIndex = 0;
+        let setsDone = 0;
+
+        // Tenta achar o exercício ativo
+        const activeExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+        
+        if (activeExercise) {
+             setsDone = activeExercise.series.filter(s => s.concluido).length;
+             
+             launchLiveActivity(
+                true, // É descanso (isRest = true)
+                duration,
+                activeExercise.modelo.nome,
+                setsDone, 
+                activeExercise.series.length,
+                "-", // Peso (não exibe no descanso)
+                "-", // Reps (não exibe no descanso)
+                0
+            );
+        }
+    }      
+
     // Iniciando live activity no IOS
     // --- LIVE ACTIVITY LOGIC ---
     if (Platform.OS === 'ios') {
@@ -786,7 +861,8 @@ useEffect(() => {
       const deadline = now + (duration * 1000);
         // Stop previous activity to be clean
         if (currentActivityId) {
-            await NotificationsLiveActivity.endActivity(String(currentActivityId));
+          await NotificationsLiveActivity.endActivity(currentActivityId);
+          setCurrentActivityId(null);
         }
 
         // Determine Data to Show
@@ -808,14 +884,28 @@ useEffect(() => {
             // For now, let's use the last exercise in the list or the one with focus
             // A simple heuristic: Use the first exercise that isn't fully complete
             const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+          
             if (currentExercise) {
-                exerciseName = currentExercise.modelo.nome;
-                const completedSets = currentExercise.series.filter(s => s.concluido).length;
-                currentSet = completedSets; // We just finished this set
-                totalSets = currentExercise.series.length;
+                const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
+                const nextSet = currentExercise.series[nextSetIndex !== -1 ? nextSetIndex : 0];
+                
+                // Monta os textos
+                const weightText = `${nextSet.peso}kg`;
+                const repsText = `${nextSet.repeticoes}`;
+                const dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length; 
+
+                launchLiveActivity(
+                    false, // Modo Exercício (isRest = false)
+                    0,     // Timestamp 0
+                    currentExercise.modelo.nome,
+                    (nextSetIndex !== -1 ? nextSetIndex : 0),
+                    currentExercise.series.length,
+                    weightText,
+                    repsText,
+                    dropsCount
+                );
             }
         }
-
         console.log('[LiveActivity] 🟢 Tentando iniciar Live Activity com os seguintes dados:');
         console.log(`[LiveActivity] -> Deadline: ${new Date(deadline).toISOString()} (${deadline})`);
         console.log(`[LiveActivity] -> Nome do Exercício: ${exerciseName}`);
@@ -828,13 +918,15 @@ useEffect(() => {
 // ... dentro de startTimer
 
       try {
-        // ATUALIZAÇÃO: Passando APENAS os 3 argumentos da versão simplificada
+        // ATUALIZAÇÃO: Passando todos os argumentos necessários para a Live Activity.
         const activityId = await NotificationsLiveActivity.startActivity(
-          deadline,      // 1. Timestamp (Number)
-          exerciseName,  // 2. Nome (String)
-          stateLabel,    // 3. Rótulo (String)
-          currentSet,    // 4. Série (Int)
-          totalSets,      // 5. Total (Int), 
+          deadline,       // 1. timestamp
+          exerciseName,   // 2. exerciseName
+          currentSet,     // 3. currentSet
+          totalSets,      // 4. totalSets
+          "0",            // 5. weight (placeholder)
+          "0",            // 6. reps (placeholder)
+          0               // 7. dropsetCount (placeholder)
         );
         
         console.log("Live Activity iniciada:", activityId);
@@ -921,6 +1013,11 @@ useEffect(() => {
           const remainingTime = Math.max(0, maxRestTime - elapsedSeconds);
           setRestCountdown(remainingTime);
 
+          // Se o tempo acabou, encerra a Live Activity
+          if (remainingTime <= 0 && currentActivityId && Platform.OS === 'ios') {
+            NotificationsLiveActivity.endActivity(currentActivityId);
+            setCurrentActivityId(null);
+          }
           if (remainingTime <= 0) {
             setIsResting(false);
             setRestStartTime(null);
@@ -950,10 +1047,16 @@ useEffect(() => {
 
 
   const handleSkipRest = () => {
-    setIsResting(false);
-    setIsDoingExercise(false); // Também para o timer de exercício
+    // Encerra a Live Activity se houver uma ativa
+    if (currentActivityId && Platform.OS === 'ios') {
+      NotificationsLiveActivity.endActivity(currentActivityId);
+      setCurrentActivityId(null);
+    }
+    // Cancela a notificação de descanso agendada
     cancelNotification('rest-timer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsResting(false); // Isso irá disparar o useEffect para limpar o resto
+    setIsDoingExercise(false); // Também para o timer de exercício
   };
 
   const handleUpdateExerciseSeries = (exerciseIndex: number, newSeries: SerieEdit[]) => {
@@ -1136,6 +1239,11 @@ useEffect(() => {
     return `${m}:${s}`;
   };
 
+  const handleEditExerciseFromOverview = (exerciseToEdit: Exercicio) => {
+    setOverviewModalVisible(false);
+    // Implementar a lógica para abrir o modal de edição de exercício aqui, se necessário.
+  };
+
 
   const handleRemoveExercise = (exerciseIndex: number) => {
     setLoggedExercises(prev => prev.filter((_, index) => index !== exerciseIndex));
@@ -1196,18 +1304,20 @@ useEffect(() => {
               <TouchableOpacity onPress={handleBack} style={styles.backButton}>
                 <Ionicons name="chevron-back" size={28} color="#fff" />
               </TouchableOpacity>
+            <TouchableOpacity onPress={() => setOverviewModalVisible(true)} style={{ flex: 1 }}>
               <TextInput
                 style={styles.headerTitleInput}
                 value={workoutName}
                 placeholder="Nome do Treino"
                 placeholderTextColor="#888"
                 onChangeText={(text) => {
-                setWorkoutName(String(text));
-                  if (!isNameEdited) {
-                    setIsNameEdited(true);
-                  }
-                }}
-              />
+                  setWorkoutName(String(text));
+                    if (!isNameEdited) {
+                      setIsNameEdited(true);
+                    }
+                  }}
+                />
+            </TouchableOpacity>
             </View>
             <View style={styles.headerRightContainer}>
               {isFinishing ? (
@@ -1236,81 +1346,85 @@ useEffect(() => {
             <Animated.View style={[styles.progressBar, { width: `${workoutProgress * 100}%` }]} />
           </View>
 
-
-          {loggedExercises.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <TouchableOpacity
-                style={styles.addButtonCircle}
-                onPress={() => setModalVisible(true)}
-              >
-                <FontAwesome name="plus" size={50} color="#3B82F6" />
-              </TouchableOpacity>
-              <Text style={styles.emptyText}>Adicione o primeiro exercício</Text>
-            </View>
-          ) : (
-            <FlatList
-              data={loggedExercises}
-              onScroll={(event) => { // Restaurado
-                scrollY.value = event.nativeEvent.contentOffset.y;
-              }}
-              keyExtractor={(item) => item.modeloId}
-              ListHeaderComponent={
-              <View style={statsContainerStyle}><View style={statItemStyle}><FontAwesome name="clock-o" size={16} color="#aaa" /><Text style={styles.statValue}>{formatTime(elapsedTime)}</Text></View><View style={statItemStyle}><FontAwesome5 name="weight-hanging" size={16} color="#aaa" /><Text style={styles.statValue}>{Math.round(totalLoad).toLocaleString('pt-BR')} kg</Text></View></View>
-              }
-            renderItem={({ item, index }) => {
-              return (
-                <LoggedExerciseCard
-                  item={item}
-                  userWeight={userWeight}
-                  onSeriesChange={(newSeries) =>
-                    handleUpdateExerciseSeries(index, newSeries)
-                  }
-                  onRemove={() => handleRemoveExercise(index)}
-                  onRestTimeChange={(newRestTime) => {
-                    const updatedExercises = [...loggedExercises];
-                    updatedExercises[index].restTime = newRestTime;
-                    setLoggedExercises(updatedExercises);
-                  }}
-                  onNotesChange={(newNotes) => {
-                    const updatedExercises = [...loggedExercises];
-                    updatedExercises[index].notes = newNotes;
-                    setLoggedExercises(updatedExercises);
-                  }}
-                  onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
-                  startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
-                  onMenuStateChange={setIsMenuOpen}
-                />
-              );
-            }}
-            ListFooterComponent={
-              <>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{ flex: 1 }}
+          >
+            {loggedExercises.length === 0 ? (
+              <View style={styles.emptyContainer}>
                 <TouchableOpacity
-                  style={styles.addMoreButton}
+                  style={styles.addButtonCircle}
                   onPress={() => setModalVisible(true)}
                 >
-                  <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
+                  <FontAwesome name="plus" size={50} color="#3B82F6" />
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.settingsButton}
-                  onPress={() => setSettingsModalVisible(true)}
-                >
-                  <FontAwesome name="cog" size={16} color="#aaa" />
-                  <Text style={styles.settingsButtonText}>Configurações</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
-                  onPress={handleCancelWorkout}
-                >
-                  <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
-                </TouchableOpacity>
-              </>
-            }
-            contentContainerStyle={{
-              paddingBottom: 140,
-              paddingTop: 15, // Padding normal, já que os stats não são mais fixos
-            }}
-          />
-        )}
+                <Text style={styles.emptyText}>Adicione o primeiro exercício</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={loggedExercises}
+                onScroll={(event) => { // Restaurado
+                  scrollY.value = event.nativeEvent.contentOffset.y;
+                }}
+                keyExtractor={(item) => item.modeloId}
+                ListHeaderComponent={
+                <View style={statsContainerStyle}><View style={statItemStyle}><FontAwesome name="clock-o" size={16} color="#aaa" /><Text style={styles.statValue}>{formatTime(elapsedTime)}</Text></View><View style={statItemStyle}><FontAwesome5 name="weight-hanging" size={16} color="#aaa" /><Text style={styles.statValue}>{Math.round(totalLoad).toLocaleString('pt-BR')} kg</Text></View></View>
+                }
+              renderItem={({ item, index }) => {
+                return (
+                  <LoggedExerciseCard
+                    item={item}
+                    userWeight={userWeight}
+                    onSeriesChange={(newSeries) =>
+                      handleUpdateExerciseSeries(index, newSeries)
+                    }
+                    onRemove={() => handleRemoveExercise(index)}
+                    onRestTimeChange={(newRestTime) => {
+                      const updatedExercises = [...loggedExercises];
+                      updatedExercises[index].restTime = newRestTime;
+                      setLoggedExercises(updatedExercises);
+                    }}
+                    onNotesChange={(newNotes) => {
+                      const updatedExercises = [...loggedExercises];
+                      updatedExercises[index].notes = newNotes;
+                      setLoggedExercises(updatedExercises);
+                    }}
+                    onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
+                    startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
+                    onMenuStateChange={setIsMenuOpen}
+                  />
+                );
+              }}
+              ListFooterComponent={
+                <>
+                  <TouchableOpacity
+                    style={styles.addMoreButton}
+                    onPress={() => setModalVisible(true)}
+                  >
+                    <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.settingsButton}
+                    onPress={() => setSettingsModalVisible(true)}
+                  >
+                    <FontAwesome name="cog" size={16} color="#aaa" />
+                    <Text style={styles.settingsButtonText}>Configurações</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
+                    onPress={handleCancelWorkout}
+                  >
+                    <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
+                  </TouchableOpacity>
+                </>
+              }
+              contentContainerStyle={{
+                paddingBottom: 140,
+                paddingTop: 15, // Padding normal, já que os stats não são mais fixos
+              }}
+            />
+          )}
+          
                   {isMenuOpen && (
                     <Animated.View style={styles.overlay} entering={FadeIn} exiting={FadeOut}>
                       <View style={StyleSheet.absoluteFill} />
@@ -1333,8 +1447,25 @@ useEffect(() => {
                                                         isVisible={isSettingsModalVisible}
                                                         onClose={() => setSettingsModalVisible(false)}
                                                       />
-                  
-                                                      </SafeAreaView>                  
+
+                                                      {treinoId && (
+                                                        <WorkoutOverviewModal
+                                                          visible={isOverviewModalVisible}
+                                                          onClose={() => setOverviewModalVisible(false)}
+                                                          treino={{
+                                                            id: treinoId as string,
+                                                            exercicios: loggedExercises,
+                                                            nome: workoutName,
+                                                          } as Treino}
+                                                          currentExerciseIndex={loggedExercises.findIndex(ex => ex.series.some(s => !s.concluido))}
+                                                          cargaAcumuladaTotal={totalLoad}
+                                                          userLogs={userLogs}
+                                                          horarioInicio={startTime}
+                                                          userWeight={userWeight}
+                                                          onEditExercise={handleEditExerciseFromOverview} />
+                                                      )}
+          </KeyboardAvoidingView>
+        </SafeAreaView>
                           {(isResting || isDoingExercise) && (
                             <View style={styles.restTimerOverlay}>
                               <View style={styles.restTimerProgressContainer}>
@@ -1360,14 +1491,6 @@ useEffect(() => {
                       </GestureHandlerRootView>
                     );
                   }
-                  
-                  
-                  
-                  
-                  
-                  
-                  
-                  
                   
 const styles = StyleSheet.create({
   headerRightContainer: {

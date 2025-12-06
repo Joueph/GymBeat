@@ -34,7 +34,7 @@ import * as NotificationsLiveActivity from '../../modules/notifications-live-act
 import { addLog } from '../../services/logService';
 import { cancelNotification, scheduleNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
-import { addTreino, getTreinoById } from '../../services/treinoService';
+import { addTreino, getTreinoById, updateTreino } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { ExerciseDetailModal } from './modals/ExerciseDetailModal';
@@ -604,6 +604,8 @@ export default function LoggingDuringWorkoutScreen() {
   const progress = useSharedValue(0);
   const [currentActivityId, setCurrentActivityId] = useState<string | null>(null);
   const scrollY = useSharedValue(0); // Restaurado
+  // Estado para armazenar o ID do dono do treino original
+  const [workoutOwnerId, setWorkoutOwnerId] = useState<string | null>(null);
 
   const appState = React.useRef(AppState.currentState);
 
@@ -634,6 +636,7 @@ export default function LoggingDuringWorkoutScreen() {
             setStartTime(toDate(cachedLog.horarioInicio));
             setTotalLoad(cachedLog.cargaAcumulada || 0);
             setActiveLogId(cachedLog.id);
+            setWorkoutOwnerId(cachedLog.treino.usuarioId); // Salva o dono do treino
             // A busca de peso do usuário ocorrerá no final da função
           }
         } catch (error) {
@@ -654,6 +657,7 @@ export default function LoggingDuringWorkoutScreen() {
           setWorkoutName(fetchedTreino.nome);
           setStartTime(new Date());
           setActiveLogId(`structured-workout-${Date.now()}`);
+          setWorkoutOwnerId(fetchedTreino.usuarioId); // Salva o dono do treino
         }
       } else {
         // Lógica existente para treino livre (cache ou novo)
@@ -666,6 +670,7 @@ export default function LoggingDuringWorkoutScreen() {
             setStartTime(new Date(cachedLog.horarioInicio));
             setTotalLoad(cachedLog.cargaAcumulada || 0);
             setActiveLogId(cachedLog.id);
+            setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
           } else {
             // Inicia um novo treino livre
             const newLogId = `free-workout-${Date.now()}`;
@@ -673,6 +678,7 @@ export default function LoggingDuringWorkoutScreen() {
             setStartTime(new Date());
             setLoggedExercises([]);
             setWorkoutName('Treino Livre');
+            setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
           }
         } catch (error) {
           console.error("Failed to load workout from cache", error);
@@ -682,6 +688,7 @@ export default function LoggingDuringWorkoutScreen() {
           setStartTime(new Date());
           setLoggedExercises([]);
           setWorkoutName('Treino Livre');
+          setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
         }
       }
 
@@ -788,7 +795,7 @@ const launchLiveActivity = async (
     setIndex: number, 
     totalSets: number, 
     weight: string, 
-    reps: string,
+    reps: string, 
     dropsetCount: number
   ) => {
     if (Platform.OS !== 'ios') return;
@@ -1139,6 +1146,26 @@ if (!isExerciseTimer && Platform.OS === 'ios') {
           Alert.alert('Erro', 'Não foi possível criar o registro do treino antes de salvar o log.');
           setIsFinishing(false);
           return;
+        }
+      } 
+      
+      // **[MODIFICADO] Lógica para atualizar o treino existente**
+      // Se não criamos um novo treino (era um existente), verificamos se o usuário é o dono antes de atualizar.
+      if (finalTreinoId && treinoId && typeof treinoId === 'string') {
+        // CORREÇÃO: Verifica se o usuário é o dono do treino antes de tentar atualizar
+        if (workoutOwnerId === user.id) {
+          try {
+              console.log('[handleFinishWorkout] Atualizando o modelo do treino original com as alterações...');
+              await updateTreino(treinoId, {
+                  exercicios: loggedExercises
+              });
+              console.log('[handleFinishWorkout] Modelo do treino atualizado com sucesso.');
+          } catch (error) {
+              console.error('[handleFinishWorkout] Erro ao atualizar o modelo do treino:', error);
+              // Não bloqueamos o fluxo, apenas logamos o erro, pois salvar o log é a prioridade.
+          }
+        } else {
+            console.log('[handleFinishWorkout] Usuário não é o dono do treino original. Pulasndo atualização do modelo.');
         }
       }
 

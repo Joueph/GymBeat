@@ -2,23 +2,27 @@ import ActivityKit
 import Foundation
 
 public struct GymBeatWidgetAttributes: ActivityAttributes {
-    // IMPORTANTE: Se você tiver qualquer variável aqui (fora do ContentState), 
-    // ela deve estar idêntica no Módulo também. Por enquanto, deixe vazio.
     public init() {}
 
     public struct ContentState: Codable, Hashable {
-        public var endTime: Date
+        public var deadline: Double
         public var exerciseName: String
         public var currentSet: Int
         public var totalSets: Int
-        public var stateLabel: String
+        public var weight: String
+        public var reps: String
+        public var dropsetCount: Int
         
-        public init(endTime: Date, exerciseName: String, currentSet: Int, totalSets: Int, stateLabel: String) {
-            self.endTime = endTime
+        public init(deadline: Double, exerciseName: String, currentSet: Int, totalSets: Int, weight: String, reps: String, dropsetCount: Int) {
+            // This initializer is not strictly necessary since the struct has memberwise initializers by default,
+            // but it can be kept for explicit clarity.
+            self.deadline = deadline
             self.exerciseName = exerciseName
             self.currentSet = currentSet
             self.totalSets = totalSets
-            self.stateLabel = stateLabel
+            self.weight = weight
+            self.reps = reps
+            self.dropsetCount = dropsetCount
         }
     }
 }

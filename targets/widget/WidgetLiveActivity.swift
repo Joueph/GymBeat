@@ -3,156 +3,115 @@ import WidgetKit
 import SwiftUI
 
 struct GymBeatWidgetLiveActivity: Widget {
+    // R2: Tom de azul padrão (#1cb0f6)
+    let gymBeatBlue = Color(red: 28/255, green: 176/255, blue: 246/255)
     
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: GymBeatAttributes.self) { context in
-            // --- LOCK SCREEN / BANNER ---
-            VStack(spacing: 8) {
-                // Cabeçalho Comum
+        ActivityConfiguration(for: GymBeatWidgetAttributes.self) { context in
+            // LOCK SCREEN / BANNER UI
+            // R3: Verifica se o timer está ativo (deadline no futuro)
+            let isTimerActive = Date(timeIntervalSince1970: context.state.deadline / 1000) > Date()
+            
+            VStack(spacing: 0) {
                 HStack {
-                    Image(systemName: context.state.isRestMode ? "timer" : "dumbbell.fill")
-                        .foregroundColor(Color(hex: 0x3B82F6))
+                    // Ícone e Nome do Exercício
+                    Image(systemName: "dumbbell.fill")
+                        .foregroundColor(gymBeatBlue) // R2
                     Text(context.state.exerciseName)
                         .font(.headline)
                         .foregroundColor(.white)
                     Spacer()
-                    Text("Série \(context.state.currentSet)/\(context.state.totalSets)")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                }
-                
-                if context.state.isRestMode, let endTime = context.state.endTime {
-                    // MODO DESCANSO (Timer)
-                    VStack(alignment: .center) {
-                        Text(timerInterval: Date()...endTime, countsDown: true)
-                            .font(.system(size: 48, weight: .bold))
+                    
+                    if isTimerActive {
+                        // R3: Se timer ativo, mostra contagem regressiva
+                        Text(timerInterval: Date()...Date(timeIntervalSince1970: context.state.deadline / 1000), countsDown: true)
                             .monospacedDigit()
-                            .foregroundColor(Color(hex: 0x3B82F6))
-                            .multilineTextAlignment(.center)
-                        Text("Descanso")
-                            .font(.caption)
-                            .foregroundColor(.gray)
+                            .font(.title2)
+                            .foregroundColor(gymBeatBlue) // R2
+                    } else {
+                        // R3: Se timer inativo, mostra info da série
+                        Text("\(context.state.currentSet)/\(context.state.totalSets)")
+                            .font(.title2)
+                            .foregroundColor(gymBeatBlue) // R2
                     }
-                    .frame(maxWidth: .infinity)
+                }
+                .padding()
+                
+                // Barra de progresso ou Detalhes extras
+                if isTimerActive {
+                     ProgressView(timerInterval: Date()...Date(timeIntervalSince1970: context.state.deadline / 1000), countsDown: true) {
+                        EmptyView()
+                     }
+                     .tint(gymBeatBlue) // R2
+                     .padding(.horizontal)
+                     .padding(.bottom, 10)
                 } else {
-                    // MODO EXERCÍCIO (Peso/Reps)
-                    HStack(spacing: 20) {
-                        VStack {
-                            Text(context.state.reps)
-                                .font(.title)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                            Text("Reps")
-                                .font(.caption2)
-                                .foregroundColor(.gray)
-                        }
-                        
-                        VStack {
-                            Text(context.state.weight)
-                                .font(.title)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                            Text("Carga")
-                                .font(.caption2)
-                                .foregroundColor(.gray)
-                        }
-                        
-                        if context.state.dropsetCount > 0 {
-                            VStack {
-                                Text("\(context.state.dropsetCount)")
-                                    .font(.title)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.red)
-                                Text("Drops")
-                                    .font(.caption2)
-                                    .foregroundColor(.red)
-                            }
-                        }
+                    HStack {
+                         Label(context.state.weight, systemImage: "scalemass")
+                         Spacer()
+                         Label(context.state.reps, systemImage: "arrow.triangle.2.circlepath")
                     }
-                    .padding(.vertical, 5)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .padding(.horizontal)
+                    .padding(.bottom, 10)
                 }
             }
-            .padding()
-            .activityBackgroundTint(Color.black.opacity(0.9))
-            
-        } dynamicIsland: { context in // <--- Agora conectado corretamente ao ActivityConfiguration
-            DynamicIsland {
-                // --- EXPANDED ---
+            .background(Color(red: 0.1, green: 0.1, blue: 0.1)) // Fundo escuro
+            .activityBackgroundTint(Color.black)
+            .activitySystemActionForegroundColor(Color.white)
+
+        } dynamicIsland: { context in
+            // DYNAMIC ISLAND UI
+            let isTimerActive = Date(timeIntervalSince1970: context.state.deadline / 1000) > Date()
+
+            return DynamicIsland {
+                // Expanded Region
                 DynamicIslandExpandedRegion(.leading) {
                     HStack {
-                        Image(systemName: context.state.isRestMode ? "timer" : "dumbbell")
-                            .foregroundColor(context.state.isRestMode ? .orange : .blue)
-                    }.padding(.leading)
-                }
-                
-                DynamicIslandExpandedRegion(.trailing) {
-                    Text("\(context.state.currentSet)/\(context.state.totalSets)")
-                        .foregroundColor(.gray)
-                        .padding(.trailing)
-                }
-                
-                DynamicIslandExpandedRegion(.bottom) {
-                    if context.state.isRestMode, let endTime = context.state.endTime {
-                        // Timer Grande
-                        Text(timerInterval: Date()...endTime, countsDown: true)
-                            .font(.system(size: 40, weight: .semibold))
-                            .monospacedDigit()
-                            .foregroundColor(.yellow)
-                            .frame(height: 50)
-                    } else {
-                        // Info do Exercício Expandida
-                        HStack(alignment: .center, spacing: 16) {
-                            Label(context.state.reps, systemImage: "arrow.triangle.2.circlepath")
-                            Label(context.state.weight, systemImage: "scalemass")
-                            if context.state.dropsetCount > 0 {
-                                Label("\(context.state.dropsetCount)", systemImage: "exclamationmark.triangle")
-                                    .foregroundColor(.red)
-                            }
-                        }
-                        .foregroundColor(.white)
-                        .font(.headline)
-                        .padding(.top, 10)
+                        Image(systemName: "dumbbell.fill").foregroundColor(gymBeatBlue)
+                        Text("\(context.state.currentSet)/\(context.state.totalSets)").font(.caption)
                     }
                 }
-                
-                DynamicIslandExpandedRegion(.center) {
-                    Text(context.state.exerciseName)
-                        .foregroundColor(.white)
-                        .font(.headline)
-                        .lineLimit(1)
+                DynamicIslandExpandedRegion(.trailing) {
+                    if isTimerActive {
+                         Text(timerInterval: Date()...Date(timeIntervalSince1970: context.state.deadline / 1000), countsDown: true)
+                            .monospacedDigit()
+                            .foregroundColor(gymBeatBlue)
+                            .multilineTextAlignment(.trailing)
+                    }
                 }
-                
+                DynamicIslandExpandedRegion(.bottom) {
+                    // Area central expandida
+                    VStack {
+                        Text(context.state.exerciseName)
+                            .font(.headline)
+                        
+                        if !isTimerActive {
+                             HStack(spacing: 20) {
+                                Text("Carga: \(context.state.weight)")
+                                Text("Reps: \(context.state.reps)")
+                             }.font(.subheadline).foregroundColor(.gray)
+                        }
+                    }
+                }
             } compactLeading: {
-                // Ícone muda conforme o modo
-                Image(systemName: context.state.isRestMode ? "timer" : "dumbbell.fill")
-                    .foregroundColor(context.state.isRestMode ? .orange : .blue)
+                Image(systemName: "dumbbell.fill")
+                    .foregroundColor(gymBeatBlue) // R2
             } compactTrailing: {
-                if context.state.isRestMode, let endTime = context.state.endTime {
-                    Text(timerInterval: Date()...endTime, countsDown: true)
+                if isTimerActive {
+                    Text(timerInterval: Date()...Date(timeIntervalSince1970: context.state.deadline / 1000), countsDown: true)
                         .monospacedDigit()
                         .frame(width: 40)
-                        .font(.system(size: 13))
-                        .foregroundColor(.yellow)
+                        .foregroundColor(gymBeatBlue) // R2
                 } else {
-                    // No modo exercício colapsado, mostramos a série atual
-                    Text("S \(context.state.currentSet)")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.blue)
+                     Text("\(context.state.currentSet)/\(context.state.totalSets)")
+                        .foregroundColor(gymBeatBlue) // R2
                 }
             } minimal: {
-                Image(systemName: context.state.isRestMode ? "timer" : "dumbbell")
-                    .foregroundColor(context.state.isRestMode ? .orange : .blue)
+                Image(systemName: isTimerActive ? "timer" : "dumbbell.fill")
+                    .foregroundColor(gymBeatBlue) // R2
             }
         }
-    }
-}
-
-extension Color {
-    init(hex: UInt, opacity: Double = 1.0) {
-        let red = Double((hex & 0xff0000) >> 16) / 255.0
-        let green = Double((hex & 0xff00) >> 8) / 255.0
-        let blue = Double((hex & 0xff) >> 0) / 255.0
-        self.init(.sRGB, red: red, green: green, blue: blue, opacity: opacity)
     }
 }

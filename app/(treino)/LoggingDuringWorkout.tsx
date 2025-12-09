@@ -32,7 +32,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import * as NotificationsLiveActivity from '../../modules/notifications-live-activity'; // Adjust path if needed
 import { addLog } from '../../services/logService';
-import { cancelNotification, scheduleNotification } from '../../services/notificationService';
+import { cancelNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
 import { addTreino, getTreinoById, updateTreino } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
@@ -788,7 +788,8 @@ useEffect(() => {
   }, [loggedExercises, workoutName, startTime, totalLoad, activeLogId, user]);
 
 
-const launchLiveActivity = async (
+// R1: Função unificada para gerenciar a Live Activity (Singleton)
+  const manageLiveActivity = async (
     isRest: boolean, 
     durationOrTimestamp: number, 
     exerciseName: string, 
@@ -800,27 +801,39 @@ const launchLiveActivity = async (
   ) => {
     if (Platform.OS !== 'ios') return;
 
-    // Se já existe uma activity, encerra a anterior
-    if (currentActivityId) {
-       await NotificationsLiveActivity.endActivity(currentActivityId);
-    }
-
-    // Se for descanso, timestamp é agora + duração. Se for exercício, é 0.
+    // R3: Critério de tempo. Se for descanso, timestamp é futuro. Se for exercício, é 0 (ou passado).
     const timestamp = isRest ? Date.now() + (durationOrTimestamp * 1000) : 0;
 
     try {
-      const id = await NotificationsLiveActivity.startActivity(
-        timestamp,      
-        exerciseName,   
-        setIndex + 1,   // Ajuste para base 1 (humana)
-        totalSets,      
-        weight,         
-        reps,           
-        dropsetCount    
-      );
-      setCurrentActivityId(id);
+      if (currentActivityId) {
+        // ATUALIZA a existente (R1)
+        console.log('[LiveActivity] 🔄 Atualizando atividade existente:', currentActivityId);
+        await NotificationsLiveActivity.updateActivity(
+          currentActivityId,
+          timestamp,      
+          exerciseName,   
+          setIndex + 1,
+          totalSets,      
+          weight,         
+          reps,           
+          dropsetCount 
+        );
+      } else {
+        // CRIA uma nova apenas se não existir (R1)
+        console.log('[LiveActivity] ▶️ Iniciando nova atividade');
+        const id = await NotificationsLiveActivity.startActivity(
+          timestamp,      
+          exerciseName,   
+          setIndex + 1,
+          totalSets,      
+          weight,         
+          reps,           
+          dropsetCount    
+        );
+        setCurrentActivityId(id);
+      }
     } catch (e) {
-      console.warn("Falha ao iniciar Live Activity", e);
+      console.warn("Falha ao gerenciar Live Activity", e);
     }
   };
 
@@ -833,6 +846,17 @@ const launchLiveActivity = async (
     cancelAnimation(progress);
     setIsResting(false);
     setIsDoingExercise(false);
+
+    // Define o estado correto e o tempo máximo para o timer
+    if (isExerciseTimer) {
+      setMaxExerciseTime(duration);
+      setIsDoingExercise(true);
+      setExerciseStartTime(Date.now()); // Inicia o contador do exercício
+    } else {
+      setMaxRestTime(duration);
+      setIsResting(true);
+      setRestStartTime(Date.now()); // Inicia o contador de descanso
+    }
 
       // Inicia Timer de Descanso na Live Activity
 if (!isExerciseTimer && Platform.OS === 'ios') {
@@ -847,7 +871,7 @@ if (!isExerciseTimer && Platform.OS === 'ios') {
         if (activeExercise) {
              setsDone = activeExercise.series.filter(s => s.concluido).length;
              
-             launchLiveActivity(
+             manageLiveActivity(
                 true, // É descanso (isRest = true)
                 duration,
                 activeExercise.modelo.nome,
@@ -862,116 +886,60 @@ if (!isExerciseTimer && Platform.OS === 'ios') {
 
     // Iniciando live activity no IOS
     // --- LIVE ACTIVITY LOGIC ---
+// --- LIVE ACTIVITY LOGIC (R1 & R3) ---
     if (Platform.OS === 'ios') {
-
-      const now = Date.now();
-      const deadline = now + (duration * 1000);
-        // Stop previous activity to be clean
-        if (currentActivityId) {
-          await NotificationsLiveActivity.endActivity(currentActivityId);
-          setCurrentActivityId(null);
-        }
-
-        // Determine Data to Show
         let exerciseName = "Treino Livre";
-        let currentSet = 1;
         let totalSets = 4;
-        let stateLabel = isExerciseTimer ? "Tempo de Exercício" : "Tempo de Descanso";
+        let weightText = "-";
+        let repsText = "-";
+        let dropsCount = 0;
+        let setIndexForActivity = 0;
 
-        // If it's a specific set (Exercise Timer)
+        // Determinar dados para mostrar (lógica unificada)
         if (timedSetInfo) {
+            // Timer de exercício específico (cronometrando a execução da série)
             const exercise = loggedExercises[timedSetInfo.exerciseIndex];
             exerciseName = exercise.modelo.nome;
-            currentSet = timedSetInfo.setIndex + 1;
+            setIndexForActivity = timedSetInfo.setIndex;
             totalSets = exercise.series.length;
+            // Pegar dados da série
+            const set = exercise.series[timedSetInfo.setIndex];
+            weightText = `${set.peso}kg`;
+            repsText = `${set.repeticoes}`;
         } 
-        // If it's a Rest Timer (Usually happens AFTER a set)
-        else if (!isExerciseTimer) {
-            // Logic to find which exercise we just finished or are about to do
-            // For now, let's use the last exercise in the list or the one with focus
-            // A simple heuristic: Use the first exercise that isn't fully complete
+        else {
+            // Timer de descanso (ou transição entre séries)
+            // Busca o exercício ativo (não concluído)
             const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
           
             if (currentExercise) {
-                const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-                const nextSet = currentExercise.series[nextSetIndex !== -1 ? nextSetIndex : 0];
+                exerciseName = currentExercise.modelo.nome;
+                totalSets = currentExercise.series.length;
                 
-                // Monta os textos
-                const weightText = `${nextSet.peso}kg`;
-                const repsText = `${nextSet.repeticoes}`;
-                const dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length; 
-
-                launchLiveActivity(
-                    false, // Modo Exercício (isRest = false)
-                    0,     // Timestamp 0
-                    currentExercise.modelo.nome,
-                    (nextSetIndex !== -1 ? nextSetIndex : 0),
-                    currentExercise.series.length,
-                    weightText,
-                    repsText,
-                    dropsCount
-                );
+                // Tenta achar a próxima série a ser feita
+                const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
+                setIndexForActivity = nextSetIndex !== -1 ? nextSetIndex : 0;
+                
+                const nextSet = currentExercise.series[setIndexForActivity];
+                weightText = `${nextSet.peso}kg`;
+                repsText = `${nextSet.repeticoes}`;
+                dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length;
             }
         }
-        console.log('[LiveActivity] 🟢 Tentando iniciar Live Activity com os seguintes dados:');
-        console.log(`[LiveActivity] -> Deadline: ${new Date(deadline).toISOString()} (${deadline})`);
-        console.log(`[LiveActivity] -> Nome do Exercício: ${exerciseName}`);
-        console.log(`[LiveActivity] -> Série Atual: ${currentSet}`);
-        console.log(`[LiveActivity] -> Total de Séries: ${totalSets}`);
-        console.log(`[LiveActivity] -> Rótulo de Estado: ${stateLabel}`);
 
-        // ... dentro de startTimer
-
-// ... dentro de startTimer
-
-      try {
-        // ATUALIZAÇÃO: Passando todos os argumentos necessários para a Live Activity.
-        const activityId = await NotificationsLiveActivity.startActivity(
-          deadline,       // 1. timestamp
-          exerciseName,   // 2. exerciseName
-          currentSet,     // 3. currentSet
-          totalSets,      // 4. totalSets
-          "0",            // 5. weight (placeholder)
-          "0",            // 6. reps (placeholder)
-          0               // 7. dropsetCount (placeholder)
+        // Se for timer de exercício OU descanso, queremos mostrar o relógio (isRest=true no helper ativa o calculo de timestamp futuro)
+        await manageLiveActivity(
+            true, 
+            duration,
+            exerciseName,
+            setIndexForActivity,
+            totalSets,
+            weightText,
+            repsText,
+            dropsCount
         );
-        
-        console.log("Live Activity iniciada:", activityId);
-        setCurrentActivityId(activityId);
-      } catch (e) {
-        console.error("Erro ao iniciar:", e);
-      }
     }
-
-    // Finalizando liveActivity
-
-    if (isExerciseTimer && timedSetInfo) {
-      console.log('[Timer] Iniciando timer de exercício:', { duration, setIndex: timedSetInfo.setIndex });
-      setExerciseCountdown(duration);
-      setMaxExerciseTime(duration);
-      setSetBeingTimed(timedSetInfo);
-      setIsDoingExercise(true);
-    } else {
-      console.log('[Timer] Iniciando timer de descanso:', { duration, segundos: duration });
-      setRestCountdown(duration);
-      setMaxRestTime(duration);
-      setIsResting(true);
-      setRestStartTime(Date.now());
-
-      // Agenda notificação para quando o intervalo terminar
-      console.log('[Timer] Agendando notificação para daqui a', duration, 'segundos');
-      scheduleNotification(
-        'rest-timer', 
-        'Intervalo finalizado!', 
-        'Seu descanso acabou. Hora de voltar ao treino!', 
-        { seconds: duration }
-      ).catch(error => {
-        console.warn('[Timer] ✗ Erro ao agendar notificação de descanso:', error);
-      });
-    }
-    progress.value = 0; // Reseta a barra de progresso
-  };
-
+  }
   // Efeito unificado para ambos os timers
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -1053,19 +1021,36 @@ if (!isExerciseTimer && Platform.OS === 'ios') {
   }, [isResting, isDoingExercise]);
 
 
-  const handleSkipRest = () => {
-    // Encerra a Live Activity se houver uma ativa
-    if (currentActivityId && Platform.OS === 'ios') {
-      NotificationsLiveActivity.endActivity(currentActivityId);
-      setCurrentActivityId(null);
-    }
+const handleSkipRest = async () => {
     // Cancela a notificação de descanso agendada
     cancelNotification('rest-timer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsResting(false); // Isso irá disparar o useEffect para limpar o resto
-    setIsDoingExercise(false); // Também para o timer de exercício
-  };
+    setIsResting(false); 
+    setIsDoingExercise(false);
 
+    // R4: Atualiza a Live Activity para estado "Sem Timer" (info estática) em vez de matar a atividade
+    if (currentActivityId && Platform.OS === 'ios') {
+        // Encontra o exercício atual para mostrar info estática da próxima série
+        const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+        if (currentExercise) {
+            const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
+            const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
+            const nextSet = currentExercise.series[setIndex];
+            
+            await manageLiveActivity(
+                false, // isRest = false (Timestamp será 0/passado -> Layout muda para info estática)
+                0,     // Duração 0
+                currentExercise.modelo.nome,
+                setIndex,
+                currentExercise.series.length,
+                `${nextSet.peso}kg`,
+                `${nextSet.repeticoes}`,
+                0
+            );
+        }
+    }
+  };
+  
   const handleUpdateExerciseSeries = (exerciseIndex: number, newSeries: SerieEdit[]) => {
     const updatedExercises = [...loggedExercises];
     updatedExercises[exerciseIndex].series = newSeries;

@@ -610,12 +610,37 @@ export default function LoggingDuringWorkoutScreen() {
   const appState = React.useRef(AppState.currentState);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        // App voltou para o primeiro plano, cancela a notificação de descanso
-        cancelNotification('rest-timer');
-      }
+    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
+      const current = appState.current;
       appState.current = nextAppState;
+
+      if (current.match(/inactive|background/) && nextAppState === 'active') {
+        // App voltou para o primeiro plano
+        cancelNotification('rest-timer'); // Cancela a notificação de descanso
+      } else if (nextAppState.match(/inactive|background/)) {
+        // App está indo para o background ou inativo
+        // Se não há timer ativo e há exercícios logados, iniciar Live Activity estática
+        if (!isResting && !isDoingExercise && loggedExercises.length > 0 && !currentActivityId && Platform.OS === 'ios') {
+          console.log('[AppState] App indo para o background, iniciando Live Activity estática.');
+          const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+          if (currentExercise) {
+            const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
+            const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
+            const nextSet = currentExercise.series[setIndex];
+
+            await manageLiveActivity(
+              false, // isRest = false (static state)
+              0,     // duration = 0
+              currentExercise.modelo.nome,
+              setIndex,
+              currentExercise.series.length,
+              `${nextSet.peso}kg`,
+              `${nextSet.repeticoes}`,
+              0
+            );
+          }
+        }
+      }
     });
 
     return () => subscription.remove();
@@ -819,7 +844,7 @@ useEffect(() => {
           dropsetCount 
         );
       } else {
-        // CRIA uma nova apenas se não existir (R1)
+        console.log('[LiveActivity] ▶️ Attempting to start new activity with state (timestamp:', timestamp, 'exerciseName:', exerciseName, 'set:', setIndex + 1, '/', totalSets, 'weight:', weight, 'reps:', reps, 'dropsetCount:', dropsetCount, ')');
         console.log('[LiveActivity] ▶️ Iniciando nova atividade');
         const id = await NotificationsLiveActivity.startActivity(
           timestamp,      
@@ -857,32 +882,6 @@ useEffect(() => {
       setIsResting(true);
       setRestStartTime(Date.now()); // Inicia o contador de descanso
     }
-
-      // Inicia Timer de Descanso na Live Activity
-if (!isExerciseTimer && Platform.OS === 'ios') {
-        // Lógica para pegar o exercício atual durante o descanso
-        // Tenta pegar o exercício onde o timer foi acionado, ou o primeiro não concluído
-        let currentExIndex = 0;
-        let setsDone = 0;
-
-        // Tenta achar o exercício ativo
-        const activeExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-        
-        if (activeExercise) {
-             setsDone = activeExercise.series.filter(s => s.concluido).length;
-             
-             manageLiveActivity(
-                true, // É descanso (isRest = true)
-                duration,
-                activeExercise.modelo.nome,
-                setsDone, 
-                activeExercise.series.length,
-                "-", // Peso (não exibe no descanso)
-                "-", // Reps (não exibe no descanso)
-                0
-            );
-        }
-    }      
 
     // Iniciando live activity no IOS
     // --- LIVE ACTIVITY LOGIC ---
@@ -1026,6 +1025,7 @@ const handleSkipRest = async () => {
     cancelNotification('rest-timer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsResting(false); 
+    setRestStartTime(null); // Ensure rest start time is cleared
     setIsDoingExercise(false);
 
     // R4: Atualiza a Live Activity para estado "Sem Timer" (info estática) em vez de matar a atividade
@@ -1085,6 +1085,11 @@ const handleSkipRest = async () => {
           onPress: async () => {
             await cacheActiveWorkoutLog(null); // Limpa o cache
             cancelNotification('rest-timer');
+            // End Live Activity when workout is cancelled
+            if (currentActivityId && Platform.OS === 'ios') {
+              await NotificationsLiveActivity.endActivity(currentActivityId);
+              setCurrentActivityId(null);
+            }
             router.back(); // Volta para a tela anterior
           },
         },
@@ -1184,6 +1189,12 @@ const handleSkipRest = async () => {
         console.log('[handleFinishWorkout] Objeto do log pronto para ser salvo:', JSON.stringify(newLog, null, 2));
 
         const newLogId = await addLog(newLog);
+
+        // End Live Activity when workout finishes
+        if (currentActivityId && Platform.OS === 'ios') {
+          await NotificationsLiveActivity.endActivity(currentActivityId);
+          setCurrentActivityId(null);
+        }
         
         console.log('[handleFinishWorkout] Log salvo com sucesso. ID:', newLogId);
 

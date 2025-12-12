@@ -19,6 +19,8 @@ import { useAuth } from '../authprovider';
 // --- Imports dos novos componentes ---
 import { Ficha } from '@/models/ficha';
 import { Treino } from '@/models/treino';
+import { getTreinosByIds } from '@/services/treinoService';
+import { widgetService } from '@/services/widgetService';
 import Svg, { Circle } from 'react-native-svg';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '../../components/exercicios/ExpandableExerciseItem';
@@ -265,6 +267,12 @@ export default function TreinoCompletoScreen() {
             const volAtual = completedLog.cargaAcumulada || calculateTotalVolume(completedLog.exercicios, latestWeight || 70, true);
             setCurrentVolume(volAtual);
             // --- Fim da lógica ---
+
+            if (fichaAtiva && fichaAtiva.treinos.length > 0) {
+                 const treinosFicha = await getTreinosByIds(fichaAtiva.treinos);
+                 // Atualiza o widget: Agora o treino de hoje aparecerá como "Concluído"
+                 widgetService.updateAll(treinosFicha, userLogs);
+            }
 
         } catch (error) { console.error("Error calculating completion data:", error); }
     };

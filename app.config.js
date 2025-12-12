@@ -74,6 +74,9 @@ export default {
           ios: {
             useFrameworks: "static",
             deploymentTarget: "16.2",
+            entitlements: {
+              "com.apple.security.application-groups": ["group.br.com.gymbeat"]
+            },
           },
         },
       ],

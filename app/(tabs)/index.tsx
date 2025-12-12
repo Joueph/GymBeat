@@ -18,6 +18,7 @@ import { useAuth } from '../authprovider';
 import { ConfigIcon } from '../icon/ConfigIcon';
 
 import { MetricCard } from '@/components/MetricCard';
+import { widgetService } from '@/services/widgetService';
 import { FeatureUpvoteModal } from '../FeatureUpvoteModal';
 const ProgressCircle = ({ progress, size = 32, strokeWidth = 2.5 }: { progress: number, size?: number, strokeWidth?: number }) => {
   const radius = (size - strokeWidth) / 2;
@@ -86,10 +87,10 @@ export default function HomeScreen() {
             combinedLogs.push(cachedLog);
           }
 
-          if (activeFicha && activeFicha.treinos.length > 0) {
-            const fetchedTreinos: Treino[] = await getTreinosByIds(activeFicha.treinos);
-            setTreinos(fetchedTreinos);
+          if (activeFicha) {
+            const currentTreinos = activeFicha.treinos.length > 0 ? await getTreinosByIds(activeFicha.treinos) : [];
             setActiveFicha(activeFicha);
+            widgetService.updateAll(currentTreinos, combinedLogs);
           } else {
             setTreinos([]);
           }

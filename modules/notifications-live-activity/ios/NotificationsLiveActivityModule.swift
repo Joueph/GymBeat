@@ -1,12 +1,12 @@
 import ExpoModulesCore
 import ActivityKit
+import WidgetKit
 
 public class NotificationsLiveActivityModule: Module {
   public func definition() -> ModuleDefinition {
     Name("NotificationsLiveActivity")
 
-    // ... (manter startActivity existente mas certifique-se que usa os novos atributos se mudaram)
-
+    // Função para iniciar a Live Activity
     AsyncFunction("startActivity") { (timestamp: Double, exerciseName: String, currentSet: Int, totalSets: Int, weight: String, reps: String, dropsetCount: Int) -> String? in
       if #available(iOS 16.1, *) {
         let attributes = GymBeatWidgetAttributes()
@@ -36,7 +36,7 @@ public class NotificationsLiveActivityModule: Module {
       return nil
     }
 
-    // R1: Nova função para atualizar a atividade existente
+    // Função para atualizar a atividade existente
     AsyncFunction("updateActivity") { (activityId: String, timestamp: Double, exerciseName: String, currentSet: Int, totalSets: Int, weight: String, reps: String, dropsetCount: Int) in
         if #available(iOS 16.1, *) {
             Task {
@@ -59,6 +59,7 @@ public class NotificationsLiveActivityModule: Module {
         }
     }
 
+    // Função para encerrar a atividade
     AsyncFunction("endActivity") { (activityId: String) in
         if #available(iOS 16.1, *) {
             Task {
@@ -69,6 +70,13 @@ public class NotificationsLiveActivityModule: Module {
                 }
             }
         }
+    }
+
+    // NOVA FUNÇÃO: Recarrega os widgets da Home Screen
+    Function("reloadAllTimelines") {
+      if #available(iOS 14.0, *) {
+        WidgetCenter.shared.reloadAllTimelines()
+      }
     }
   }
 }

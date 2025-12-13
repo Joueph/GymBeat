@@ -1,23 +1,22 @@
 import WidgetKit
 import SwiftUI
 
-// MARK: - 1. Data Models (Shared with React Native)
+// MARK: - 1. Data Models
 struct TodayWorkoutData: Codable {
     let name: String
     let muscleGroup: String
     let duration: String
     let isCompleted: Bool
+    let dayLabel: String // Novo campo
 }
 
 struct WeekStreakData: Codable {
-    // Array de 7 booleanos representando Seg-Dom ou Dom-Sab
     let daysTrained: [Bool]
     let totalDays: Int
 }
 
-// MARK: - 2. Data Manager (App Groups)
+// MARK: - 2. Data Manager
 struct WidgetDataManager {
-    // IMPORTANTE: Deve corresponder ao grupo no app.config.js
     static let appGroup = "group.br.com.gymbeat"
     
     static func getTodayWorkout() -> TodayWorkoutData? {
@@ -36,7 +35,8 @@ struct WidgetDataManager {
 // MARK: - 3. Timeline Provider
 struct GymBeatProvider: TimelineProvider {
     func placeholder(in context: Context) -> GymBeatEntry {
-        GymBeatEntry(date: Date(), workout: TodayWorkoutData(name: "Treino A", muscleGroup: "Peito e Tríceps", duration: "60 min", isCompleted: false), streak: WeekStreakData(daysTrained: [false, true, true, false, true, false, false], totalDays: 3))
+        // ... (Mantenha o placeholder igual) ...
+        GymBeatEntry(date: Date(), workout: TodayWorkoutData(name: "Treino A", muscleGroup: "Peito e Tríceps", duration: "60 min", isCompleted: false, dayLabel: "HOJE"), streak: WeekStreakData(daysTrained: [false, true, true, false, true, false, false], totalDays: 3))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (GymBeatEntry) -> Void) {
@@ -45,14 +45,17 @@ struct GymBeatProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<GymBeatEntry>) -> Void) {
+        // 1. Busca os dados atuais salvos pelo App
         let workout = WidgetDataManager.getTodayWorkout()
         let streak = WidgetDataManager.getWeekStreak()
         
         let entry = GymBeatEntry(date: Date(), workout: workout, streak: streak)
         
-        // Atualizar a cada 15 minutos
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
-        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
+        // 2. CONFIGURAÇÃO DE FREQUÊNCIA
+        // ANTES: .after(nextUpdate) -> Atualizava sozinho a cada 15 min.
+        // AGORA: .never -> Nunca atualiza sozinho. Espera o App mandar.
+        
+        let timeline = Timeline(entries: [entry], policy: .never) // [!code warning] Alterado para .never
         completion(timeline)
     }
 }
@@ -65,12 +68,10 @@ struct GymBeatEntry: TimelineEntry {
 
 // MARK: - 4. Views
 
-// --- Widget 1: Treino de Hoje ---
 struct TodayWorkoutView: View {
     var workout: TodayWorkoutData?
     @Environment(\.widgetFamily) var family
     
-    // Cores do GymBeat
     let gymBlue = Color(red: 28/255, green: 176/255, blue: 246/255)
     let bgDark = Color(red: 0.1, green: 0.1, blue: 0.1)
 
@@ -82,7 +83,9 @@ struct TodayWorkoutView: View {
                 VStack(alignment: .leading) {
                     HStack {
                         Image(systemName: "dumbbell.fill").foregroundColor(gymBlue)
-                        Text("HOJE").font(.caption).bold().foregroundColor(.gray)
+                        // Usa o label dinâmico (HOJE, AMANHÃ, SEGUNDA...)
+                        Text(workout.dayLabel.uppercased())
+                            .font(.caption).bold().foregroundColor(.gray)
                         Spacer()
                     }
                     
@@ -117,7 +120,7 @@ struct TodayWorkoutView: View {
                 }
                 .padding()
             } else {
-                // Estado vazio/Descanso
+                // Estado vazio (caso não ache NENHUM treino na semana)
                 VStack {
                     Image(systemName: "moon.zzz.fill").font(.largeTitle).foregroundColor(.gray)
                     Text("Descanso").foregroundColor(.white).font(.headline)
@@ -127,7 +130,6 @@ struct TodayWorkoutView: View {
     }
 }
 
-// --- Widget 2: Dias Treinados ---
 struct WeekStreakView: View {
     var streak: WeekStreakData?
     let gymBlue = Color(red: 28/255, green: 176/255, blue: 246/255)
@@ -177,8 +179,7 @@ struct WeekStreakView: View {
     }
 }
 
-// MARK: - 5. Widget Configuration
-
+// Configurações do Widget permanecem as mesmas
 struct TodayWorkoutWidget: Widget {
     let kind: String = "TodayWorkoutWidget"
 
@@ -189,7 +190,7 @@ struct TodayWorkoutWidget: Widget {
         }
         .configurationDisplayName("Treino de Hoje")
         .description("Veja o seu treino agendado.")
-        .supportedFamilies([.systemSmall, .systemMedium]) // Tile e Medium
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
@@ -203,6 +204,6 @@ struct StreakWidget: Widget {
         }
         .configurationDisplayName("Dias Treinados")
         .description("Acompanhe a sua consistência semanal.")
-        .supportedFamilies([.systemMedium]) // Apenas Medium
+        .supportedFamilies([.systemMedium])
     }
 }

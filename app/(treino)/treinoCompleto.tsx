@@ -263,15 +263,22 @@ export default function TreinoCompletoScreen() {
             }
             setWeekStreak(currentStreak);
 
-            // --- Lógica de cálculo de volume ---
             const volAtual = completedLog.cargaAcumulada || calculateTotalVolume(completedLog.exercicios, latestWeight || 70, true);
             setCurrentVolume(volAtual);
-            // --- Fim da lógica ---
 
             if (fichaAtiva && fichaAtiva.treinos.length > 0) {
                  const treinosFicha = await getTreinosByIds(fichaAtiva.treinos);
-                 // Atualiza o widget: Agora o treino de hoje aparecerá como "Concluído"
-                 widgetService.updateAll(treinosFicha, userLogs);
+                 
+                 // Garante que o log atual (completedLog) esteja na lista passada para o widget
+                 // caso o fetch do banco ainda não o tenha trazido.
+                 const logsAtualizados = [...userLogs];
+                 const logJaExiste = logsAtualizados.some(l => l.id === completedLog.id);
+                 if (!logJaExiste) {
+                     logsAtualizados.push(completedLog);
+                 }
+
+                 // Atualiza widgets com a lista garantida
+                 widgetService.updateAll(treinosFicha, logsAtualizados);
             }
 
         } catch (error) { console.error("Error calculating completion data:", error); }

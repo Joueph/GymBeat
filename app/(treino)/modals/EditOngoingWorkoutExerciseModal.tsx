@@ -4,10 +4,10 @@ import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import DraggableFlatList, { RenderItemParams as DraggableRenderItemParams } from 'react-native-draggable-flatlist';
-import { MenuProvider } from 'react-native-popup-menu';
+import { MenuProvider } from 'react-native-popup-menu'; // Importe MenuProvider
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SetOptionsMenu } from '../../../components/SetOptionsMenu';
-import { VideoListItem } from '../ongoingWorkout';
+import { VideoListItem } from '../../../components/VideoListItem';
 
 interface SerieEdit extends Omit<Serie, 'id'> {
   peso: number;
@@ -15,6 +15,7 @@ interface SerieEdit extends Omit<Serie, 'id'> {
   id: string;
   type: 'normal' | 'dropset';
   isTimeBased?: boolean; 
+  isWarmup?: boolean;
   concluido: boolean;
 }
 
@@ -47,7 +48,7 @@ export const EditExerciseModal = ({ visible, onClose, onSave, exercise }: EditEx
     }
   }, [exercise]);
 
-  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
+  const handleSetOption = (option: 'addDropset' | 'copy' | 'delete' | 'toggleTime' | 'toggleWarmup', index: number) => {
     // Adiciona um pequeno atraso para permitir que o menu pop-up feche antes de o estado ser atualizado.
     // Isso evita o erro "Cannot read property 'measure' of null" do react-native-popup-menu.
     setTimeout(() => {
@@ -200,7 +201,7 @@ const getRepetitionsValue = () => {
                           />
                         </View>
                       )}
-                      <SetOptionsMenu isTimeBased={!!item.isTimeBased} isNormalSet={(item.type || 'normal') === 'normal'} onSelect={(action) => handleSetOption(action, itemIndex)} />
+                      <SetOptionsMenu isTimeBased={!!item.isTimeBased} isNormalSet={(item.type || 'normal') === 'normal'} onSelect={(action) => handleSetOption(action, itemIndex)} isWarmup={!!item.isWarmup} isFirstSet={itemIndex === 0} />
                     </View>
                   </View>
                 );

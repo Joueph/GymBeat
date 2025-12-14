@@ -788,7 +788,8 @@ useEffect(() => {
         diasSemana: [],
         intervalo: { min: 1, seg: 0 }, // Default interval
         exercicios: loggedExercises,
-        ordem: 0
+        ordem: 0,
+        descricao: ''
       };
 
       const log: Log = {
@@ -1126,7 +1127,8 @@ const handleSkipRest = async () => {
           diasSemana: [],
           fichaId: null, // Treinos livres não pertencem a uma ficha.
           intervalo: { min: 1, seg: 0 }, // Intervalo padrão
-          ordem: 999, // Ordem alta para aparecer por último se não for associado
+          ordem: 999,
+          descricao: ''
         };
         try {
           finalTreinoId = await addTreino(novoTreinoData);
@@ -1174,6 +1176,7 @@ const handleSkipRest = async () => {
             diasSemana: [],
             intervalo: { min: 0, seg: 0 },
             ordem: 0,
+            descricao: ''
           },
           exercicios: loggedExercises,
           horarioInicio: startTime,

@@ -2,5 +2,8 @@
 module.exports = config => ({
   type: "widget",
   icon: 'https://github.com/expo.png',
-  entitlements: { /* Add entitlements */ },
+  entitlements: {
+    // 👇 Esta linha é OBRIGATÓRIA para o widget ler os dados
+    "com.apple.security.application-groups": ["group.br.com.gymbeat"],
+  },
 });

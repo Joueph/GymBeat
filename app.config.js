@@ -18,6 +18,9 @@ export default {
         ITSAppUsesNonExemptEncryption: false,
         NSSupportsLiveActivities: true,
       },
+      entitlements: {
+        "com.apple.security.application-groups": ["group.br.com.gymbeat"],
+      },
       googleServicesFile: "./GoogleService-Info.plist",
     },
     android: {

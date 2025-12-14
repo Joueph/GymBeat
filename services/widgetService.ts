@@ -134,7 +134,7 @@ export const widgetService = {
     };
 
     console.log(`[WidgetDebug] 💾 Salvando JSON para 'widget_today_workout':`, JSON.stringify(data));
-    await SharedGroupPreferences.setItem('widget_today_workout', data, APP_GROUP);
+    await SharedGroupPreferences.setItem('widget_today_workout', JSON.stringify(data), APP_GROUP);
   },
 
   async updateWeekStreak(logs: Log[]) {
@@ -163,6 +163,6 @@ export const widgetService = {
     };
     
     console.log(`[WidgetDebug] 💾 Salvando JSON para 'widget_week_streak':`, JSON.stringify(data));
-    await SharedGroupPreferences.setItem('widget_week_streak', data, APP_GROUP);
+    await SharedGroupPreferences.setItem('widget_week_streak', JSON.stringify(data), APP_GROUP);
   }
 };

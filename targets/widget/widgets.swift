@@ -7,7 +7,7 @@ struct TodayWorkoutData: Codable {
     let muscleGroup: String
     let duration: String
     let isCompleted: Bool
-    let dayLabel: String // Novo campo
+    let dayLabel: String
 }
 
 struct WeekStreakData: Codable {
@@ -16,26 +16,30 @@ struct WeekStreakData: Codable {
 }
 
 // MARK: - 2. Data Manager
+// (Mantém a lógica de leitura de JSON String para Data corrigida anteriormente)
 struct WidgetDataManager {
     static let appGroup = "group.br.com.gymbeat"
     
     static func getTodayWorkout() -> TodayWorkoutData? {
         guard let defaults = UserDefaults(suiteName: appGroup),
-              let data = defaults.data(forKey: "widget_today_workout") else { return nil }
+              let jsonString = defaults.string(forKey: "widget_today_workout"),
+              let data = jsonString.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(TodayWorkoutData.self, from: data)
     }
     
     static func getWeekStreak() -> WeekStreakData? {
         guard let defaults = UserDefaults(suiteName: appGroup),
-              let data = defaults.data(forKey: "widget_week_streak") else { return nil }
+              let jsonString = defaults.string(forKey: "widget_week_streak"),
+              let data = jsonString.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(WeekStreakData.self, from: data)
     }
 }
 
 // MARK: - 3. Timeline Provider
 struct GymBeatProvider: TimelineProvider {
+    // Placeholder para pré-visualização (XCode/Galeria)
     func placeholder(in context: Context) -> GymBeatEntry {
-        // ... (Mantenha o placeholder igual) ...
+        // Exemplo com treino não concluído
         GymBeatEntry(date: Date(), workout: TodayWorkoutData(name: "Treino A", muscleGroup: "Peito e Tríceps", duration: "60 min", isCompleted: false, dayLabel: "HOJE"), streak: WeekStreakData(daysTrained: [false, true, true, false, true, false, false], totalDays: 3))
     }
 
@@ -45,17 +49,13 @@ struct GymBeatProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<GymBeatEntry>) -> Void) {
-        // 1. Busca os dados atuais salvos pelo App
         let workout = WidgetDataManager.getTodayWorkout()
         let streak = WidgetDataManager.getWeekStreak()
         
         let entry = GymBeatEntry(date: Date(), workout: workout, streak: streak)
         
-        // 2. CONFIGURAÇÃO DE FREQUÊNCIA
-        // ANTES: .after(nextUpdate) -> Atualizava sozinho a cada 15 min.
-        // AGORA: .never -> Nunca atualiza sozinho. Espera o App mandar.
-        
-        let timeline = Timeline(entries: [entry], policy: .never) // [!code warning] Alterado para .never
+        // Política .never: O widget só atualiza quando o App principal solicitar via WidgetCenter.shared.reloadAllTimelines()
+        let timeline = Timeline(entries: [entry], policy: .never)
         completion(timeline)
     }
 }
@@ -66,61 +66,93 @@ struct GymBeatEntry: TimelineEntry {
     let streak: WeekStreakData?
 }
 
-// MARK: - 4. Views
+// MARK: - 4. Views & Colors
+
+extension Color {
+    // Fundo padrão escuro (#0B0D10)
+    static let appBackground = Color(red: 11/255, green: 13/255, blue: 16/255)
+    // Azul de destaque do app
+    static let gymBlue = Color(red: 28/255, green: 176/255, blue: 246/255)
+    // NOVO: Fundo azul escuro para quando o treino está concluído (uma versão mais fechada do gymBlue)
+    static let completedBackground = Color(red: 14/255, green: 88/255, blue: 123/255)
+}
 
 struct TodayWorkoutView: View {
     var workout: TodayWorkoutData?
     @Environment(\.widgetFamily) var family
-    
-    let gymBlue = Color(red: 28/255, green: 176/255, blue: 246/255)
-    let bgDark = Color(red: 0.1, green: 0.1, blue: 0.1)
+
+    // Computed property para determinar a cor de fundo atual
+    var currentBackgroundColor: Color {
+        if let workout = workout, workout.isCompleted {
+            return Color.completedBackground
+        } else {
+            return Color.appBackground
+        }
+    }
 
     var body: some View {
         ZStack {
-            bgDark.ignoresSafeArea()
+            // Aplica a cor de fundo condicional
+            currentBackgroundColor.ignoresSafeArea()
             
             if let workout = workout {
-                VStack(alignment: .leading) {
-                    HStack {
-                        Image(systemName: "dumbbell.fill").foregroundColor(gymBlue)
-                        // Usa o label dinâmico (HOJE, AMANHÃ, SEGUNDA...)
-                        Text(workout.dayLabel.uppercased())
-                            .font(.caption).bold().foregroundColor(.gray)
+                if workout.isCompleted {
+                    // --- LAYOUT DE TREINO CONCLUÍDO ---
+                    VStack(spacing: 8) {
+                        Spacer()
+                        // Ícone de check grande
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: family == .systemSmall ? 34 : 44))
+                            .foregroundColor(.white)
+                        
+                        Text("TREINO REALIZADO!")
+                            .font(family == .systemSmall ? .headline : .title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+
+                        // Mostra o nome do treino concluído menorzinho embaixo
+                        Text(workout.name)
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
                         Spacer()
                     }
+                    .padding()
                     
-                    Spacer()
-                    
-                    Text(workout.name)
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    Text(workout.muscleGroup)
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                    
-                    Spacer()
-                    
-                    // Diferença de layout entre Small e Medium
-                    if family == .systemMedium {
+                } else {
+                    // --- LAYOUT PADRÃO (A FAZER) ---
+                    VStack(alignment: .leading) {
                         HStack {
-                            Label(workout.duration, systemImage: "clock").font(.caption).foregroundColor(.gray)
+                            Image(systemName: "dumbbell.fill").foregroundColor(.gymBlue)
+                            Text(workout.dayLabel.uppercased())
+                                .font(.caption).bold().foregroundColor(.gray)
                             Spacer()
-                            if workout.isCompleted {
-                                Text("CONCLUÍDO").font(.caption).bold().foregroundColor(gymBlue)
-                            }
                         }
-                    } else {
-                        // Layout Compacto (Tile)
-                        if workout.isCompleted {
-                            Image(systemName: "checkmark.circle.fill").foregroundColor(gymBlue)
+                        
+                        Spacer()
+                        
+                        Text(workout.name)
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text(workout.muscleGroup)
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        
+                        Spacer()
+                        
+                        if family == .systemMedium {
+                            HStack {
+                                Label(workout.duration, systemImage: "clock").font(.caption).foregroundColor(.gray)
+                                Spacer()
+                            }
                         } else {
                             Text(workout.duration).font(.caption2).foregroundColor(.gray)
                         }
                     }
+                    .padding()
                 }
-                .padding()
             } else {
-                // Estado vazio (caso não ache NENHUM treino na semana)
+                // Estado vazio (Descanso)
                 VStack {
                     Image(systemName: "moon.zzz.fill").font(.largeTitle).foregroundColor(.gray)
                     Text("Descanso").foregroundColor(.white).font(.headline)
@@ -132,13 +164,11 @@ struct TodayWorkoutView: View {
 
 struct WeekStreakView: View {
     var streak: WeekStreakData?
-    let gymBlue = Color(red: 28/255, green: 176/255, blue: 246/255)
-    let bgDark = Color(red: 0.1, green: 0.1, blue: 0.1)
     let days = ["D", "S", "T", "Q", "Q", "S", "S"]
     
     var body: some View {
         ZStack {
-            bgDark.ignoresSafeArea()
+            Color.appBackground.ignoresSafeArea()
             
             VStack(alignment: .leading) {
                 HStack {
@@ -161,7 +191,7 @@ struct WeekStreakView: View {
                                 .foregroundColor(.gray)
                             
                             Circle()
-                                .fill(isTrained(index) ? gymBlue : Color.gray.opacity(0.3))
+                                .fill(isTrained(index) ? Color.gymBlue : Color.gray.opacity(0.3))
                                 .frame(width: 20, height: 20)
                         }
                         .frame(maxWidth: .infinity)
@@ -179,18 +209,24 @@ struct WeekStreakView: View {
     }
 }
 
-// Configurações do Widget permanecem as mesmas
+// MARK: - 5. Widgets Configuration
+
 struct TodayWorkoutWidget: Widget {
     let kind: String = "TodayWorkoutWidget"
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: GymBeatProvider()) { entry in
             TodayWorkoutView(workout: entry.workout)
-                .containerBackground(Color(red: 0.1, green: 0.1, blue: 0.1), for: .widget)
+                // O containerBackground também precisa ser condicional para iOS 17+
+                .containerBackground(
+                    entry.workout?.isCompleted == true ? Color.completedBackground : Color.appBackground,
+                    for: .widget
+                )
         }
         .configurationDisplayName("Treino de Hoje")
         .description("Veja o seu treino agendado.")
         .supportedFamilies([.systemSmall, .systemMedium])
+        .contentMarginsDisabled()
     }
 }
 
@@ -200,10 +236,11 @@ struct StreakWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: GymBeatProvider()) { entry in
             WeekStreakView(streak: entry.streak)
-                .containerBackground(Color(red: 0.1, green: 0.1, blue: 0.1), for: .widget)
+                .containerBackground(Color.appBackground, for: .widget)
         }
         .configurationDisplayName("Dias Treinados")
         .description("Acompanhe a sua consistência semanal.")
         .supportedFamilies([.systemMedium])
+        .contentMarginsDisabled()
     }
 }

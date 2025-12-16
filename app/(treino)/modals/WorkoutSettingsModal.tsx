@@ -3,7 +3,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RestTimeDrawer } from '../../../components/RestTimeDrawer';
 import { getUserProfile, updateUserProfile } from '../../../userService';
 import { useAuth } from '../../authprovider';
@@ -30,6 +30,7 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isPreferenceModalVisible, setPreferenceModalVisible] = useState(false);
   const [isRestTimeDrawerVisible, setRestTimeDrawerVisible] = useState(false);
+  const insets = useSafeAreaInsets();
 
   // Estados para as configurações
   const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
@@ -134,11 +135,11 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
       visible={isVisible}
       onRequestClose={onClose}
     >
-      <SafeAreaView style={styles.modalSafeArea}>
+      <View style={[styles.modalSafeArea, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Configurações</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <FontAwesome name="close" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -220,8 +221,9 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
             initialValue={defaultRestTime}
           />
         </View>
-      </SafeAreaView>
+      </View>
     </Modal>
+
   );
 };
 

@@ -1,21 +1,30 @@
+import { Treino } from '@/models/treino';
 import { FontAwesome } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { RestTimeDrawer } from '../../../components/RestTimeDrawer';
 import { getUserProfile, updateUserProfile } from '../../../userService';
 import { useAuth } from '../../authprovider';
 import { WorkoutScreenPreference } from './specifics/WorkoutScreenPreference';
 
+const DIAS_SEMANA_ORDEM = { 'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6 };
+const DIAS_SEMANA_ARRAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'] as const;
+type DiaSemana = typeof DIAS_SEMANA_ARRAY[number];
+
 interface WorkoutSettingsModalProps {
   isVisible: boolean;
   onClose: () => void;
+  treino?: Treino | null; // Opcional, pois pode ser usado apenas para configs globais
+  onUpdateTreino?: (treino: Treino) => void;
 }
 
 export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
   isVisible,
   onClose,
+  treino,
+  onUpdateTreino
 }) => {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
@@ -24,25 +33,19 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
 
   // Estados para as configurações
   const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
-  const [defaultRestTime, setDefaultRestTime] = useState(90); // 90 segundos como padrão
+  const [defaultRestTime, setDefaultRestTime] = useState(90);
   const [restTimeNotificationEnabled, setRestTimeNotificationEnabled] = useState(false);
 
   useEffect(() => {
-    // Busca as configurações do usuário quando o modal se torna visível
     if (isVisible) {
       const fetchSettings = async () => {
         if (user) {
           setIsLoading(true);
           const profile = await getUserProfile(user.id);
           if (profile) {
-            // Define o tipo de tela de treino
             setWorkoutScreenType(profile.workoutScreenType || 'complete');
-
-            // Define o tempo de descanso padrão
             const restTimeInSeconds = (profile.defaultRestTime?.min ?? 1) * 60 + (profile.defaultRestTime?.seg ?? 30);
             setDefaultRestTime(restTimeInSeconds);
-
-            // Define a preferência de notificação
             setRestTimeNotificationEnabled(profile.settings?.notifications?.restTimeEnding ?? false);
           }
           setIsLoading(false);
@@ -52,12 +55,26 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
     }
   }, [isVisible, user]);
 
+  const handleToggleDay = (day: DiaSemana) => {
+    if (!treino || !onUpdateTreino) return;
+
+    const currentDays = treino.diasSemana || [];
+    const newDays = currentDays.includes(day)
+      ? currentDays.filter(d => d !== day)
+      : [...currentDays, day];
+
+    // Ordena os dias para manter consistência
+    newDays.sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]);
+
+    onUpdateTreino({ ...treino, diasSemana: newDays });
+  };
+
   const handleWorkoutScreenPreferenceSelect = async (preference: 'simplified' | 'complete') => {
     if (user) {
       try {
         await updateUserProfile(user.id, { workoutScreenType: preference });
-        setWorkoutScreenType(preference); // Atualiza o estado local
-        setPreferenceModalVisible(false); // Fecha o sub-modal
+        setWorkoutScreenType(preference);
+        setPreferenceModalVisible(false);
       } catch (error) {
         console.error('Erro ao salvar preferência de tela de treino:', error);
       }
@@ -69,39 +86,35 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
       const newMin = Math.floor(newSeconds / 60);
       const newSeg = newSeconds % 60;
       await updateUserProfile(user.id, { defaultRestTime: { min: newMin, seg: newSeg } });
-      setDefaultRestTime(newSeconds); // Atualiza o estado local
+      setDefaultRestTime(newSeconds);
     }
-    setRestTimeDrawerVisible(false); // Fecha o drawer
+    setRestTimeDrawerVisible(false);
   };
 
   const handleRestTimeNotificationToggle = async (newValue: boolean) => {
     if (!user) return;
 
-    // Se estiver ativando, verifica as permissões primeiro
     if (newValue) {
       const { status } = await Notifications.getPermissionsAsync();
       if (status !== 'granted') {
         const { status: newStatus } = await Notifications.requestPermissionsAsync();
         if (newStatus !== 'granted') {
           Alert.alert("Permissão Negada", "As notificações não podem ser ativadas sem a sua permissão.");
-          return; // Não ativa o toggle se a permissão for negada
+          return;
         }
       }
     }
 
-    // Se a permissão foi concedida ou se está desativando, atualiza o estado e salva
     setRestTimeNotificationEnabled(newValue);
     try {
-      // Para atualizar um campo aninhado com 'deep merge', passamos o objeto aninhado.
       await updateUserProfile(user.id, {
         settings: {
-          ...user.settings, // Mantém outras configurações existentes
+          ...user.settings,
           notifications: { ...user.settings?.notifications, restTimeEnding: newValue },
         },
       });
     } catch (error) {
       console.error('Erro ao salvar configuração de notificação:', error);
-      // Reverte o estado visual em caso de erro
       setRestTimeNotificationEnabled(!newValue);
       Alert.alert("Erro", "Não foi possível salvar a configuração de notificação.");
     }
@@ -124,13 +137,40 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
       <SafeAreaView style={styles.modalSafeArea}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Configurações do Treino</Text>
+            <Text style={styles.modalTitle}>Configurações</Text>
             <TouchableOpacity onPress={onClose}>
               <FontAwesome name="close" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.settingsList}>
+          <ScrollView style={styles.settingsList}>
+            {/* Seção de Dias da Semana - Exibida apenas se um treino for fornecido */}
+            {treino && (
+              <View style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Dias da Semana</Text>
+                <View style={styles.daysContainer}>
+                  {DIAS_SEMANA_ARRAY.map(day => {
+                    const isSelected = treino.diasSemana?.includes(day);
+                    return (
+                      <TouchableOpacity
+                        key={day}
+                        style={[styles.dayButton, isSelected && styles.dayButtonSelected]}
+                        onPress={() => handleToggleDay(day)}
+                      >
+                        <Text style={[styles.dayButtonText, isSelected && styles.dayButtonTextSelected]}>
+                          {day.toUpperCase()}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            <View style={styles.divider} />
+
+            <Text style={styles.sectionTitle}>Preferências Globais</Text>
+
             <TouchableOpacity style={styles.settingItem} onPress={() => setPreferenceModalVisible(true)}>
               <FontAwesome name="desktop" size={20} color="#ccc" style={styles.settingIcon} />
               <View style={styles.settingTextContainer}>
@@ -164,9 +204,8 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
                 trackColor={{ false: "#767577", true: "#3B82F6" }}
               />
             </View>
-          </View>
+          </ScrollView>
 
-          {/* Sub-modal para a preferência de tela */}
           <WorkoutScreenPreference
             isVisible={isPreferenceModalVisible}
             onClose={() => setPreferenceModalVisible(false)}
@@ -174,7 +213,6 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
             currentPreference={workoutScreenType}
           />
 
-          {/* Drawer para o tempo de descanso */}
           <RestTimeDrawer
             visible={isRestTimeDrawerVisible}
             onClose={() => setRestTimeDrawerVisible(false)}
@@ -190,10 +228,11 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
 const styles = StyleSheet.create({
   modalSafeArea: {
     flex: 1,
+    paddingTop: 0,
     backgroundColor: "#030405",
   },
   modalContainer: {
-    flexGrow: 1,
+    flex: 1,
     padding: 20,
     backgroundColor: "#030405",
   },
@@ -207,11 +246,58 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 22,
     fontWeight: 'bold',
-    marginBottom: 20,
   },
   settingsList: {
     width: '100%',
+    flex: 1,
   },
+  sectionContainer: {
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 10,
+    marginTop: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#222',
+    marginVertical: 15,
+  },
+  // Day Selector Styles
+  daysContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between', // Distribui melhor em telas pequenas
+  },
+  dayButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#141414',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+  },
+  dayButtonSelected: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  dayButtonText: {
+    color: '#888',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  dayButtonTextSelected: {
+    color: '#fff',
+  },
+  // Existing Setting Item Styles
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -224,6 +310,8 @@ const styles = StyleSheet.create({
   },
   settingIcon: {
     marginRight: 15,
+    width: 24, // Fixed width for alignment
+    textAlign: 'center',
   },
   settingTextContainer: {
     flex: 1,

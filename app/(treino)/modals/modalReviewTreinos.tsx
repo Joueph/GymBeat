@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { HistoricoCargaTreinoChart } from '@/components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '@/components/exercicios/ExpandableExerciseItem';
 
-interface SerieComStatus extends Serie {
+interface SerieComStatus extends Omit<Serie, 'concluido'> {
     concluido?: boolean;
 }
 

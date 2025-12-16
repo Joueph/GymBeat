@@ -8,6 +8,11 @@ struct TodayWorkoutData: Codable {
     let duration: String
     let isCompleted: Bool
     let dayLabel: String
+    // New Fields
+    let status: String? // 'todo', 'in_progress', 'completed'
+    let exercisesDone: Int?
+    let totalExercises: Int?
+    let lastUpdate: Double?
 }
 
 struct WeekStreakData: Codable {
@@ -39,8 +44,8 @@ struct WidgetDataManager {
 struct GymBeatProvider: TimelineProvider {
     // Placeholder para pré-visualização (XCode/Galeria)
     func placeholder(in context: Context) -> GymBeatEntry {
-        // Exemplo com treino não concluído
-        GymBeatEntry(date: Date(), workout: TodayWorkoutData(name: "Treino A", muscleGroup: "Peito e Tríceps", duration: "60 min", isCompleted: false, dayLabel: "HOJE"), streak: WeekStreakData(daysTrained: [false, true, true, false, true, false, false], totalDays: 3))
+        // Exemplo com treino em andamento
+        GymBeatEntry(date: Date(), workout: TodayWorkoutData(name: "Treino A", muscleGroup: "Peito e Tríceps", duration: "60 min", isCompleted: false, dayLabel: "HOJE", status: "in_progress", exercisesDone: 5, totalExercises: 8, lastUpdate: Date().timeIntervalSince1970), streak: WeekStreakData(daysTrained: [false, true, true, false, true, false, false], totalDays: 3))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (GymBeatEntry) -> Void) {
@@ -49,13 +54,22 @@ struct GymBeatProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<GymBeatEntry>) -> Void) {
-        let workout = WidgetDataManager.getTodayWorkout()
+        var workout = WidgetDataManager.getTodayWorkout()
         let streak = WidgetDataManager.getWeekStreak()
         
+        // Check if data is outdated (more than 24 hours) - optional logic
+        if let lastUpdate = workout?.lastUpdate {
+             let diff = Date().timeIntervalSince1970 - lastUpdate
+             if diff > 86400 { // 24 hours
+                 workout = nil
+             }
+        }
+
         let entry = GymBeatEntry(date: Date(), workout: workout, streak: streak)
         
-        // Política .never: O widget só atualiza quando o App principal solicitar via WidgetCenter.shared.reloadAllTimelines()
-        let timeline = Timeline(entries: [entry], policy: .never)
+        // Refresh every 30 minutes to check for new day/schedule
+        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 30, to: Date()) ?? Date().addingTimeInterval(1800)
+        let timeline = Timeline(entries: [entry], policy: .after(nextUpdate))
         completion(timeline)
     }
 }
@@ -81,46 +95,87 @@ struct TodayWorkoutView: View {
     var workout: TodayWorkoutData?
     @Environment(\.widgetFamily) var family
 
-    // Computed property para determinar a cor de fundo atual
-    var currentBackgroundColor: Color {
-        if let workout = workout, workout.isCompleted {
-            return Color.completedBackground
-        } else {
-            return Color.appBackground
-        }
-    }
-
     var body: some View {
         ZStack {
-            // Aplica a cor de fundo condicional
-            currentBackgroundColor.ignoresSafeArea()
-            
             if let workout = workout {
-                if workout.isCompleted {
-                    // --- LAYOUT DE TREINO CONCLUÍDO ---
+                if workout.status == "completed" || workout.isCompleted {
+                     // --- LAYOUT DE TREINO CONCLUÍDO ---
+                     // Gradiente Azul
+                    LinearGradient(gradient: Gradient(colors: [Color.gymBlue, Color.completedBackground]), startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .ignoresSafeArea()
+                    
                     VStack(spacing: 8) {
                         Spacer()
-                        // Ícone de check grande
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: family == .systemSmall ? 34 : 44))
                             .foregroundColor(.white)
                         
-                        Text("TREINO REALIZADO!")
+                        Text("Treino realizado!")
                             .font(family == .systemSmall ? .headline : .title3)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
                             .multilineTextAlignment(.center)
 
-                        // Mostra o nome do treino concluído menorzinho embaixo
                         Text(workout.name)
                             .font(.caption)
                             .foregroundColor(.white.opacity(0.8))
+                        
+                        if let time = workout.duration as String? {
+                             Text(time)
+                                .font(.caption2)
+                                .bold()
+                                .foregroundColor(.white.opacity(0.6))
+                        }
                         Spacer()
                     }
                     .padding()
-                    
+                } else if workout.status == "in_progress" {
+                     // --- LAYOUT EM ANDAMENTO ---
+                     Color.appBackground.ignoresSafeArea()
+                     
+                     VStack(alignment: .leading) {
+                        HStack {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 8, height: 8)
+                            Text("TREINO EM ANDAMENTO")
+                                .font(.caption)
+                                .bold()
+                                .foregroundColor(.green)
+                            Spacer()
+                        }
+                        
+                        Spacer()
+                        
+                        Text(workout.name)
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        if let done = workout.exercisesDone, let total = workout.totalExercises {
+                             HStack {
+                                Text("\(done)/\(total) exercícios")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                Spacer()
+                                // Progress bar simples
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.gray.opacity(0.3)).frame(width: 60, height: 6)
+                                    Capsule().fill(Color.green).frame(width: 60 * (CGFloat(done) / CGFloat(max(total, 1))), height: 6)
+                                }
+                             }
+                        } else {
+                            Text(workout.muscleGroup)
+                                .font(.subheadline)
+                                .foregroundColor(.gray)
+                        }
+                     }
+                     .padding()
                 } else {
-                    // --- LAYOUT PADRÃO (A FAZER) ---
+                    // --- LAYOUT TODO (PADRÃO) ---
+                    Color.appBackground.ignoresSafeArea()
+                    
                     VStack(alignment: .leading) {
                         HStack {
                             Image(systemName: "dumbbell.fill").foregroundColor(.gymBlue)
@@ -153,6 +208,7 @@ struct TodayWorkoutView: View {
                 }
             } else {
                 // Estado vazio (Descanso)
+                Color.appBackground.ignoresSafeArea()
                 VStack {
                     Image(systemName: "moon.zzz.fill").font(.largeTitle).foregroundColor(.gray)
                     Text("Descanso").foregroundColor(.white).font(.headline)
@@ -219,7 +275,7 @@ struct TodayWorkoutWidget: Widget {
             TodayWorkoutView(workout: entry.workout)
                 // O containerBackground também precisa ser condicional para iOS 17+
                 .containerBackground(
-                    entry.workout?.isCompleted == true ? Color.completedBackground : Color.appBackground,
+                    (entry.workout?.status == "completed" || entry.workout?.isCompleted == true) ? Color.completedBackground : Color.appBackground,
                     for: .widget
                 )
         }

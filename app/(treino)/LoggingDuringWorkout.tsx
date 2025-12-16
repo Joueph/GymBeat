@@ -283,7 +283,7 @@ const LoggedExerciseCard = ({
               </Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.xText}>x</Text>          
+          <Text style={styles.xText}>x</Text>
           {item.modelo.caracteristicas?.isPesoCorporal ? (
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Peso</Text>
@@ -337,230 +337,230 @@ const LoggedExerciseCard = ({
   return (
     <>
       <View style={styles.exercicioCard}>
-      <View
-        style={styles.exercicioHeader}
-      ><TouchableOpacity style={{flex: 1, flexDirection: 'row', alignItems: 'center'}} onPress={() => setDetailModalVisible(true)}>
-          <VideoListItem uri={item.modelo.imagemUrl} style={styles.exerciseVideo} />
-          <View style={styles.exerciseInfo}>
-            <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
-            <Text style={styles.muscleGroup}>{item.modelo.grupoMuscular}</Text>
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => {
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          setIsExpanded(!isExpanded);
-        }}><FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#fff" /></TouchableOpacity>
-      </View>
-
-      {isExpanded ? (
-        <>
-          <View style={styles.notesContainer}>
-            <FontAwesome name="pencil" size={12} color="#fff" />
-            <TextInput
-              style={styles.notesInput}
-              placeholder="Anotações do exercício"
-              placeholderTextColor="#888"
-              value={exerciseNotes}
-              onChangeText={setExerciseNotes}
-              onBlur={() => onNotesChange(exerciseNotes)}
-            />
-          </View>
-
-          <View>
-            {series.map((s, index) => renderSetItem({ item: s, getIndex: () => index }))}
-          </View>
-
-          <TouchableOpacity
-            style={styles.addSetButton}
-            onPress={() => {
-              const lastNormalSet = series.slice().reverse().find(s => s.type !== 'dropset');
-              const newSet = {
-                id: `set-${Date.now()}`,
-                repeticoes: lastNormalSet?.repeticoes || '10',
-                peso: lastNormalSet?.peso || 10,
-                type: 'normal' as const,
-                isTimeBased: lastNormalSet?.isTimeBased || false,
-                concluido: false,
-              };
-              handleSeriesUpdate([...series, newSet]);
-            }}
-          >
-            <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+        <View
+          style={styles.exercicioHeader}
+        ><TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }} onPress={() => setDetailModalVisible(true)}>
+            <VideoListItem uri={item.modelo.imagemUrl} style={styles.exerciseVideo} />
+            <View style={styles.exerciseInfo}>
+              <Text style={styles.exercicioName}>{item.modelo.nome}</Text>
+              <Text style={styles.muscleGroup}>{item.modelo.grupoMuscular}</Text>
+            </View>
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setIsExpanded(!isExpanded);
+          }}><FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#fff" /></TouchableOpacity>
+        </View>
 
-          <View style={styles.exerciseActionsRow}>
-            <View style={styles.exerciseActionsLeft}>
-              <TouchableOpacity style={styles.restTimerCard} onPress={() => setIsRestTimePickerVisible(true)}>
-                <FontAwesome name="clock-o" size={18} color="#fff" />
-                <Text style={styles.restTimerText}>{formatRestTime(item.restTime || 60)}</Text>
+        {isExpanded ? (
+          <>
+            <View style={styles.notesContainer}>
+              <FontAwesome name="pencil" size={12} color="#fff" />
+              <TextInput
+                style={styles.notesInput}
+                placeholder="Anotações do exercício"
+                placeholderTextColor="#888"
+                value={exerciseNotes}
+                onChangeText={setExerciseNotes}
+                onBlur={() => onNotesChange(exerciseNotes)}
+              />
+            </View>
+
+            <View>
+              {series.map((s, index) => renderSetItem({ item: s, getIndex: () => index }))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.addSetButton}
+              onPress={() => {
+                const lastNormalSet = series.slice().reverse().find(s => s.type !== 'dropset');
+                const newSet = {
+                  id: `set-${Date.now()}`,
+                  repeticoes: lastNormalSet?.repeticoes || '10',
+                  peso: lastNormalSet?.peso || 10,
+                  type: 'normal' as const,
+                  isTimeBased: lastNormalSet?.isTimeBased || false,
+                  concluido: false,
+                };
+                handleSeriesUpdate([...series, newSet]);
+              }}
+            >
+              <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+            </TouchableOpacity>
+
+            <View style={styles.exerciseActionsRow}>
+              <View style={styles.exerciseActionsLeft}>
+                <TouchableOpacity style={styles.restTimerCard} onPress={() => setIsRestTimePickerVisible(true)}>
+                  <FontAwesome name="clock-o" size={18} color="#fff" />
+                  <Text style={styles.restTimerText}>{formatRestTime(item.restTime || 60)}</Text>
+                </TouchableOpacity>
+                <View style={styles.seriesCounterContainer}>
+                  <FontAwesome5 name="layer-group" size={16} color="#aaa" />
+                  <Text style={styles.seriesCounterText}>
+                    {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible)}
+                style={styles.avancadoButton}
+              >
+                <Text style={styles.avancadoButtonText}>Avançado</Text>
+                <FontAwesome name={isAdvancedOptionsVisible ? "chevron-up" : "chevron-down"} size={14} color="#fff" />
               </TouchableOpacity>
+            </View>
+
+            {isAdvancedOptionsVisible && (
+              <View style={styles.advancedOptionsContainer}>
+                {item.modelo.caracteristicas?.usaBarra && (
+                  <View style={styles.barbellWeightCard}>
+                    <Text style={styles.barbellWeightLabel}>Peso da Barra</Text>
+                    <TextInput
+                      style={styles.barbellWeightInput}
+                      value={String(item.pesoBarra || 0)}
+                      onChangeText={(text) => {
+                        const newPeso = parseFloat(text.replace(',', '.')) || 0;
+                        onPesoBarraChange(newPeso);
+                      }}
+                      keyboardType="decimal-pad"
+                      placeholder="kg"
+                      placeholderTextColor="#888"
+                    />
+                  </View>
+                )}
+                {item.modelo.caracteristicas?.isPesoBilateral &&
+                  !item.modelo.caracteristicas?.usaBarra &&
+                  series.length > 0 && (
+                    <View style={styles.bilateralInfoCard}>
+                      <View style={styles.dumbbellIconContainer}>
+                        <View style={styles.dumbbellWithWeight}>
+                          <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
+                          <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                        </View>
+                        <View style={styles.dumbbellWithWeight}>
+                          <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
+                          <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+                {item.modelo.caracteristicas?.usaBarra && series.length > 0 && (
+                  <View style={styles.bilateralInfoCard}>
+                    <View style={styles.barbellIconContainer}>
+                      <Image
+                        source={require('../../assets/images/Exercicios/ilustracaoBarra.png')}
+                        style={styles.barbellImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                    <View style={styles.barbellWeightDistribution}>
+                      <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                      <Text style={styles.barbellCenterWeightText}>{item.pesoBarra || 0} kg</Text>
+                      <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                    </View>
+                  </View>
+                )}
+                {/* Detalhes do Cálculo de Volume */}
+                {isAdvancedOptionsVisible && (<View style={styles.volumeDetailsContainer}>
+                  <Text style={styles.volumeDetailsTitle}>Cálculo de Volume</Text>
+                  {series.filter(s => s.concluido).length > 0 ? (
+                    series.map((serie, index) => {
+                      if (!serie.concluido) return null;
+
+                      const { calculationString } = calculateLoadForSerie(serie, item, userWeight);
+                      const normalSeriesCount = series.slice(0, index + 1).filter(s => s.type === 'normal').length;
+
+                      return (
+                        <View
+                          key={serie.id}
+                          style={[
+                            styles.volumeDetailRow,
+                            serie.type === 'dropset' && styles.volumeDetailRowDropset,
+                          ]}
+                        >
+                          <Text style={styles.volumeDetailLabel}>
+                            {serie.type === 'dropset' ? 'Dropset:' : `Série ${normalSeriesCount}:`}
+                          </Text>
+                          <Text style={styles.volumeDetailCalculation}>{calculationString}</Text>
+                        </View>
+                      );
+                    })
+                  ) : (
+                    <Text style={styles.volumeDetailEmptyText}>
+                      Complete uma série para ver o cálculo do volume.
+                    </Text>
+                  )}
+                </View>)}
+              </View>
+            )}
+          </>
+        ) : (
+          <View style={styles.collapsedInfoContainer}>
+            <View style={styles.collapsedLeft}>
               <View style={styles.seriesCounterContainer}>
                 <FontAwesome5 name="layer-group" size={16} color="#aaa" />
                 <Text style={styles.seriesCounterText}>
                   {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
                 </Text>
               </View>
-            </View>
-            <TouchableOpacity
-              onPress={() => setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible)}
-              style={styles.avancadoButton}
-            >
-              <Text style={styles.avancadoButtonText}>Avançado</Text>
-              <FontAwesome name={isAdvancedOptionsVisible ? "chevron-up" : "chevron-down"} size={14} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          {isAdvancedOptionsVisible && (
-        <View style={styles.advancedOptionsContainer}>
-          {item.modelo.caracteristicas?.usaBarra && (
-            <View style={styles.barbellWeightCard}>
-              <Text style={styles.barbellWeightLabel}>Peso da Barra</Text>
-              <TextInput
-                style={styles.barbellWeightInput}
-                value={String(item.pesoBarra || 0)}
-                onChangeText={(text) => {
-                  const newPeso = parseFloat(text.replace(',', '.')) || 0;
-                  onPesoBarraChange(newPeso);
-                }}
-                keyboardType="decimal-pad"
-                placeholder="kg"
-                placeholderTextColor="#888"
-              />
-            </View>
-          )}
-          {item.modelo.caracteristicas?.isPesoBilateral &&
-            !item.modelo.caracteristicas?.usaBarra &&
-            series.length > 0 && (
-            <View style={styles.bilateralInfoCard}>
-              <View style={styles.dumbbellIconContainer}>
-                <View style={styles.dumbbellWithWeight}>
-                  <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
-                  <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                </View>
-                <View style={styles.dumbbellWithWeight}>
-                  <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
-                  <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                </View>
+              <View style={styles.seriesCounterContainer}>
+                <FontAwesome5 name="weight-hanging" size={16} color="#aaa" />
+                <Text style={styles.seriesCounterText}>{Math.round(exerciseVolume)} kg</Text>
               </View>
             </View>
-          )}
-          {item.modelo.caracteristicas?.usaBarra && series.length > 0 && (
-            <View style={styles.bilateralInfoCard}>
-              <View style={styles.barbellIconContainer}>
-                <Image
-                  source={require('../../assets/images/Exercicios/ilustracaoBarra.png')}
-                  style={styles.barbellImage}
-                  resizeMode="contain"
-                />
-              </View>
-              <View style={styles.barbellWeightDistribution}>
-                <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                <Text style={styles.barbellCenterWeightText}>{item.pesoBarra || 0} kg</Text>
-                <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-              </View>
-            </View>
-          )}
-          {/* Detalhes do Cálculo de Volume */}
-          {isAdvancedOptionsVisible && (<View style={styles.volumeDetailsContainer}>
-            <Text style={styles.volumeDetailsTitle}>Cálculo de Volume</Text>
-            {series.filter(s => s.concluido).length > 0 ? (
-              series.map((serie, index) => {
-                if (!serie.concluido) return null;
-
-                const { calculationString } = calculateLoadForSerie(serie, item, userWeight);
-                const normalSeriesCount = series.slice(0, index + 1).filter(s => s.type === 'normal').length;
-
-                return (
-                  <View
-                    key={serie.id}
-                    style={[
-                      styles.volumeDetailRow,
-                      serie.type === 'dropset' && styles.volumeDetailRowDropset,
-                    ]}
-                  >
-                    <Text style={styles.volumeDetailLabel}>
-                      {serie.type === 'dropset' ? 'Dropset:' : `Série ${normalSeriesCount}:`}
-                    </Text>
-                    <Text style={styles.volumeDetailCalculation}>{calculationString}</Text>
-                  </View>
-                );
-              })
-            ) : (
-              <Text style={styles.volumeDetailEmptyText}>
-                Complete uma série para ver o cálculo do volume.
-              </Text>
-            )}
-          </View>)}
-        </View>
-      )}
-        </>
-      ) : (
-        <View style={styles.collapsedInfoContainer}>
-          <View style={styles.collapsedLeft}>
-            <View style={styles.seriesCounterContainer}>
-              <FontAwesome5 name="layer-group" size={16} color="#aaa" />
-              <Text style={styles.seriesCounterText}>
-                {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
-              </Text>
-            </View>
-            <View style={styles.seriesCounterContainer}>
-              <FontAwesome5 name="weight-hanging" size={16} color="#aaa" />
-              <Text style={styles.seriesCounterText}>{Math.round(exerciseVolume)} kg</Text>
+            <View style={styles.collapsedRight}>
+              <TouchableOpacity onPress={() => {
+                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                setIsExpanded(true);
+              }} style={[styles.avancadoButton, { backgroundColor: '#2A2E37' }]}>
+                <Text style={styles.avancadoButtonText}>
+                  {(() => {
+                    const completedSets = series.filter(s => s.concluido).length;
+                    const totalSets = series.length;
+                    if (totalSets > 0 && completedSets === totalSets) {
+                      return 'Finalizado';
+                    }
+                    if (completedSets > 0) {
+                      return 'Em andamento';
+                    }
+                    return 'Pendente';
+                  })()}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
-          <View style={styles.collapsedRight}>
-            <TouchableOpacity onPress={() => {
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-              setIsExpanded(true);
-            }} style={[styles.avancadoButton, {backgroundColor: '#2A2E37'}]}>
-              <Text style={styles.avancadoButtonText}>
-                {(() => {
-                  const completedSets = series.filter(s => s.concluido).length;
-                  const totalSets = series.length;
-                  if (totalSets > 0 && completedSets === totalSets) {
-                    return 'Finalizado';
-                  }
-                  if (completedSets > 0) {
-                    return 'Em andamento';
-                  }
-                  return 'Pendente';
-                })()}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+        )}
 
-      <RestTimeDrawer
-        visible={isRestTimePickerVisible}
-        onClose={() => setIsRestTimePickerVisible(false)}
-        onSave={(newRestTime) => {
-          onRestTimeChange(newRestTime);
-          setIsRestTimePickerVisible(false);
-        }}
-        initialValue={item.restTime || 60}
-      />
-      <RepetitionsDrawer
-        visible={isRepDrawerVisible}
-        onClose={() => {
-          setIsRepDrawerVisible(false);
-          setEditingSetIndex(null);
-        }}
-        onSave={handleRepetitionsSave}
-        initialValue={getRepetitionsValue()}
-      />
-      <TimeBasedSetDrawer
-        visible={isExerciseTimeDrawerVisible}
-        onClose={() => setIsExerciseTimeDrawerVisible(false)}
-        onSave={(newDuration: number) => {
-          if (editingSetIndex !== null) {
-            const newSets = [...series];
-            newSets[editingSetIndex].repeticoes = String(newDuration);
-            handleSeriesUpdate(newSets);
-          }
-        }}
-        initialValue={editingSetIndex !== null ? parseInt(String(series[editingSetIndex]?.repeticoes), 10) || 60 : 60}
-      />
+        <RestTimeDrawer
+          visible={isRestTimePickerVisible}
+          onClose={() => setIsRestTimePickerVisible(false)}
+          onSave={(newRestTime) => {
+            onRestTimeChange(newRestTime);
+            setIsRestTimePickerVisible(false);
+          }}
+          initialValue={item.restTime || 60}
+        />
+        <RepetitionsDrawer
+          visible={isRepDrawerVisible}
+          onClose={() => {
+            setIsRepDrawerVisible(false);
+            setEditingSetIndex(null);
+          }}
+          onSave={handleRepetitionsSave}
+          initialValue={getRepetitionsValue()}
+        />
+        <TimeBasedSetDrawer
+          visible={isExerciseTimeDrawerVisible}
+          onClose={() => setIsExerciseTimeDrawerVisible(false)}
+          onSave={(newDuration: number) => {
+            if (editingSetIndex !== null) {
+              const newSets = [...series];
+              newSets[editingSetIndex].repeticoes = String(newDuration);
+              handleSeriesUpdate(newSets);
+            }
+          }}
+          initialValue={editingSetIndex !== null ? parseInt(String(series[editingSetIndex]?.repeticoes), 10) || 60 : 60}
+        />
       </View>
       <ExerciseDetailModal
         visible={isDetailModalVisible}
@@ -645,7 +645,48 @@ export default function LoggingDuringWorkoutScreen() {
 
     return () => subscription.remove();
   }, []);
-  
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // NOVO: Função para atualizar o Widget com o estado atual
+  const updateWidgetState = useCallback(async () => {
+    if (!workoutName || loggedExercises.length === 0) return;
+
+    const totalExercises = loggedExercises.length;
+    const exercisesDone = loggedExercises.filter(ex =>
+      ex.series.length > 0 && ex.series.every(s => s.concluido)
+    ).length;
+
+    const widgetData = {
+      name: workoutName,
+      muscleGroup: loggedExercises.map(ex => ex.modelo.grupoMuscular).join(', '), // Simplificação
+      duration: formatDuration(elapsedTime), // Precisa da função formatDuration ou similar, ou enviar raw seconds
+      isCompleted: false,
+      dayLabel: "HOJE",
+      status: 'in_progress',
+      exercisesDone: exercisesDone,
+      totalExercises: totalExercises,
+      lastUpdate: Date.now()
+    };
+
+    await NotificationsLiveActivity.setWidgetData(
+      "widget_today_workout",
+      JSON.stringify(widgetData)
+    );
+  }, [workoutName, loggedExercises, elapsedTime]);
+
+  // Atualiza o widget periodicamente ou quando houver mudanças relevantes
+  useEffect(() => {
+    if (isDoingExercise || isResting || elapsedTime % 60 === 0) { // Throttle updates slightly
+      updateWidgetState();
+    }
+  }, [updateWidgetState, elapsedTime]);
+
+
   // Efeito para carregar do cache ou inicializar um novo treino
   useEffect(() => {
     const loadWorkout = async () => {
@@ -745,19 +786,19 @@ export default function LoggingDuringWorkoutScreen() {
   }, [user]);
 
   // Efeito para o timer do treino
-useEffect(() => {
-  let interval: ReturnType<typeof setInterval> | undefined;
-  if (startTime) {
-    const updateElapsedTime = () => {
-      const now = new Date();
-      const differenceInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
-      setElapsedTime(differenceInSeconds);
-    };
-    updateElapsedTime(); // Run once immediately
-    interval = setInterval(updateElapsedTime, 1000);
-  }
-  return () => clearInterval(interval);
-}, [startTime]);
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+    if (startTime) {
+      const updateElapsedTime = () => {
+        const now = new Date();
+        const differenceInSeconds = Math.floor((now.getTime() - startTime.getTime()) / 1000);
+        setElapsedTime(differenceInSeconds);
+      };
+      updateElapsedTime(); // Run once immediately
+      interval = setInterval(updateElapsedTime, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [startTime]);
 
   // Efeito para calcular a carga total
   useEffect(() => {
@@ -814,15 +855,15 @@ useEffect(() => {
   }, [loggedExercises, workoutName, startTime, totalLoad, activeLogId, user]);
 
 
-// R1: Função unificada para gerenciar a Live Activity (Singleton)
+  // R1: Função unificada para gerenciar a Live Activity (Singleton)
   const manageLiveActivity = async (
-    isRest: boolean, 
-    durationOrTimestamp: number, 
-    exerciseName: string, 
-    setIndex: number, 
-    totalSets: number, 
-    weight: string, 
-    reps: string, 
+    isRest: boolean,
+    durationOrTimestamp: number,
+    exerciseName: string,
+    setIndex: number,
+    totalSets: number,
+    weight: string,
+    reps: string,
     dropsetCount: number
   ) => {
     if (Platform.OS !== 'ios') return;
@@ -836,25 +877,25 @@ useEffect(() => {
         console.log('[LiveActivity] 🔄 Atualizando atividade existente:', currentActivityId);
         await NotificationsLiveActivity.updateActivity(
           currentActivityId,
-          timestamp,      
-          exerciseName,   
+          timestamp,
+          exerciseName,
           setIndex + 1,
-          totalSets,      
-          weight,         
-          reps,           
-          dropsetCount 
+          totalSets,
+          weight,
+          reps,
+          dropsetCount
         );
       } else {
         console.log('[LiveActivity] ▶️ Attempting to start new activity with state (timestamp:', timestamp, 'exerciseName:', exerciseName, 'set:', setIndex + 1, '/', totalSets, 'weight:', weight, 'reps:', reps, 'dropsetCount:', dropsetCount, ')');
         console.log('[LiveActivity] ▶️ Iniciando nova atividade');
         const id = await NotificationsLiveActivity.startActivity(
-          timestamp,      
-          exerciseName,   
+          timestamp,
+          exerciseName,
           setIndex + 1,
-          totalSets,      
-          weight,         
-          reps,           
-          dropsetCount    
+          totalSets,
+          weight,
+          reps,
+          dropsetCount
         );
         setCurrentActivityId(id);
       }
@@ -863,7 +904,7 @@ useEffect(() => {
     }
   };
 
-  const startTimer = async(
+  const startTimer = async (
     duration: number,
     isExerciseTimer: boolean,
     timedSetInfo?: { exerciseIndex: number; setIndex: number }
@@ -886,58 +927,58 @@ useEffect(() => {
 
     // Iniciando live activity no IOS
     // --- LIVE ACTIVITY LOGIC ---
-// --- LIVE ACTIVITY LOGIC (R1 & R3) ---
+    // --- LIVE ACTIVITY LOGIC (R1 & R3) ---
     if (Platform.OS === 'ios') {
-        let exerciseName = "Treino Livre";
-        let totalSets = 4;
-        let weightText = "-";
-        let repsText = "-";
-        let dropsCount = 0;
-        let setIndexForActivity = 0;
+      let exerciseName = "Treino Livre";
+      let totalSets = 4;
+      let weightText = "-";
+      let repsText = "-";
+      let dropsCount = 0;
+      let setIndexForActivity = 0;
 
-        // Determinar dados para mostrar (lógica unificada)
-        if (timedSetInfo) {
-            // Timer de exercício específico (cronometrando a execução da série)
-            const exercise = loggedExercises[timedSetInfo.exerciseIndex];
-            exerciseName = exercise.modelo.nome;
-            setIndexForActivity = timedSetInfo.setIndex;
-            totalSets = exercise.series.length;
-            // Pegar dados da série
-            const set = exercise.series[timedSetInfo.setIndex];
-            weightText = `${set.peso}kg`;
-            repsText = `${set.repeticoes}`;
-        } 
-        else {
-            // Timer de descanso (ou transição entre séries)
-            // Busca o exercício ativo (não concluído)
-            const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-          
-            if (currentExercise) {
-                exerciseName = currentExercise.modelo.nome;
-                totalSets = currentExercise.series.length;
-                
-                // Tenta achar a próxima série a ser feita
-                const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-                setIndexForActivity = nextSetIndex !== -1 ? nextSetIndex : 0;
-                
-                const nextSet = currentExercise.series[setIndexForActivity];
-                weightText = `${nextSet.peso}kg`;
-                repsText = `${nextSet.repeticoes}`;
-                dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length;
-            }
+      // Determinar dados para mostrar (lógica unificada)
+      if (timedSetInfo) {
+        // Timer de exercício específico (cronometrando a execução da série)
+        const exercise = loggedExercises[timedSetInfo.exerciseIndex];
+        exerciseName = exercise.modelo.nome;
+        setIndexForActivity = timedSetInfo.setIndex;
+        totalSets = exercise.series.length;
+        // Pegar dados da série
+        const set = exercise.series[timedSetInfo.setIndex];
+        weightText = `${set.peso}kg`;
+        repsText = `${set.repeticoes}`;
+      }
+      else {
+        // Timer de descanso (ou transição entre séries)
+        // Busca o exercício ativo (não concluído)
+        const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+
+        if (currentExercise) {
+          exerciseName = currentExercise.modelo.nome;
+          totalSets = currentExercise.series.length;
+
+          // Tenta achar a próxima série a ser feita
+          const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
+          setIndexForActivity = nextSetIndex !== -1 ? nextSetIndex : 0;
+
+          const nextSet = currentExercise.series[setIndexForActivity];
+          weightText = `${nextSet.peso}kg`;
+          repsText = `${nextSet.repeticoes}`;
+          dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length;
         }
+      }
 
-        // Se for timer de exercício OU descanso, queremos mostrar o relógio (isRest=true no helper ativa o calculo de timestamp futuro)
-        await manageLiveActivity(
-            true, 
-            duration,
-            exerciseName,
-            setIndexForActivity,
-            totalSets,
-            weightText,
-            repsText,
-            dropsCount
-        );
+      // Se for timer de exercício OU descanso, queremos mostrar o relógio (isRest=true no helper ativa o calculo de timestamp futuro)
+      await manageLiveActivity(
+        true,
+        duration,
+        exerciseName,
+        setIndexForActivity,
+        totalSets,
+        weightText,
+        repsText,
+        dropsCount
+      );
     }
   }
   // Efeito unificado para ambos os timers
@@ -1021,37 +1062,37 @@ useEffect(() => {
   }, [isResting, isDoingExercise]);
 
 
-const handleSkipRest = async () => {
+  const handleSkipRest = async () => {
     // Cancela a notificação de descanso agendada
     cancelNotification('rest-timer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsResting(false); 
+    setIsResting(false);
     setRestStartTime(null); // Ensure rest start time is cleared
     setIsDoingExercise(false);
 
     // R4: Atualiza a Live Activity para estado "Sem Timer" (info estática) em vez de matar a atividade
     if (currentActivityId && Platform.OS === 'ios') {
-        // Encontra o exercício atual para mostrar info estática da próxima série
-        const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-        if (currentExercise) {
-            const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-            const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
-            const nextSet = currentExercise.series[setIndex];
-            
-            await manageLiveActivity(
-                false, // isRest = false (Timestamp será 0/passado -> Layout muda para info estática)
-                0,     // Duração 0
-                currentExercise.modelo.nome,
-                setIndex,
-                currentExercise.series.length,
-                `${nextSet.peso}kg`,
-                `${nextSet.repeticoes}`,
-                0
-            );
-        }
+      // Encontra o exercício atual para mostrar info estática da próxima série
+      const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+      if (currentExercise) {
+        const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
+        const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
+        const nextSet = currentExercise.series[setIndex];
+
+        await manageLiveActivity(
+          false, // isRest = false (Timestamp será 0/passado -> Layout muda para info estática)
+          0,     // Duração 0
+          currentExercise.modelo.nome,
+          setIndex,
+          currentExercise.series.length,
+          `${nextSet.peso}kg`,
+          `${nextSet.repeticoes}`,
+          0
+        );
+      }
     }
   };
-  
+
   const handleUpdateExerciseSeries = (exerciseIndex: number, newSeries: SerieEdit[]) => {
     const updatedExercises = [...loggedExercises];
     updatedExercises[exerciseIndex].series = newSeries;
@@ -1107,7 +1148,7 @@ const handleSkipRest = async () => {
         Alert.alert('Erro', 'Dados do usuário ou do treino incompletos para salvar o log.');
         return;
       }
-      
+
       setIsFinishing(true);
       const finalEndTime = new Date();
 
@@ -1139,25 +1180,25 @@ const handleSkipRest = async () => {
           setIsFinishing(false);
           return;
         }
-      } 
-      
+      }
+
       // **[MODIFICADO] Lógica para atualizar o treino existente**
       // Se não criamos um novo treino (era um existente), verificamos se o usuário é o dono antes de atualizar.
       if (finalTreinoId && treinoId && typeof treinoId === 'string') {
         // CORREÇÃO: Verifica se o usuário é o dono do treino antes de tentar atualizar
         if (workoutOwnerId === user.id) {
           try {
-              console.log('[handleFinishWorkout] Atualizando o modelo do treino original com as alterações...');
-              await updateTreino(treinoId, {
-                  exercicios: loggedExercises
-              });
-              console.log('[handleFinishWorkout] Modelo do treino atualizado com sucesso.');
+            console.log('[handleFinishWorkout] Atualizando o modelo do treino original com as alterações...');
+            await updateTreino(treinoId, {
+              exercicios: loggedExercises
+            });
+            console.log('[handleFinishWorkout] Modelo do treino atualizado com sucesso.');
           } catch (error) {
-              console.error('[handleFinishWorkout] Erro ao atualizar o modelo do treino:', error);
-              // Não bloqueamos o fluxo, apenas logamos o erro, pois salvar o log é a prioridade.
+            console.error('[handleFinishWorkout] Erro ao atualizar o modelo do treino:', error);
+            // Não bloqueamos o fluxo, apenas logamos o erro, pois salvar o log é a prioridade.
           }
         } else {
-            console.log('[handleFinishWorkout] Usuário não é o dono do treino original. Pulasndo atualização do modelo.');
+          console.log('[handleFinishWorkout] Usuário não é o dono do treino original. Pulasndo atualização do modelo.');
         }
       }
 
@@ -1198,7 +1239,7 @@ const handleSkipRest = async () => {
           await NotificationsLiveActivity.endActivity(currentActivityId);
           setCurrentActivityId(null);
         }
-        
+
         console.log('[handleFinishWorkout] Log salvo com sucesso. ID:', newLogId);
 
         await cacheActiveWorkoutLog(null);
@@ -1220,11 +1261,11 @@ const handleSkipRest = async () => {
         "Você não completou todas as séries. Deseja finalizar o treino mesmo assim?",
         [
           {
-          text: "Finalizar",
-          onPress: proceedToFinish,
-          style: "destructive"
-        },
-        {
+            text: "Finalizar",
+            onPress: proceedToFinish,
+            style: "destructive"
+          },
+          {
             text: "Cancelar",
             style: "cancel"
           },
@@ -1330,20 +1371,20 @@ const handleSkipRest = async () => {
               <TouchableOpacity onPress={handleBack} style={styles.backButton}>
                 <Ionicons name="chevron-back" size={28} color="#fff" />
               </TouchableOpacity>
-            <TouchableOpacity onPress={() => setOverviewModalVisible(true)} style={{ flex: 1 }}>
-              <TextInput
-                style={styles.headerTitleInput}
-                value={workoutName}
-                placeholder="Nome do Treino"
-                placeholderTextColor="#888"
-                onChangeText={(text) => {
-                  setWorkoutName(String(text));
+              <TouchableOpacity onPress={() => setOverviewModalVisible(true)} style={{ flex: 1 }}>
+                <TextInput
+                  style={styles.headerTitleInput}
+                  value={workoutName}
+                  placeholder="Nome do Treino"
+                  placeholderTextColor="#888"
+                  onChangeText={(text) => {
+                    setWorkoutName(String(text));
                     if (!isNameEdited) {
                       setIsNameEdited(true);
                     }
                   }}
                 />
-            </TouchableOpacity>
+              </TouchableOpacity>
             </View>
             <View style={styles.headerRightContainer}>
               {isFinishing ? (
@@ -1394,130 +1435,130 @@ const handleSkipRest = async () => {
                 }}
                 keyExtractor={(item) => item.modeloId}
                 ListHeaderComponent={
-                <View style={statsContainerStyle}><View style={statItemStyle}><FontAwesome name="clock-o" size={16} color="#aaa" /><Text style={styles.statValue}>{formatTime(elapsedTime)}</Text></View><View style={statItemStyle}><FontAwesome5 name="weight-hanging" size={16} color="#aaa" /><Text style={styles.statValue}>{Math.round(totalLoad).toLocaleString('pt-BR')} kg</Text></View></View>
+                  <View style={statsContainerStyle}><View style={statItemStyle}><FontAwesome name="clock-o" size={16} color="#aaa" /><Text style={styles.statValue}>{formatTime(elapsedTime)}</Text></View><View style={statItemStyle}><FontAwesome5 name="weight-hanging" size={16} color="#aaa" /><Text style={styles.statValue}>{Math.round(totalLoad).toLocaleString('pt-BR')} kg</Text></View></View>
                 }
-              renderItem={({ item, index }) => {
-                return (
-                  <LoggedExerciseCard
-                    item={item}
-                    userWeight={userWeight}
-                    onSeriesChange={(newSeries) =>
-                      handleUpdateExerciseSeries(index, newSeries)
-                    }
-                    onRemove={() => handleRemoveExercise(index)}
-                    onRestTimeChange={(newRestTime) => {
-                      const updatedExercises = [...loggedExercises];
-                      updatedExercises[index].restTime = newRestTime;
-                      setLoggedExercises(updatedExercises);
-                    }}
-                    onNotesChange={(newNotes) => {
-                      const updatedExercises = [...loggedExercises];
-                      updatedExercises[index].notes = newNotes;
-                      setLoggedExercises(updatedExercises);
-                    }}
-                    onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
-                    startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
-                    onMenuStateChange={setIsMenuOpen}
-                  />
-                );
-              }}
-              ListFooterComponent={
-                <>
-                  <TouchableOpacity
-                    style={styles.addMoreButton}
-                    onPress={() => setModalVisible(true)}
-                  >
-                    <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.settingsButton}
-                    onPress={() => setSettingsModalVisible(true)}
-                  >
-                    <FontAwesome name="cog" size={16} color="#aaa" />
-                    <Text style={styles.settingsButtonText}>Configurações</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
-                    onPress={handleCancelWorkout}
-                  >
-                    <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
-                  </TouchableOpacity>
-                </>
-              }
-              contentContainerStyle={{
-                paddingBottom: 140,
-                paddingTop: 15, // Padding normal, já que os stats não são mais fixos
-              }}
+                renderItem={({ item, index }) => {
+                  return (
+                    <LoggedExerciseCard
+                      item={item}
+                      userWeight={userWeight}
+                      onSeriesChange={(newSeries) =>
+                        handleUpdateExerciseSeries(index, newSeries)
+                      }
+                      onRemove={() => handleRemoveExercise(index)}
+                      onRestTimeChange={(newRestTime) => {
+                        const updatedExercises = [...loggedExercises];
+                        updatedExercises[index].restTime = newRestTime;
+                        setLoggedExercises(updatedExercises);
+                      }}
+                      onNotesChange={(newNotes) => {
+                        const updatedExercises = [...loggedExercises];
+                        updatedExercises[index].notes = newNotes;
+                        setLoggedExercises(updatedExercises);
+                      }}
+                      onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
+                      startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
+                      onMenuStateChange={setIsMenuOpen}
+                    />
+                  );
+                }}
+                ListFooterComponent={
+                  <>
+                    <TouchableOpacity
+                      style={styles.addMoreButton}
+                      onPress={() => setModalVisible(true)}
+                    >
+                      <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.settingsButton}
+                      onPress={() => setSettingsModalVisible(true)}
+                    >
+                      <FontAwesome name="cog" size={16} color="#aaa" />
+                      <Text style={styles.settingsButtonText}>Configurações</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
+                      onPress={handleCancelWorkout}
+                    >
+                      <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
+                    </TouchableOpacity>
+                  </>
+                }
+                contentContainerStyle={{
+                  paddingBottom: 140,
+                  paddingTop: 15, // Padding normal, já que os stats não são mais fixos
+                }}
+              />
+            )}
+
+            {isMenuOpen && (
+              <Animated.View style={styles.overlay} entering={FadeIn} exiting={FadeOut}>
+                <View style={StyleSheet.absoluteFill} />
+              </Animated.View>
+            )}
+
+            <MultiSelectExerciseModal
+
+              visible={isModalVisible}
+
+              onClose={() => setModalVisible(false)}
+
+              onConfirm={handleSelectExercises}
+
+              existingExerciseIds={loggedExercises.map(e => e.modeloId)}
+
             />
-          )}
-          
-                  {isMenuOpen && (
-                    <Animated.View style={styles.overlay} entering={FadeIn} exiting={FadeOut}>
-                      <View style={StyleSheet.absoluteFill} />
-                    </Animated.View>
-                  )}
-                  
-                                                      <MultiSelectExerciseModal
-                  
-                                                        visible={isModalVisible}
-                  
-                                                        onClose={() => setModalVisible(false)}
-                  
-                                                        onConfirm={handleSelectExercises}
-                  
-                                                        existingExerciseIds={loggedExercises.map(e => e.modeloId)}
-                  
-                                                      />
 
-                                                      <WorkoutSettingsModal
-                                                        isVisible={isSettingsModalVisible}
-                                                        onClose={() => setSettingsModalVisible(false)}
-                                                      />
+            <WorkoutSettingsModal
+              isVisible={isSettingsModalVisible}
+              onClose={() => setSettingsModalVisible(false)}
+            />
 
-                                                      {treinoId && (
-                                                        <WorkoutOverviewModal
-                                                          visible={isOverviewModalVisible}
-                                                          onClose={() => setOverviewModalVisible(false)}
-                                                          treino={{
-                                                            id: treinoId as string,
-                                                            exercicios: loggedExercises,
-                                                            nome: workoutName,
-                                                          } as Treino}
-                                                          currentExerciseIndex={loggedExercises.findIndex(ex => ex.series.some(s => !s.concluido))}
-                                                          cargaAcumuladaTotal={totalLoad}
-                                                          userLogs={userLogs}
-                                                          horarioInicio={startTime}
-                                                          userWeight={userWeight}
-                                                          onEditExercise={handleEditExerciseFromOverview} />
-                                                      )}
+            {treinoId && (
+              <WorkoutOverviewModal
+                visible={isOverviewModalVisible}
+                onClose={() => setOverviewModalVisible(false)}
+                treino={{
+                  id: treinoId as string,
+                  exercicios: loggedExercises,
+                  nome: workoutName,
+                } as Treino}
+                currentExerciseIndex={loggedExercises.findIndex(ex => ex.series.some(s => !s.concluido))}
+                cargaAcumuladaTotal={totalLoad}
+                userLogs={userLogs}
+                horarioInicio={startTime}
+                userWeight={userWeight}
+                onEditExercise={handleEditExerciseFromOverview} />
+            )}
           </KeyboardAvoidingView>
         </SafeAreaView>
-                          {(isResting || isDoingExercise) && (
-                            <View style={styles.restTimerOverlay}>
-                              <View style={styles.restTimerProgressContainer}>
-                                <Animated.View style={[styles.restTimerProgressBar, animatedProgressStyle]} />
-                              </View>
-                              <View style={styles.restTimerContent}>
-                                <View>
-                                  <Text style={styles.restTimerLabel}>
-                                    {isDoingExercise ? 'Exercício' : 'Descanso'}
-                                  </Text>
-                                  <Text style={styles.restTimerValue}>
-                                    {formatTime(isDoingExercise ? exerciseCountdown : restCountdown)}
-                                  </Text>
-                                </View>
-                                <TouchableOpacity style={styles.skipButton} onPress={handleSkipRest}>
-                                  <FontAwesome name="forward" size={20} color="#fff" />
-                                  <Text style={styles.skipButtonText}>Pular</Text>
-                                </TouchableOpacity>
-                              </View>
-                            </View>
-                          )}
-                        </MenuProvider>
-                      </GestureHandlerRootView>
-                    );
-                  }
-                  
+        {(isResting || isDoingExercise) && (
+          <View style={styles.restTimerOverlay}>
+            <View style={styles.restTimerProgressContainer}>
+              <Animated.View style={[styles.restTimerProgressBar, animatedProgressStyle]} />
+            </View>
+            <View style={styles.restTimerContent}>
+              <View>
+                <Text style={styles.restTimerLabel}>
+                  {isDoingExercise ? 'Exercício' : 'Descanso'}
+                </Text>
+                <Text style={styles.restTimerValue}>
+                  {formatTime(isDoingExercise ? exerciseCountdown : restCountdown)}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.skipButton} onPress={handleSkipRest}>
+                <FontAwesome name="forward" size={20} color="#fff" />
+                <Text style={styles.skipButtonText}>Pular</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+      </MenuProvider>
+    </GestureHandlerRootView>
+  );
+}
+
 const styles = StyleSheet.create({
   headerRightContainer: {
     flexDirection: 'row',
@@ -1554,7 +1595,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B82F6',
   },
   statValue: {
-    color: '#fff', 
+    color: '#fff',
     fontSize: 16, // Reduzido um pouco para caber melhor na horizontal
     fontWeight: 'bold',
   },
@@ -1707,10 +1748,10 @@ const styles = StyleSheet.create({
     borderColor: '#333'
   },
   settingsButtonText: {
-      color: '#aaa',
-      fontWeight: 'bold',
-      fontSize: 16,
-      marginLeft: 8
+    color: '#aaa',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8
   },
   deleteBox: {
     backgroundColor: '#ff3b30',
@@ -1745,7 +1786,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-    bodyWeightContainer: {
+  bodyWeightContainer: {
     justifyContent: 'center',
     alignItems: 'center',
     height: 42, // Match the height of repButton
@@ -2059,13 +2100,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   cancelWorkoutButton: {
-    marginTop:50,
+    marginTop: 50,
     borderWidth: 1,
     borderColor: 'rgba(255, 59, 48, 0.5)',
     padding: 15,
     borderRadius: 8,
     alignItems: 'center',
-    marginBottom:130,
+    marginBottom: 130,
     marginHorizontal: 15,
   },
   cancelWorkoutButtonText: {

@@ -14,6 +14,10 @@ interface TodayWorkoutData {
   duration: string;
   isCompleted: boolean;
   dayLabel: string;
+  status: 'todo' | 'in_progress' | 'completed';
+  exercisesDone?: number;
+  totalExercises?: number;
+  lastUpdate: number;
 }
 
 interface WeekStreakData {
@@ -22,27 +26,27 @@ interface WeekStreakData {
 }
 
 const parseLogDate = (dateField: any): Date | null => {
-    if (!dateField) return null;
-    if (dateField instanceof Date) return dateField;
-    if (typeof dateField.toDate === 'function') return dateField.toDate();
-    if (dateField.seconds) return new Date(dateField.seconds * 1000);
-    if (typeof dateField === 'string') return new Date(dateField);
-    if (typeof dateField === 'number') return new Date(dateField);
-    return null;
+  if (!dateField) return null;
+  if (dateField instanceof Date) return dateField;
+  if (typeof dateField.toDate === 'function') return dateField.toDate();
+  if (dateField.seconds) return new Date(dateField.seconds * 1000);
+  if (typeof dateField === 'string') return new Date(dateField);
+  if (typeof dateField === 'number') return new Date(dateField);
+  return null;
 };
 
 export const widgetService = {
   async updateAll(treinos: Treino[], logs: Log[]) {
     if (Platform.OS !== 'ios') return;
-    
+
     console.log(`[WidgetDebug] 🚀 Iniciando updateAll. Treinos: ${treinos.length}, Logs (memória): ${logs.length}`);
 
     try {
       const pendingOps = await getPendingOperations();
       const pendingLogs = pendingOps
-          .filter(op => op.collectionPath === 'logs' && op.type === 'create')
-          .map(op => op.data as Log);
-      
+        .filter(op => op.collectionPath === 'logs' && op.type === 'create')
+        .map(op => op.data as Log);
+
       console.log(`[WidgetDebug] 📂 Logs pendentes offline encontrados: ${pendingLogs.length}`);
 
       const allLogs = [...logs, ...pendingLogs];
@@ -54,10 +58,10 @@ export const widgetService = {
 
       await this.updateTodayWorkout(treinos, uniqueLogs);
       await this.updateWeekStreak(uniqueLogs);
-      
+
       console.log("[WidgetDebug] 🔄 Chamando reloadWidgetTimelines() nativo...");
-      reloadWidgetTimelines(); 
-      
+      reloadWidgetTimelines();
+
     } catch (error) {
       console.error("[WidgetDebug] ❌ Erro ao atualizar widgets:", error);
     }
@@ -66,7 +70,7 @@ export const widgetService = {
   async updateTodayWorkout(treinos: Treino[], logs: Log[]) {
     const diasMap: { [key: number]: DiaSemana } = { 0: 'dom', 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sab' };
     const diasNomeMap: { [key: number]: string } = { 0: 'DOMINGO', 1: 'SEGUNDA', 2: 'TERÇA', 3: 'QUARTA', 4: 'QUINTA', 5: 'SEXTA', 6: 'SÁBADO' };
-    
+
     const hojeDate = new Date();
     const hojeIndex = hojeDate.getDay();
     const hojeKey = diasMap[hojeIndex];
@@ -75,62 +79,83 @@ export const widgetService = {
 
     let treinoDisplay = treinos.find(t => t.diasSemana && t.diasSemana.includes(hojeKey));
     let dayLabel = "HOJE";
-    
+
     if (!treinoDisplay) {
-        console.log("[WidgetDebug] 🔍 Nenhum treino agendado para hoje. Procurando próximo...");
-        for (let i = 1; i <= 7; i++) {
-            const nextIndex = (hojeIndex + i) % 7;
-            const nextKey = diasMap[nextIndex];
-            const nextTreino = treinos.find(t => t.diasSemana && t.diasSemana.includes(nextKey));
-            
-            if (nextTreino) {
-                treinoDisplay = nextTreino;
-                dayLabel = i === 1 ? "AMANHÃ" : diasNomeMap[nextIndex];
-                console.log(`[WidgetDebug] 👉 Próximo treino encontrado: ${nextTreino.nome} (${dayLabel})`);
-                break;
-            }
+      console.log("[WidgetDebug] 🔍 Nenhum treino agendado para hoje. Procurando próximo...");
+      for (let i = 1; i <= 7; i++) {
+        const nextIndex = (hojeIndex + i) % 7;
+        const nextKey = diasMap[nextIndex];
+        const nextTreino = treinos.find(t => t.diasSemana && t.diasSemana.includes(nextKey));
+
+        if (nextTreino) {
+          treinoDisplay = nextTreino;
+          dayLabel = i === 1 ? "AMANHÃ" : diasNomeMap[nextIndex];
+          console.log(`[WidgetDebug] 👉 Próximo treino encontrado: ${nextTreino.nome} (${dayLabel})`);
+          break;
         }
+      }
     } else {
-        console.log(`[WidgetDebug] 👉 Treino de hoje encontrado: ${treinoDisplay.nome}`);
+      console.log(`[WidgetDebug] 👉 Treino de hoje encontrado: ${treinoDisplay.nome}`);
     }
 
     let isCompleted = false;
-    
+    let completedLog: Log | undefined;
+
     if (dayLabel === "HOJE" && treinoDisplay) {
-        const hojeStart = new Date();
-        hojeStart.setHours(0, 0, 0, 0);
-        
-        const logHoje = logs.find(l => {
-            if (!l.horarioFim) return false; 
-            const logData = parseLogDate(l.horarioFim);
-            if (!logData || !l.treino) return false;
-            
-            // Log extra para depurar comparação de datas se necessário
-            // console.log(`[WidgetDebug] Comparando log ${l.id} - Data: ${logData.toISOString()} vs Hoje: ${hojeStart.toISOString()}`);
-            
-            return logData >= hojeStart && l.treino.id === treinoDisplay?.id;
-        });
-        
-        if (logHoje) {
-            console.log(`[WidgetDebug] ✅ Treino CONCLUÍDO encontrado! Log ID: ${logHoje.id}`);
-            isCompleted = true;
-        } else {
-            console.log(`[WidgetDebug] ⏳ Treino ainda não concluído (ou log não encontrado).`);
-        }
+      const hojeStart = new Date();
+      hojeStart.setHours(0, 0, 0, 0);
+
+      // Verifica se há ALGUM log de hoje que coincida com o treino de hoje
+      completedLog = logs.find(l => {
+        if (!l.horarioFim) return false;
+        const logData = parseLogDate(l.horarioFim);
+        if (!logData || !l.treino) return false;
+
+        // Verificação flexível de ID ou Nome
+        const isSameWorkout = l.treino.id === treinoDisplay?.id || l.treino.nome === treinoDisplay?.nome;
+        return logData >= hojeStart && isSameWorkout;
+      });
+
+      if (completedLog) {
+        console.log(`[WidgetDebug] ✅ Treino CONCLUÍDO encontrado! Log ID: ${completedLog.id}`);
+        isCompleted = true;
+      } else {
+        console.log(`[WidgetDebug] ⏳ Treino ainda não concluído.`);
+      }
+    }
+
+    let exercisesDone = 0;
+    let totalExercises = treinoDisplay?.exercicios?.length || 0;
+
+    if (isCompleted && completedLog) {
+      exercisesDone = completedLog.exercicios.filter(ex =>
+        ex.series.length > 0 && ex.series.every(s => (s as any).concluido !== false)
+      ).length;
+      totalExercises = completedLog.exercicios.length;
     }
 
     const data: TodayWorkoutData = treinoDisplay ? {
-        name: treinoDisplay.nome,
-        muscleGroup: treinoDisplay.descricao || "Geral",
-        duration: `${(treinoDisplay.exercicios?.length || 0) * 4} min`,
-        isCompleted: isCompleted,
-        dayLabel: dayLabel
+      name: treinoDisplay.nome,
+      muscleGroup: treinoDisplay.descricao || "Geral",
+      duration: isCompleted && completedLog && completedLog.horarioInicio && completedLog.horarioFim
+        ? `${Math.round((parseLogDate(completedLog.horarioFim)!.getTime() - parseLogDate(completedLog.horarioInicio)!.getTime()) / 60000)} min`
+        : `${(treinoDisplay.exercicios?.length || 0) * 4} min`,
+      isCompleted: isCompleted,
+      dayLabel: dayLabel,
+      status: isCompleted ? 'completed' : 'todo',
+      exercisesDone: exercisesDone,
+      totalExercises: totalExercises,
+      lastUpdate: Date.now()
     } : {
-        name: "Descanso",
-        muscleGroup: "Recupere-se",
-        duration: "0 min",
-        isCompleted: false,
-        dayLabel: "HOJE"
+      name: "Descanso",
+      muscleGroup: "Recupere-se",
+      duration: "0 min",
+      isCompleted: false,
+      dayLabel: "HOJE",
+      status: 'todo',
+      exercisesDone: 0,
+      totalExercises: 0,
+      lastUpdate: Date.now()
     };
 
     console.log(`[WidgetDebug] 💾 Salvando JSON para 'widget_today_workout':`, JSON.stringify(data));
@@ -140,28 +165,28 @@ export const widgetService = {
   async updateWeekStreak(logs: Log[]) {
     // ... (lógica de dias)
     const hoje = new Date();
-    const diaSemana = hoje.getDay(); 
+    const diaSemana = hoje.getDay();
     const inicioSemana = new Date(hoje);
     inicioSemana.setDate(hoje.getDate() - diaSemana);
-    inicioSemana.setHours(0,0,0,0);
+    inicioSemana.setHours(0, 0, 0, 0);
 
     const diasTreinados = [false, false, false, false, false, false, false];
-    
+
     logs.forEach(log => {
-        if(!log.horarioFim) return;
-        const dataLog = parseLogDate(log.horarioFim);
-        if (!dataLog) return;
-        if (dataLog >= inicioSemana) {
-            diasTreinados[dataLog.getDay()] = true;
-        }
+      if (!log.horarioFim) return;
+      const dataLog = parseLogDate(log.horarioFim);
+      if (!dataLog) return;
+      if (dataLog >= inicioSemana) {
+        diasTreinados[dataLog.getDay()] = true;
+      }
     });
 
     const totalDays = diasTreinados.filter(Boolean).length;
     const data: WeekStreakData = {
-        daysTrained: diasTreinados,
-        totalDays: totalDays
+      daysTrained: diasTreinados,
+      totalDays: totalDays
     };
-    
+
     console.log(`[WidgetDebug] 💾 Salvando JSON para 'widget_week_streak':`, JSON.stringify(data));
     await SharedGroupPreferences.setItem('widget_week_streak', JSON.stringify(data), APP_GROUP);
   }

@@ -50,3 +50,7 @@ export async function endActivity(activityId: string): Promise<void> {
 export function reloadWidgetTimelines() {
   return NotificationsLiveActivityModule.reloadAllTimelines();
 }
+
+export function setWidgetData(key: string, jsonValue: string) {
+  return NotificationsLiveActivityModule.setWidgetData(key, jsonValue);
+}

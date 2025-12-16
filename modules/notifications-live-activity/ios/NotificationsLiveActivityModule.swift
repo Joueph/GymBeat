@@ -78,5 +78,15 @@ public class NotificationsLiveActivityModule: Module {
         WidgetCenter.shared.reloadAllTimelines()
       }
     }
+
+    // NOVA FUNÇÃO: Salva dados genéricos no UserDefaults do App Group para o Widget ler
+    Function("setWidgetData") { (key: String, jsonValue: String) in
+        if let userDefaults = UserDefaults(suiteName: "group.br.com.gymbeat") {
+            userDefaults.set(jsonValue, forKey: key)
+            if #available(iOS 14.0, *) {
+                WidgetCenter.shared.reloadAllTimelines()
+            }
+        }
+    }
   }
 }

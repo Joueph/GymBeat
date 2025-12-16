@@ -193,32 +193,7 @@ export default function TreinoCompletoScreen() {
           setDuration(durationSecs);
         }
 
-        // NOVO: Atualiza o Widget para estado 'completed'
-        const exercisesDone = completedLog.exercicios.filter(ex =>
-          ex.series.length > 0 && ex.series.every(s => (s as any).concluido !== false)
-        ).length;
-
-        const widgetData = {
-          name: completedLog.treino?.nome || "Treino",
-          muscleGroup: completedLog.treino?.nome || "",
-          duration: formatDuration(durationSecs),
-          isCompleted: true,
-          dayLabel: "HOJE",
-          status: 'completed',
-          exercisesDone: exercisesDone,
-          totalExercises: completedLog.exercicios.length,
-          lastUpdate: Date.now()
-        };
-
-        // Import dinâmico ou uso do módulo global se disponível
-        // Como notifications-live-activity é um módulo, precisamos importá-lo.
-        // Vou assumir que posso importá-lo no topo do arquivo.
-
         await calculateCompletionData(completedLog);
-
-        // Chamada do widget
-        const { setWidgetData } = require('../../modules/notifications-live-activity');
-        setWidgetData("widget_today_workout", JSON.stringify(widgetData));
 
       } catch (error) {
         // ... (código existente de catch)

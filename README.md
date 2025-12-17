@@ -24,6 +24,11 @@ IOS
   ```
   eas build --platform ios 
   ```
+  ou
+
+  ```
+  eas build --platform ios --local
+  ```
 
 
 ## Lembretes:

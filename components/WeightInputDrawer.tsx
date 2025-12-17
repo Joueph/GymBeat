@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NumberSlider } from './NumberSlider';
@@ -56,7 +56,6 @@ export const WeightInputDrawer = ({ visible, onClose, onSave, initialValue }: We
                   step={1} // Permite valores decimais
                   value={weight}
                   onChange={(val) => setWeight(parseFloat(val.toFixed(1)))}
-                  initialValue={weight}
                   vertical={false}
                 />
               </View>

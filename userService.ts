@@ -19,6 +19,8 @@ import {
 import { db } from "./firebaseconfig";
 import { Usuario } from "./models/usuario";
 
+import { getCachedUserSession } from "./services/offlineCacheService";
+
 // ... (as outras funções como getUserProfile, updateUserProfile, etc. permanecem as mesmas)
 export const getUserProfile = async (uid: string) => {
   if (!uid) return null;
@@ -34,6 +36,14 @@ export const getUserProfile = async (uid: string) => {
     }
   } catch (error) {
     console.error("Erro ao buscar perfil do usuário:", error);
+
+    // Fallback offline
+    const cached = await getCachedUserSession();
+    if (cached && cached.id === uid) {
+      console.log("[UserService] Retornando usuário do cache (offline)");
+      return cached;
+    }
+
     throw error;
   }
 };
@@ -93,7 +103,7 @@ export const createUserProfileDocument = async (
     streakGoal: additionalData.streakGoal || 3,
     weeksStreakGoal: additionalData.weeksStreakGoal || 4,
     workoutScreenType: additionalData.workoutScreenType || 'simplified', // New field
-    
+
     // --- NOVOS DADOS VINDOS DO ONBOARDING ---
     objetivoPrincipal: additionalData.objetivoPrincipal || null,
     localTreino: additionalData.localTreino || null,

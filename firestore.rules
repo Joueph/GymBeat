@@ -27,6 +27,11 @@ function isProjectParticipant(projetoId) {
   return request.auth.uid in get(/databases/$(database)/documents/projetos/$(projetoId)).data.participantes;
 }
 
+// Helper function to check if the user owns the ficha associated with a log.
+function isOwnerOfAssociatedFicha(logData) {
+  return logData.treino.fichaId != null && isOwner(get(/databases/$(database)/documents/fichas/$(logData.treino.fichaId)).data.usuarioId);
+}
+
 
 // =================================================================
 // Regras para a Coleção de Usuários (users)
@@ -70,7 +75,9 @@ match /treinos/{treinoId} {
   // Permite a leitura se o usuário for o dono do treino, amigo do dono,
   // OU se o usuário for dono da ficha à qual este treino pertence.
   allow read: if isOwner(resource.data.usuarioId) || isMutualFriend(resource.data.usuarioId) || isOwner(get(/databases/$(database)/documents/fichas/$(resource.data.fichaId)).data.usuarioId);
-  allow create, delete: if isOwner(request.resource.data.usuarioId) || isOwner(resource.data.usuarioId);
+  
+  allow create: if isOwner(request.resource.data.usuarioId);
+  allow delete: if isOwner(resource.data.usuarioId);
   
   // Allow update if the user owns the workout OR if they are un-assigning it from a workout plan (ficha) they own.
   // This is crucial for the deleteFicha operation, which moves workouts to the "unassigned" folder.
@@ -87,13 +94,14 @@ match /logs/{logId} {
   // 1. O usuário for o dono do log.
   // 2. O usuário for amigo do dono do log.
   // 3. O log tiver um 'projetoId' e o usuário for participante desse projeto.
-  allow read: if isOwner(resource.data.usuarioId) || isMutualFriend(resource.data.usuarioId) || 
-                 (resource.data.projetoId != null && isProjectParticipant(resource.data.projetoId));
+  allow read: if isOwner(resource.data.usuarioId) || (resource.data.projetoId != null && isProjectParticipant(resource.data.projetoId)) ||
+                 isOwnerOfAssociatedFicha(resource.data);
 
-  // Permite criar, atualizar e apagar se o usuário for o dono do log.
-  // Para 'create', a regra verifica os dados que estão sendo enviados (request.resource.data).
-  // Para 'update' e 'delete', a regra verifica os dados já existentes (resource.data).
-  allow write: if isOwner(request.resource.data.usuarioId) || isOwner(resource.data.usuarioId);
+  // Permite criar se o usuário for o dono dos dados enviados.
+  allow create: if isOwner(request.resource.data.usuarioId);
+
+  // Permite atualizar e apagar se o usuário for o dono do log existente.
+  allow update, delete: if isOwner(resource.data.usuarioId);
 }
 
 // =================================================================
@@ -125,8 +133,31 @@ match /treinosModelos/{treinoModeloId} {
 
 match /exerciciosModelos/{exercicioModeloId} {
   allow read: if request.auth != null;
+  allow create: if isOwner(request.resource.data.userId);
+  allow update, delete: if isOwner(resource.data.userId) && resource.data.isCustom == true;
   allow write: if false;
 }
 
+// =================================================================
+// Regras para a Coleção de Sugestão de Funcionalidades (feature_suggestions)
+// =================================================================
+match /feature_suggestions/{suggestionId} {
+  // Qualquer usuário autenticado pode ler as sugestões.
+  allow read: if request.auth != null;
+
+  // Permite que um usuário autenticado crie uma nova sugestão,
+  // validando que ele é o criador e que o voto inicial é 1.
+  allow create: if request.auth != null
+                && request.resource.data.createdBy == request.auth.uid
+                && request.resource.data.votes == 1
+                && request.resource.data.votedBy[0] == request.auth.uid;
+
+  // Permite que um usuário autenticado atualize uma sugestão (vote),
+  // mas apenas se ele ainda não votou.
+  // Garante que apenas o campo 'votes' e 'votedBy' sejam alterados.
+  allow update: if request.auth != null
+                && !(request.auth.uid in resource.data.votedBy)
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'votedBy']);
+}
 }
 }

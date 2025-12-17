@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "GymBeat",
     slug: "GymBeat",
-    version: "1.1.2",
+    version: "1.1.3",
     orientation: "portrait",
     icon: "./assets/images/icon.png",
     scheme: "gymbeat",
@@ -12,9 +12,14 @@ export default {
       supportsTablet: false,
       icon: "./assets/images/icon.png",
       bundleIdentifier: "br.com.gymbeat",
-      buildNumber: "1",
+      appleTeamId: "M4M9UUR2NT",
+      buildNumber: "35",
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
+        NSSupportsLiveActivities: true,
+      },
+      entitlements: {
+        "com.apple.security.application-groups": ["group.br.com.gymbeat"],
       },
       googleServicesFile: "./GoogleService-Info.plist",
     },
@@ -34,6 +39,7 @@ export default {
       favicon: "./assets/images/favicon.png",
     },
     plugins: [
+      "@bacons/apple-targets",
       "expo-router",
       [
         "expo-splash-screen",
@@ -64,11 +70,13 @@ export default {
           ios_set_modular_headers: true,
         },
       ],
+      
       [
         "expo-build-properties",
         {
           ios: {
             useFrameworks: "static",
+            deploymentTarget: "16.2",
           },
         },
       ],

@@ -4,11 +4,10 @@ import { Usuario } from '@/models/usuario';
 import { calculateLoadForSerie, calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { VideoView as Video, VideoPlayer, useVideoPlayer } from 'expo-video';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BarChart } from 'react-native-chart-kit';
-import { SvgUri } from 'react-native-svg'; // Certifique-se de que esta importação está correta
+import { VideoListItem } from '../VideoListItem';
 
 // --- Helpers ---
 interface SerieComStatus extends Serie {
@@ -38,20 +37,6 @@ const calculateWeightStatsForExercise = (exercise: Exercicio) => {
     };
 };
 // --- Fim Helpers ---
-
-// Componente de Mídia
-const MediaDisplay = ({ uri, style }: { uri: string; style: any }) => {
-    if (uri?.toLowerCase().endsWith('.svg')) {
-        return <SvgUri width={style.width} height={style.height} uri={uri} style={style} />;
-    }
-    const player: VideoPlayer | null = useVideoPlayer(uri, (p: VideoPlayer) => {
-        p.loop = true;
-        p.muted = true;
-        p.play();
-    });
-    React.useEffect(() => () => player.release(), [player]);
-    return <Video player={player} style={style} contentFit="cover" nativeControls={false} />;
-};
 
 // Gráfico de histórico individual
 const ExerciseHistoryChart = ({ exerciseId, allUserLogs, currentLogId, userWeight }: { exerciseId: string; allUserLogs: Log[]; currentLogId: string; userWeight: number }) => {
@@ -231,7 +216,7 @@ export const ExpandableExerciseItem = ({ item, allUserLogs, log, userWeight }: P
     return (
         <View style={styles.exerciseItemContainer}>
             <TouchableOpacity style={styles.exerciseItemHeader} onPress={() => setIsExpanded(!isExpanded)}>
-                {item.modelo.imagemUrl ? <MediaDisplay uri={item.modelo.imagemUrl} style={styles.exerciseVideo} /> : <View style={styles.exerciseImagePlaceholder} />}
+                {item.modelo.imagemUrl ? <VideoListItem uri={item.modelo.imagemUrl} style={styles.exerciseVideo} /> : <View style={styles.exerciseImagePlaceholder} />}
                 <View style={styles.exerciseInfo}>
                     <Text style={styles.exerciseName}>{item.modelo.nome}</Text>
                     <Text style={styles.exerciseDetails}>{item.modelo.grupoMuscular} • {seriesInfo}</Text>

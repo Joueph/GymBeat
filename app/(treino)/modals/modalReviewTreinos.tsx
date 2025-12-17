@@ -13,7 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { HistoricoCargaTreinoChart } from '@/components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '@/components/exercicios/ExpandableExerciseItem';
 
-interface SerieComStatus extends Serie {
+interface SerieComStatus extends Omit<Serie, 'concluido'> {
     concluido?: boolean;
 }
 
@@ -54,6 +54,15 @@ const calculateDuration = (start: Date | null, end: Date | null): string => {
 export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }: { visible: boolean; onClose: () => void; initialLog: Log | null; allUserLogs: Log[] }) => {
     const [currentLog, setCurrentLog] = React.useState(initialLog);
 
+    // --- Animação ---
+    const chartHeight = useSharedValue(0);
+    const animatedChartStyle = useAnimatedStyle(() => {
+        return {
+            height: chartHeight.value,
+            overflow: 'hidden', 
+        };
+    });
+
     // Encontra todos os logs concluídos para o mesmo treino do log inicial
     const relevantLogs = React.useMemo(() => {
         if (!initialLog) return [];
@@ -85,6 +94,14 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
         }
     };
 
+    // Trigger da animação
+    useEffect(() => {
+        // A lógica de animação agora é controlada pelo callback onDataReady
+        // Mas precisamos resetar ao fechar
+        if (!visible) {
+            chartHeight.value = 0;
+        }
+    }, [visible, chartHeight]);
 
     if (!currentLog) { return null; }
 
@@ -108,14 +125,6 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
 
 
     // --- Animação ---
-    const chartHeight = useSharedValue(0);
-    const animatedChartStyle = useAnimatedStyle(() => {
-        return {
-            height: chartHeight.value,
-            overflow: 'hidden', 
-        };
-    });
-
     // Função para disparar a animação
     const handleChartDataReady = (hasData: boolean) => {
         if (visible && hasData) {
@@ -127,15 +136,6 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
             chartHeight.value = 0;
         }
     };
-
-    // Trigger da animação
-    useEffect(() => {
-        // A lógica de animação agora é controlada pelo callback onDataReady
-        // Mas precisamos resetar ao fechar
-        if (!visible) {
-            chartHeight.value = 0;
-        }
-    }, [visible, chartHeight]);
     // --- Fim da Animação ---
 
     return (

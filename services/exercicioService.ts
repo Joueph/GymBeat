@@ -1,8 +1,32 @@
-import { collection, DocumentSnapshot, getDocs, limit, orderBy, query, startAfter, where } from 'firebase/firestore';
-import { db } from '../firebaseconfig';
+import { addDoc, collection, DocumentSnapshot, getDocs, limit, orderBy, query, startAfter, where } from 'firebase/firestore';
+import { auth, db } from '../firebaseconfig';
 import { ExercicioModelo } from '../models/exercicio';
 
 const EXERCICIOS_PAGE_SIZE = 20; // Define a default page size
+
+export const createExercicioModelo = async (exercicioData: Omit<ExercicioModelo, 'id' | 'isCustom' | 'userId'> & { imagemUrl?: string }): Promise<ExercicioModelo> => {
+	const user = auth.currentUser;
+	if (!user) {
+	  throw new Error("Usuário não autenticado.");
+	}
+  
+	const exercicioRef = collection(db, 'exerciciosModelos');
+	const newExercicioData = {
+	  ...exercicioData,
+	  userId: user.uid,
+	  isCustom: true,
+	  nome_lowercase: exercicioData.nome.toLowerCase(),
+	  imagemUrl: exercicioData.imagemUrl || '', // Ensure imagemUrl is always a string
+	  tipo: exercicioData.tipo || 'força', // Ensure tipo is always a string, default to 'força'
+	};
+  
+	const docRef = await addDoc(exercicioRef, newExercicioData);
+  
+	return {
+	  id: docRef.id,
+	  ...newExercicioData,
+	} as ExercicioModelo;
+  };
 
 export const getTodosGruposMusculares = async (): Promise<string[]> => {
   try {

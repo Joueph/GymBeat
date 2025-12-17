@@ -1,36 +1,41 @@
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
+import { getLogsByUsuarioId } from '@/services/logService';
 import { addTreino, deleteTreino, getTreinoById, updateTreino } from '@/services/treinoService';
 import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
-import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
-  Modal,
+  LayoutAnimation,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View
 } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
+import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 import { RepetitionsDrawer } from '../../components/RepetitionsDrawer';
-import { RestTimeDrawer } from '../../components/RestTimeDrawer'; // Importa o novo componente
+import { RestTimeDrawer } from '../../components/RestTimeDrawer';
 import { SetOptionsMenu } from '../../components/SetOptionsMenu';
+import { VideoListItem } from '../../components/VideoListItem';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
-import { getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
+import { getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
+import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
+import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
-const DIAS_SEMANA_ORDEM = { 'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6 };
-const DIAS_SEMANA_ARRAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'] as const;
-type DiaSemana = typeof DIAS_SEMANA_ARRAY[number];
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 interface SerieEdit extends Serie {
   id: string;
@@ -38,56 +43,6 @@ interface SerieEdit extends Serie {
   isWarmup?: boolean;
 }
 
-export function VideoListItem({ uri, style }: { uri: string; style: any }) {
-  const [localUri, setLocalUri] = useState<string | null>(null);
-  const isWebP = uri?.toLowerCase().includes('.webp');
-
-  useEffect(() => {
-    const manageMedia = async () => {
-      if (!uri) return;
-      const fileName = uri.split('/').pop()?.split('?')[0];
-      if (!fileName) return;
-
-      const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
-      const fileInfo = await FileSystem.getInfoAsync(localFileUri);
-
-      if (fileInfo.exists) {
-        setLocalUri(localFileUri);
-      } else {
-        try {
-          await FileSystem.downloadAsync(uri, localFileUri);
-          setLocalUri(localFileUri);
-        } catch (e) {
-          console.error("Erro ao baixar a mídia:", e);
-          setLocalUri(uri);
-        }
-      }
-    };
-
-    manageMedia();
-  }, [uri]);
-
-  if (!localUri) {
-    return <View style={[style, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}><ActivityIndicator color="#fff" /></View>;
-  }
-
-  if (isWebP) {
-    return <Image source={{ uri: localUri || uri }} style={style} />;
-  }
-
-  return (
-    <Video
-      source={{ uri: localUri || uri }}
-      isMuted={true}
-      isLooping={true}
-      shouldPlay={true}
-      resizeMode={ResizeMode.COVER}
-      style={style}
-    />
-  );
-}
-
-// Define uma interface para as props do componente para melhor tipagem
 interface ExerciseItemProps {
   item: Exercicio;
   drag: () => void;
@@ -99,16 +54,6 @@ interface ExerciseItemProps {
   onOpenRestTimeModal: (exerciseIndex: number) => void;
   setIsEditing: (isEditing: boolean) => void;
 }
-
-const REST_TIME_OPTIONS = [
-  { label: '30 seg', value: 30 },
-  { label: '45 seg', value: 45 },
-  { label: '1 min', value: 60 },
-  { label: '1 min 30 seg', value: 90 },
-  { label: '2 min', value: 120 },
-  { label: '2 min 30 seg', value: 150 },
-  { label: '3 min', value: 180 },
-];
 
 const formatRestTime = (seconds: number) => {
   const minutes = Math.floor(seconds / 60);
@@ -134,16 +79,15 @@ const ExerciseItem = ({
     item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' }))
   );
 
-  // Sincroniza o estado interno 'series' com as props que vêm do componente pai.
-  // Isso garante que a UI reflita as mudanças feitas no drawer de repetições.
   useEffect(() => {
     setSeries(item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' })));
   }, [item.series, item]);
 
   const handleSeriesUpdate = (newSeries: SerieEdit[]) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setSeries(newSeries);
     onUpdateExercise({ ...item, series: newSeries });
-    setIsEditing(true); // Ativa o modo de edição imediatamente
+    setIsEditing(true);
   };
 
   const handleSetOption = (option: 'toggleWarmup' | 'addDropset' | 'copy' | 'delete' | 'toggleTime', index: number) => {
@@ -173,7 +117,6 @@ const ExerciseItem = ({
   };
 
   const renderSetItem = (setItem: SerieEdit, index: number) => {
-    // Adjust series counting to exclude warm-up sets from the main count.
     const normalSeriesCount = series
       .slice(0, index + 1)
       .filter(s => s.type === 'normal' && !s.isWarmup).length;
@@ -188,7 +131,6 @@ const ExerciseItem = ({
           <Text style={styles.setIndicator}>{normalSeriesCount}</Text>
         )}
         <View style={styles.inputGroup}>
-          {/* Substituído TextInput por um botão que abre o RepetitionsDrawer */}
           <TouchableOpacity
             style={styles.repButton}
             onPress={() => {
@@ -200,7 +142,6 @@ const ExerciseItem = ({
         </View>
         <Text style={styles.xText}>x</Text>
         <View style={styles.inputGroup}>
-          {/* O rótulo de peso foi removido daqui */}
           <TextInput
             style={styles.setInput}
             value={String(setItem.peso || '')}
@@ -238,7 +179,6 @@ const ExerciseItem = ({
       <View style={styles.inputGroup}>
         <Text style={styles.inputLabel}>Peso (kg)</Text>
       </View>
-      {/* Espaço para alinhar com o botão de opções */}
       <View style={{ width: 40 }} />
     </View>
   );
@@ -247,7 +187,6 @@ const ExerciseItem = ({
     <ScaleDecorator>
       <View style={[styles.exercicioCard, isActive && styles.activeCard]}>
         <View style={styles.exercicioHeader}>
-          {/* ADICIONADO: Verificação para evitar erro se o modelo não existir */}
           {item.modelo?.imagemUrl ? (
             <VideoListItem uri={item.modelo.imagemUrl} style={styles.exerciseVideo} />
           ) : (
@@ -295,7 +234,7 @@ const ExerciseItem = ({
             ]);
           }}
         >
-          <FontAwesome name="plus" size={14} color="#1cb0f6" />
+          <FontAwesome name="plus" size={14} color="#3B82F6" />
           <Text style={styles.addSetButtonText}>Adicionar Série</Text>
         </TouchableOpacity>
         <View style={styles.exerciseActions}>
@@ -323,14 +262,22 @@ export default function EditarTreinoScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isModalVisible, setModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [isDaySelectorVisible, setDaySelectorVisible] = useState(false);
-  // Estados para controlar o RepetitionsDrawer
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
+  const [isDefaultRestTimeDrawerVisible, setDefaultRestTimeDrawerVisible] = useState(false);
   const [isRestTimeModalVisible, setIsRestTimeModalVisible] = useState(false);
   const [editingIndices, setEditingIndices] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
+  const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
+  const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
   const [activeLog, setActiveLog] = useState<Log | null>(null);
+  const [allUserLogs, setAllUserLogs] = useState<Log[]>([]);
 
-  // Animation state
+  const hasRelevantLogs = useMemo(() => {
+    if (!treinoId || !allUserLogs || allUserLogs.length === 0) {
+      return false;
+    }
+    return allUserLogs.some(log => log.treino?.id === treinoId);
+  }, [allUserLogs, treinoId]);
+
   const editingProgress = useSharedValue(0);
 
   useEffect(() => {
@@ -348,53 +295,86 @@ export default function EditarTreinoScreen() {
   );
 
   useEffect(() => {
-    // Se for um novo treino (sem ID), já começa em modo de edição.
     if (!treinoId) {
       setIsEditing(true);
     }
   }, [treinoId]);
 
   useEffect(() => {
-    const loadTreino = async () => {
-      // --- LOG ADICIONADO ---
-      console.log('[editarTreino] Parâmetros recebidos:', JSON.stringify(params, null, 2));
-      // --- FIM DO LOG ---
-      if (treinoId) {
-        const fetchedTreino = await getTreinoById(treinoId as string);
-        // --- LOG ADICIONADO ---
-        console.log('[editarTreino] Treino carregado:', JSON.stringify(fetchedTreino, null, 2));
-        if (fetchedTreino && fetchedTreino.exercicios) {
-          fetchedTreino.exercicios.forEach((ex, index) => {
-            if (!ex.modelo) {
-              console.error(`[editarTreino] ERRO: Exercício no índice ${index} (ID: ${ex.modeloId}) veio sem 'modelo'.`);
-            }
-          });
+    if (user?.id) {
+      getLogsByUsuarioId(user.id).then(setAllUserLogs);
+      getUserProfile(user.id).then(profile => {
+        if (profile?.workoutScreenType) {
+          setWorkoutScreenType(profile.workoutScreenType);
         }
-        // --- FIM DO LOG ---
-        setTreino(fetchedTreino ? { ...fetchedTreino, id: treinoId as string } : {
-          id: treinoId as string,
+      });
+    }
+  }, [user]);
+
+  // ... imports
+
+  useEffect(() => {
+    const loadTreino = async () => {
+      let cachedLoaded = false;
+
+      // 1. Initial Cache Load (Offline First)
+      if (treinoId) {
+        try {
+          const cachedTreino = await getCachedTreinoById(treinoId as string);
+          if (cachedTreino) {
+            console.log('[editarTreino] Loaded from cache first');
+            setTreino(cachedTreino);
+            setLoading(false);
+            cachedLoaded = true;
+          }
+        } catch (e) {
+          console.warn('[editarTreino] Failed to load cache:', e);
+        }
+      }
+
+      // If we didn't load from cache (or it's a new treino), we act normally.
+      // If we did load from cache, we still run the network fetch for a silent update.
+
+      if (treinoId) {
+        try {
+          const fetchedTreino = await getTreinoById(treinoId as string);
+
+          if (fetchedTreino && fetchedTreino.exercicios) {
+            fetchedTreino.exercicios.forEach((ex, index) => {
+              if (!ex.modelo) {
+                console.error(`[editarTreino] ERRO: Exercício no índice ${index} (ID: ${ex.modeloId}) veio sem 'modelo'.`);
+              }
+            });
+          }
+
+          // If we already showed cache, only update if there are changes (not implemented deep compare here, just overwrite for now)
+          // Ideally we check if data changed effectively to avoid re-renders or overwriting user edits if they started editing instantly.
+          // But since this is a "view/edit" screen, if they started editing, we should be careful.
+          // For now, consistent with "stale-while-revalidate", we update.
+          // TODO: Handle "user started editing before sync finished" conflict? 
+          // Current simplistic approach: Just update.
+
+          if (fetchedTreino) {
+            setTreino({ ...fetchedTreino, id: treinoId as string });
+          }
+        } catch (error) {
+          console.error('[editarTreino] Network fetch failed (silent):', error);
+        }
+      } else {
+        // New Treino
+        setTreino({
+          id: '',
           nome: 'Novo Treino',
           usuarioId: user?.id || '',
           fichaId: fichaId || undefined,
           exercicios: [],
           diasSemana: [],
           intervalo: { min: 1, seg: 30 },
-          ordem: 0, // Add default order
-        });
-      } else {
-        // Criando um novo treino
-        setTreino({
-          id: '',
-          nome: 'Novo Treino',
-          usuarioId: user?.id || '',
-          fichaId: fichaId || undefined, // Ensure fichaId is undefined if not provided
-          exercicios: [],
-          diasSemana: [],
-          intervalo: { min: 1, seg: 30 },
-          ordem: 0, // Add default order
+          ordem: 0,
+          descricao: '',
         });
       }
-      setLoading(false);
+      setLoading(false); // Ensure loading is false at the end
     };
     loadTreino();
   }, [treinoId, fichaId, user]);
@@ -404,25 +384,22 @@ export default function EditarTreinoScreen() {
   };
 
   const handleStartWorkout = () => {
-    if (!treino || !treino.id) return;    
-    const targetPath = user?.workoutScreenType === 'simplified' 
-      ? '/(treino)/ongoingWorkout' 
+    if (!treino || !treino.id) return;
+    const targetPath = user?.workoutScreenType === 'simplified'
+      ? '/(treino)/ongoingWorkout'
       : '/(treino)/LoggingDuringWorkout';
 
-    router.push({ 
-        pathname: targetPath, 
-        params: { treinoId: treino.id, fichaId: treino.fichaId } 
-    });    
+    router.push({
+      pathname: targetPath,
+      params: { treinoId: treino.id, fichaId: treino.fichaId }
+    });
   };
 
-
-  // Abre o drawer de repetições, guardando os índices do item a ser editado
   const handleOpenRepDrawer = (exerciseIndex: number, setIndex: number) => {
     setEditingIndices({ exerciseIndex, setIndex });
     setIsRepDrawerVisible(true);
   };
 
-  // Salva o novo valor de repetições e fecha o drawer
   const handleRepetitionsSave = (newReps: string) => {
     if (!editingIndices || !treino) return;
 
@@ -430,21 +407,18 @@ export default function EditarTreinoScreen() {
     const updatedExercicios = [...treino.exercicios];
     const seriesToUpdate = [...updatedExercicios[exerciseIndex].series];
 
-    // Atualiza a repetição da série específica
     seriesToUpdate[setIndex] = { ...seriesToUpdate[setIndex], repeticoes: newReps };
     updatedExercicios[exerciseIndex] = { ...updatedExercicios[exerciseIndex], series: seriesToUpdate };
 
-    // Atualiza o estado do treino
     if (!isEditing) setIsEditing(true);
     setTreino({ ...treino, exercicios: updatedExercicios });
 
-    // Fecha o drawer e reseta os índices
     setIsRepDrawerVisible(false);
     setEditingIndices(null);
   };
 
   const handleOpenRestTimeModal = (exerciseIndex: number) => {
-    setEditingIndices({ exerciseIndex, setIndex: -1 }); // setIndex is not needed here
+    setEditingIndices({ exerciseIndex, setIndex: -1 });
     setIsRestTimeModalVisible(true);
   };
 
@@ -456,19 +430,34 @@ export default function EditarTreinoScreen() {
     setIsRestTimeModalVisible(false);
   };
 
-  // Obtém o valor inicial de repetições para passar ao drawer
-  const getRepetitionsValue = () => {
-    if (!editingIndices || !treino) return '10'; // Valor padrão
+  const handleDefaultRestTimeSave = (newSeconds: number) => {
+    if (!treino) return;
 
+    const oldDefaultSeconds = (treino.intervalo?.min ?? 1) * 60 + (treino.intervalo?.seg ?? 30);
+
+    const updatedExercicios = treino.exercicios.map(ex => {
+      if (ex.restTime === oldDefaultSeconds) {
+        return { ...ex, restTime: newSeconds };
+      }
+      return ex;
+    });
+
+    const newMin = Math.floor(newSeconds / 60);
+    const newSeg = newSeconds % 60;
+
+    setTreino({ ...treino, exercicios: updatedExercicios, intervalo: { min: newMin, seg: newSeg } });
+    setDefaultRestTimeDrawerVisible(false);
+  };
+
+  const getRepetitionsValue = () => {
+    if (!editingIndices || !treino) return '10';
     const { exerciseIndex, setIndex } = editingIndices;
     const exercise = treino.exercicios[exerciseIndex];
     return exercise?.series[setIndex]?.repeticoes || '10';
   };
 
-  // Obtém o valor inicial do tempo de descanso para passar ao drawer
   const getRestTimeValue = () => {
-    if (!editingIndices || !treino) return 90; // Valor padrão em segundos
-
+    if (!editingIndices || !treino) return 90;
     const { exerciseIndex } = editingIndices;
     const exercise = treino.exercicios[exerciseIndex];
     return exercise?.restTime || 90;
@@ -478,13 +467,12 @@ export default function EditarTreinoScreen() {
     if (!treino) return;
     setIsSaving(true);
     try {
-      if (treino.id && treino.id !== '') { // Se o treino tem um ID existente, atualiza.
+      if (treino.id && treino.id !== '') {
         await updateTreino(treino.id, treino);
-      } else { // Senão, cria um novo treino.
+      } else {
         const newTreinoId = await addTreino(treino);
-        setTreino(prev => prev ? { ...prev, id: newTreinoId } : null); // Atualiza o ID no estado local
+        setTreino(prev => prev ? { ...prev, id: newTreinoId } : null);
       }
-      // After saving, return to "viewing" mode.
       setIsEditing(false);
     } catch (error) {
       console.error("Erro ao salvar treino:", error);
@@ -502,8 +490,8 @@ export default function EditarTreinoScreen() {
       modelo: modelo,
       series: [{ id: `set-${Date.now()}`, repeticoes: '10', peso: 10, type: 'normal', concluido: false }],
       isBiSet: false,
-      notes: '', // Adiciona a propriedade 'notes' obrigatória
-      restTime: 90, // Default rest time in seconds
+      notes: '',
+      restTime: 90,
     }));
 
     if (!isEditing) setIsEditing(true);
@@ -526,10 +514,7 @@ export default function EditarTreinoScreen() {
       "Apagar Exercício",
       `Tem certeza que deseja apagar "${exerciseName}" do seu treino?`,
       [
-        {
-          text: "Cancelar",
-          style: "cancel"
-        },
+        { text: "Cancelar", style: "cancel" },
         {
           text: "Apagar",
           style: "destructive",
@@ -544,24 +529,10 @@ export default function EditarTreinoScreen() {
     );
   };
 
-  const handleToggleDay = (day: DiaSemana) => {
-    if (!treino) return;
-    const currentDays = treino.diasSemana || [];
-    const newDays = currentDays.includes(day)
-      ? currentDays.filter(d => d !== day)
-      : [...currentDays, day];
-
-    // Sort the days
-    newDays.sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]);
-
-    if (!isEditing) setIsEditing(true);
-    setTreino({ ...treino, diasSemana: newDays });
-  };
-
   const handleDeleteTreino = async () => {
     if (!treino || !treino.id) {
       Alert.alert("Erro", "Este treino ainda não foi salvo e não pode ser deletado.");
-      router.back(); // Apenas volta se for um treino novo e não salvo
+      router.back();
       return;
     }
 
@@ -573,7 +544,7 @@ export default function EditarTreinoScreen() {
         {
           text: "Apagar", style: "destructive", onPress: async () => {
             try {
-              await deleteTreino(treino.id, treino.fichaId);
+              await deleteTreino(treino.id, treino.fichaId ?? undefined);
               Alert.alert("Sucesso", "O treino foi apagado.");
               router.back();
             } catch (error) { console.error("Erro ao apagar treino:", error); Alert.alert('Erro', 'Não foi possível apagar o treino.'); }
@@ -582,6 +553,7 @@ export default function EditarTreinoScreen() {
       ]
     );
   };
+
   const renderItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<Exercicio>) => {
     const index = getIndex();
     if (typeof index !== 'number') {
@@ -590,13 +562,13 @@ export default function EditarTreinoScreen() {
     return (
       <ExerciseItem
         item={item}
-        exerciseIndex={index} // Passa o índice do exercício
-        onOpenRepDrawer={handleOpenRepDrawer} // Passa a função para abrir o drawer
+        exerciseIndex={index}
+        onOpenRepDrawer={handleOpenRepDrawer}
         drag={drag}
         onOpenRestTimeModal={handleOpenRestTimeModal}
         isActive={isActive}
         onUpdateExercise={(ex) => handleUpdateExercise(ex, index)}
-        onRemoveExercise={() => handleRemoveExercise(index)} setIsEditing={setIsEditing}      />
+        onRemoveExercise={() => handleRemoveExercise(index)} setIsEditing={setIsEditing} />
     );
   }, [treino]);
 
@@ -613,12 +585,6 @@ export default function EditarTreinoScreen() {
       transform: [{ translateY: (1 - editingProgress.value) * 20 }],
     };
   });
-
-  const HeaderTitle = ({ text, style }: { text: string, style: any }) => (
-    <Animated.View style={[styles.headerTitleContainer, style]}>
-      <Text style={styles.headerTitle}>{text}</Text>
-    </Animated.View>
-  );
 
   if (loading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
@@ -642,7 +608,6 @@ export default function EditarTreinoScreen() {
         </View>
         <View style={styles.headerRight}>
           {isEditing ? (
-            // Botão de Edição
             <Animated.View style={[styles.headerButtonWrapper, editingStyle]}>
               <TouchableOpacity onPress={handleSave} disabled={isSaving}>
                 {isSaving ? <ActivityIndicator color="#1cb0f6" /> : (
@@ -651,15 +616,12 @@ export default function EditarTreinoScreen() {
               </TouchableOpacity>
             </Animated.View>
           ) : (
-            // Botões de Visualização
             <Animated.View style={[styles.headerButtonWrapper, viewingStyle]}>
-              <TouchableOpacity style={styles.configButton} onPress={() => setIsEditing(true)}>
+              <TouchableOpacity style={styles.configButton} onPress={() => setSettingsModalVisible(true)}>
                 <FontAwesome name="cog" size={22} color="#ccc" />
               </TouchableOpacity>
-              
-              {/* Lógica do botão Iniciar/Continuar */}
+
               {!activeLog ? (
-                // Se não há treino ativo, mostra "Iniciar"
                 <TouchableOpacity style={styles.startButton} onPress={handleStartWorkout} disabled={isSaving}>
                   {isSaving ? <ActivityIndicator color="#000" /> : (
                     <>
@@ -669,7 +631,6 @@ export default function EditarTreinoScreen() {
                   )}
                 </TouchableOpacity>
               ) : activeLog.treino?.id === treino?.id ? (
-                // Se o treino ativo é o mesmo que está sendo editado, mostra "Continuar"
                 <TouchableOpacity style={styles.startButton} onPress={handleStartWorkout} disabled={isSaving}>
                   {isSaving ? <ActivityIndicator color="#000" /> : (
                     <>
@@ -678,7 +639,7 @@ export default function EditarTreinoScreen() {
                     </>
                   )}
                 </TouchableOpacity>
-              ) : null /* Se há um treino ativo diferente, não mostra nada */}
+              ) : null}
             </Animated.View>
           )}
         </View>
@@ -703,16 +664,15 @@ export default function EditarTreinoScreen() {
                 placeholder="Nome do Treino"
                 placeholderTextColor="#888"
               />
-              <TouchableOpacity
-                style={styles.daySelectorContainer}
-                onPress={() => setDaySelectorVisible(true)}
-              >
-                <Text style={styles.daySelectorText} numberOfLines={1}>
-                  {treino.diasSemana.length > 0
-                    ? treino.diasSemana.join(', ').toUpperCase() : 'Dias da semana'}
-                </Text>
-                <FontAwesome name={treino.diasSemana.length > 0 ? "calendar" : "chevron-down"} size={16} color="#ccc" />
-              </TouchableOpacity>
+              {treinoId && hasRelevantLogs && (
+                <View style={{ marginTop: 20, alignItems: 'center' }}>
+                  <HistoricoCargaTreinoChart
+                    treinoId={treinoId}
+                    allUserLogs={allUserLogs}
+                  />
+                </View>
+              )}
+              {/* Seletor de dias removido daqui */}
             </View>
           }
           ListFooterComponent={
@@ -722,7 +682,6 @@ export default function EditarTreinoScreen() {
                 <Text style={styles.addExerciseButtonText}>Adicionar Exercício</Text>
               </TouchableOpacity>
 
-              {/* Botão para apagar o treino, só aparece se o treino já existir */}
               {treinoId && (
                 <TouchableOpacity style={styles.deleteWorkoutButton} onPress={handleDeleteTreino}>
                   <FontAwesome name="trash" size={16} color="#ff3b30" />
@@ -739,7 +698,6 @@ export default function EditarTreinoScreen() {
         visible={isModalVisible}
         onClose={() => setModalVisible(false)}
         onConfirm={handleAddExercises}
-        // Se veio da config, não filtra exercícios. Senão, filtra os já existentes.
         existingExerciseIds={fromConfig === 'true' ? [] : (treino?.exercicios.map(e => e.modeloId) || [])}
       />
 
@@ -750,35 +708,8 @@ export default function EditarTreinoScreen() {
         initialValue={getRepetitionsValue()}
       />
 
-      <Modal
-        transparent={true}
-        visible={isDaySelectorVisible}
-        animationType="fade"
-        onRequestClose={() => setDaySelectorVisible(false)}
-      >
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setDaySelectorVisible(false)}>
-          <View style={styles.daySelectorModal}>
-            <Text style={styles.daySelectorTitle}>Selecione os dias</Text>
-            <View style={styles.daysContainer}>
-              {DIAS_SEMANA_ARRAY.map(day => {
-                const isSelected = treino?.diasSemana.includes(day);
-                return (
-                  <TouchableOpacity
-                    key={day}
-                    style={[styles.dayButton, isSelected && styles.dayButtonSelected]}
-                    onPress={() => handleToggleDay(day)}
-                  >
-                    <Text style={styles.dayButtonText}>{day.toUpperCase()}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-            <TouchableOpacity style={styles.daySelectorCloseButton} onPress={() => setDaySelectorVisible(false)}><Text style={styles.daySelectorCloseButtonText}>Fechar</Text></TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* Modal de Dias removido daqui e passado para dentro do WorkoutSettingsModal */}
 
-      {/* NOVO DRAWER DE TEMPO DE DESCANSO */}
       <RestTimeDrawer
         visible={isRestTimeModalVisible}
         onClose={() => {
@@ -789,6 +720,26 @@ export default function EditarTreinoScreen() {
         initialValue={getRestTimeValue()}
       />
 
+      <RestTimeDrawer
+        visible={isDefaultRestTimeDrawerVisible}
+        onClose={() => setDefaultRestTimeDrawerVisible(false)}
+        onSave={handleDefaultRestTimeSave}
+        initialValue={treino && treino.intervalo ? (treino.intervalo.min * 60) + treino.intervalo.seg : 90}
+      />
+
+      {/* Passando props adicionais para o modal */}
+      <WorkoutSettingsModal
+        isVisible={isSettingsModalVisible}
+        onClose={() => setSettingsModalVisible(false)}
+        treino={treino}
+        onUpdateTreino={(novoTreino) => {
+          if (!isEditing) setIsEditing(true);
+          setTreino(novoTreino);
+        }}
+      />
+
+      <OngoingWorkoutFooter />
+
     </SafeAreaView>
   );
 }
@@ -797,13 +748,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0B0D10',
-    paddingHorizontal:8, // Dark background
+    paddingHorizontal: 8,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 10, // Mantido
+    paddingVertical: 10,
     borderBottomWidth: 0.5,
     borderBottomColor: '#222',
   },
@@ -818,17 +769,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
+  backButton: {
+    padding: 5,
+  },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  backButton: {
-    padding: 5,
-  },
   headerTitle: {
     color: '#fff',
-    fontSize: 22, // Aumentado
+    fontSize: 22,
     fontWeight: 'bold',
   },
   headerTitleContainer: {
@@ -860,21 +811,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#030405',
   },
   listHeaderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 16,
-
-    borderBottomColor: '#222',
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   titleInput: {
     color: '#fff',
     fontSize: 28,
     fontWeight: 'bold',
-    flex: 1, // Allows the input to take available space
     borderBottomWidth: 1,
     borderColor: '#222',
-    paddingHorizontal: 10,
     paddingBottom: 5,
   },
   exercicioCard: {
@@ -927,7 +872,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 5,
-    paddingHorizontal: 5, // Alinha com o padding do setRow
+    paddingHorizontal: 5,
   },
   setRow: {
     flexDirection: 'row',
@@ -947,12 +892,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
-    width: 40, // Aumentado para alinhar com o dragHandle
+    width: 40,
     textAlign: 'center',
   },
   inputGroup: {
     alignItems: 'center',
-    flex: 1, // Adicionado para que o grupo ocupe o espaço disponível
+    flex: 1,
   },
   inputLabel: {
     color: '#aaa',
@@ -966,7 +911,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     textAlign: 'center',
     fontSize: 16,
-    minWidth: 80, // Mantido
+    minWidth: 80,
   },
   repButton: {
     backgroundColor: '#262A32',
@@ -1012,7 +957,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   configButton: {
-    padding: 10, // Aumenta a área de toque
+    padding: 10,
     marginLeft: 15,
   },
   removeExerciseButton: {
@@ -1085,67 +1030,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: 'transparent',
   },
-  // Day Selector Styles
-  daySelectorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 8,
-  },
-  daySelectorText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    maxWidth: 100, // Prevents the text from pushing the icon too far
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  daySelectorModal: {
-    backgroundColor: '#1f1f1f',
-    borderRadius: 15,
-    padding: 20,
-    width: '90%',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  daySelectorTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  daysContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 10,
-    marginBottom: 20,
-  },
-  dayButton: {
-    backgroundColor: '#333',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-  },
-  dayButtonSelected: {
-    backgroundColor: '#1cb0f6',
-  },
-  dayButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  daySelectorCloseButton: { padding: 10 },
-  daySelectorCloseButtonText: { color: '#1cb0f6', fontSize: 16 },
-  // Rest Time Modal
   restTimeOptionsContainer: {
     width: '100%',
     flexDirection: 'row',

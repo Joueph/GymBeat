@@ -1,11 +1,9 @@
 // services/treinoService.ts
 import {
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
-  orderBy,
   query,
   updateDoc,
   where,
@@ -15,6 +13,7 @@ import { db } from '../firebaseconfig';
 import { Exercicio, ExercicioModelo } from '../models/exercicio'; // Import Exercicio and ExercicioModelo
 import { Treino } from '../models/treino';
 import { TreinoModelo } from '../models/treinoModelo';
+import { cacheUserTreinos, getCachedTreinoById, getCachedTreinosByIds, getCachedUserTreinos } from './offlineCacheService';
 
 export type DiaSemana = 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab';
 
@@ -31,34 +30,45 @@ const getExercicioModeloById = async (modeloId: string): Promise<ExercicioModelo
  * Fetches a single workout by its ID.
  */
 export const getTreinoById = async (treinoId: string): Promise<Treino | null> => {
-  const docRef = doc(db, 'treinos', treinoId);
-  const docSnap = await getDoc(docRef);
+  try {
+    const docRef = doc(db, 'treinos', treinoId);
+    const docSnap = await getDoc(docRef);
 
-  if (docSnap.exists()) {
-    const treinoData = { id: docSnap.id, ...docSnap.data() } as Treino;
+    if (docSnap.exists()) {
+      const treinoData = { id: docSnap.id, ...docSnap.data() } as Treino;
 
-    // Populate 'modelo' for each exercise
-    if (treinoData.exercicios && treinoData.exercicios.length > 0) {
-      const populatedExerciciosPromises = treinoData.exercicios.map(async (ex: Exercicio) => {
-        if (ex.modeloId) {
-          const modelo = await getExercicioModeloById(ex.modeloId);
-          if (modelo) {
-            return { ...ex, modelo: modelo };
+      // Populate 'modelo' for each exercise
+      if (treinoData.exercicios && treinoData.exercicios.length > 0) {
+        const populatedExerciciosPromises = treinoData.exercicios.map(async (ex: Exercicio) => {
+          if (ex.modeloId) {
+            const modelo = await getExercicioModeloById(ex.modeloId);
+            if (modelo) {
+              return { ...ex, modelo: modelo };
+            }
           }
-        }
-        return null; // Return null for exercises where the model is not found
-      });
+          return null; // Return null for exercises where the model is not found
+        });
 
-      const resolvedExercicios = await Promise.all(populatedExerciciosPromises);
-      
-      // Filter out the null values
-      const populatedExercicios = resolvedExercicios.filter((ex): ex is Exercicio => ex !== null);
+        const resolvedExercicios = await Promise.all(populatedExerciciosPromises);
 
-      treinoData.exercicios = populatedExercicios;
+        // Filter out the null values
+        const populatedExercicios = resolvedExercicios.filter((ex): ex is Exercicio => ex !== null);
+
+        treinoData.exercicios = populatedExercicios;
+      }
+      return treinoData; // Return the fully populated Treino object
     }
-    return treinoData; // Return the fully populated Treino object
+    return null;
+  } catch (error) {
+    console.error('[TreinoService] Erro ao buscar treino:', error);
+    // Fallback: tenta recuperar do cache se offline
+    const cachedTreino = await getCachedTreinoById(treinoId);
+    if (cachedTreino) {
+      console.log('[TreinoService] Usando treino em cache (offline)');
+      return cachedTreino;
+    }
+    return null;
   }
-  return null;
 };
 
 /**
@@ -69,24 +79,44 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
     return [];
   }
   const treinosRef = collection(db, 'treinos');
-  const q = query(treinosRef, where('__name__', 'in', treinoIds));
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
+  try {
+    const q = query(treinosRef, where('__name__', 'in', treinoIds));
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
+  } catch (error) {
+    console.error('[TreinoService] Erro ao buscar treinos por IDs (offline fallback):', error);
+    // Tenta recuperar individualmente do cache
+    const cached = await getCachedTreinosByIds(treinoIds);
+    return cached;
+  }
 };
 
 /**
  * Fetches all workouts for a given user ID.
  */
 export const getTreinosByUsuarioId = async (userId: string): Promise<Treino[]> => {
-  const treinosRef = collection(db, 'treinos');
-  const q = query(treinosRef, where('usuarioId', '==', userId));
-  const querySnapshot = await getDocs(q);
-  const treinos = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
-  
-  // Fallback sort in case 'ordem' is not defined for some documents
-  treinos.sort((a, b) => (a.ordem ?? Infinity) - (b.ordem ?? Infinity));
-  
-  return treinos;
+  try {
+    const treinosRef = collection(db, 'treinos');
+    const q = query(treinosRef, where('usuarioId', '==', userId));
+    const querySnapshot = await getDocs(q);
+    const treinos = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
+
+    // Fallback sort in case 'ordem' is not defined for some documents
+    treinos.sort((a, b) => (a.ordem ?? Infinity) - (b.ordem ?? Infinity));
+
+    // Cache the list
+    cacheUserTreinos(userId, treinos);
+
+    return treinos;
+  } catch (error) {
+    console.error('[TreinoService] Erro ao buscar treinos do usuário:', error);
+    const cached = await getCachedUserTreinos(userId);
+    if (cached && cached.length > 0) {
+      console.log('[TreinoService] Usando treinos em cache (offline)');
+      return cached;
+    }
+    throw error;
+  }
 };
 
 /**
@@ -123,10 +153,31 @@ export const addTreinoToFicha = async (fichaId: string, treinoData: Partial<Omit
   return treinoRef.id;
 };
 
+// ... imports
+import NetInfo from '@react-native-community/netinfo';
+import { queueAction } from './offlineQueueService';
+
+// ... (other functions)
+
 /**
  * Adds a new workout.
  */
-export const addTreino = async (treinoData: Omit<Treino, 'id'>): Promise<string> => {
+export const addTreino = async (treinoData: Omit<Treino, 'id'>, isSyncing: boolean = false): Promise<string> => {
+  const networkState = await NetInfo.fetch();
+  const isOnline = networkState.isConnected;
+
+  if (!isOnline && !isSyncing) {
+    console.log('[TreinoService] Offline. Enfileirando addTreino.');
+    // Offline: Add to queue
+    await queueAction('ADD_TREINO', { treinoData });
+
+    // Return a temp ID (or handle this differently if we need the ID immediately for UI)
+    // Como não temos cache local da LISTA de TODOS os treinos (apenas user treinos), 
+    // talvez fosse bom atualizar o cache aqui também.
+    // Retornar um ID temporário:
+    return `temp-treino-${Date.now()}`;
+  }
+
   const batch = writeBatch(db);
   const newTreinoRef = doc(collection(db, 'treinos'));
 
@@ -146,7 +197,16 @@ export const addTreino = async (treinoData: Omit<Treino, 'id'>): Promise<string>
 /**
  * Updates an existing workout.
  */
-export const updateTreino = async (treinoId: string, treinoData: Partial<Omit<Treino, 'id'>>): Promise<void> => {
+export const updateTreino = async (treinoId: string, treinoData: Partial<Omit<Treino, 'id'>>, isSyncing: boolean = false): Promise<void> => {
+  const networkState = await NetInfo.fetch();
+  const isOnline = networkState.isConnected;
+
+  if (!isOnline && !isSyncing) {
+    console.log('[TreinoService] Offline. Enfileirando updateTreino.');
+    await queueAction('UPDATE_TREINO', { treinoId, treinoData });
+    return;
+  }
+
   // Cria uma cópia dos dados para não modificar o objeto original
   const dataToUpdate = { ...treinoData };
   // O ID não deve ser parte dos dados de atualização no Firestore, então o removemos da cópia.

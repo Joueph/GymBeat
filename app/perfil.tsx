@@ -40,7 +40,7 @@ const toDate = (date: any): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
-interface UserSettings {
+export interface UserSettings {
   notifications: NotificationSettings;
   privacy: PrivacySettings & { profileVisibility: 'todos' | 'amigos' | 'ninguem' };
 }
@@ -49,6 +49,21 @@ type ProfileWithSettings = Partial<Usuario> & {
   settings?: UserSettings;
   expoPushToken?: string;
   novoPeso?: string; // Propriedade para o campo de input do novo peso
+};
+
+const defaultNotificationSettings: NotificationSettings = {
+  workoutReminders: true,
+  workoutReminderTime: { hour: 9, minute: 0 },
+  restTimeEnding: true,
+  creatine: true,
+  protein: true,
+  hypercaloric: false,
+  friendWorkoutDone: true,
+  morningWorkout: undefined
+};
+
+const defaultPrivacySettings: PrivacySettings = {
+  profileVisibility: 'amigos', weekStreak: 'todos', workoutDays: 'todos', workoutDetails: 'amigos', autoAcceptFriendRequests: false
 };
 
 export default function PerfilScreen() {
@@ -82,17 +97,12 @@ export default function PerfilScreen() {
     });
   }, [navigation]);
 
-  // Efeito para registrar para notificações push
+  // Efeito para registrar para notificações locais
   useEffect(() => {
-    const registerForPushNotificationsAsync = async () => {
+    const registerForNotificationsAsync = async () => {
       if (!user) return;
 
-      // Push notifications only work on physical devices
-      if (!Device.isDevice) {
-        console.log("Push notifications are not supported on simulators/emulators.");
-        return;
-      }
-
+      // Solicita permissões para notificações locais
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
 
@@ -102,22 +112,30 @@ export default function PerfilScreen() {
       }
 
       if (finalStatus !== 'granted') {
-        // Opcional: Informar ao usuário que ele não receberá notificações.
-        // Alert.alert('Notificações desativadas', 'Você não permitiu notificações push.');
+        console.warn('[Notifications] Permissões de notificação negadas');
         return;
       }
 
-      try {
-        const token = (await Notifications.getExpoPushTokenAsync()).data;
-        
-        // Salva o token no perfil do usuário se for diferente do já salvo
-        if (token && profile.expoPushToken !== token) {
-          await updateUserProfile(user.id, { expoPushToken: token } as Partial<Usuario>);
-          setProfile(prev => ({ ...prev, expoPushToken: token }));
+      console.log('[Notifications] Permissões de notificação concedidas');
+
+      // Push notifications only work on physical devices
+      if (Device.isDevice) {
+        try {
+          const token = (await Notifications.getExpoPushTokenAsync()).data;
+          
+          // Salva o token no perfil do usuário se for diferente do já salvo
+          if (token && profile.expoPushToken !== token) {
+            await updateUserProfile(user.id, { expoPushToken: token } as Partial<Usuario>);
+            setProfile(prev => ({ ...prev, expoPushToken: token }));
+          }
+        } catch (e) { 
+          console.error("Falha ao obter o token de notificação", e); 
         }
-      } catch (e) { console.error("Falha ao obter o token de notificação", e); }
+      }
     };
-  }, [user, profile.expoPushToken]); // Executa quando o usuário loga
+
+    registerForNotificationsAsync();
+  }, [user]); // Executa quando o usuário loga
 
   useEffect(() => {
     const fetchProfileAndLogs = async () => {
@@ -234,13 +252,13 @@ const handleUpdate = async () => {
 
       // Gerencia as notificações locais com base nas novas configurações
       if (newSettings.notifications.creatine) {
-        scheduleNotification('creatine-reminder', 'Lembrete de Creatina', 'Hora de tomar sua creatina para manter a força!', { hour: 9, minute: 0 });
+        scheduleNotification('creatine-reminder', 'Lembrete de Creatina', 'Hora de tomar sua creatina para manter a força!', { hour: 9, minute: 0, repeats: true });
       } else {
         cancelNotification('creatine-reminder');
       }
 
       if (newSettings.notifications.morningWorkout) {
-        scheduleNotification('morning-workout-reminder', 'Hora de Treinar!', 'Que tal começar o dia com um bom treino?', { hour: 8, minute: 0 });
+        scheduleNotification('morning-workout-reminder', 'Hora de Treinar!', 'Que tal começar o dia com um bom treino?', { hour: 8, minute: 0, repeats: true });
       } else {
         cancelNotification('morning-workout-reminder');
       }
@@ -491,12 +509,11 @@ const handleUpdate = async () => {
             </TouchableOpacity>
           </View>
           <SettingsPage
-            initialSettings={profile.settings ?? {
-              notifications: {
-                restTimeEnding: true, morningWorkout: false, afternoonWorkout: true, nightWorkout: false, creatine: true, protein: true, hypercaloric: false, friendWorkoutDone: true,
-              },
-              privacy: { profileVisibility: 'amigos', weekStreak: 'todos', workoutDays: 'todos', workoutDetails: 'amigos', autoAcceptFriendRequests: false }
-            }}
+            initialSettings={{
+              // Merge saved settings with defaults to prevent crashes on missing properties
+              notifications: { ...defaultNotificationSettings, ...profile.settings?.notifications },
+              privacy: { ...defaultPrivacySettings, ...profile.settings?.privacy }
+            } as UserSettings}
             onSettingsChange={handleSettingsChange}
           />
         </SafeAreaView>

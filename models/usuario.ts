@@ -4,6 +4,7 @@ import { Ficha } from './ficha';
 export type UserRole = 'usuario' | 'administrador' | 'personal';
 
 export interface Usuario {
+  peso(peso: any): unknown;
   uid(uid: any): unknown;
   settings: any;
   id: string;
@@ -17,6 +18,7 @@ export interface Usuario {
   nivel?: 'Iniciante' | 'Intermediário' | 'Avançado';
   fichas?: Ficha[];
 // --- ADICIONE ESTES CAMPOS ---
+  defaultRestTime?: { min: number; seg: number }; // Tempo de descanso padrão em minutos e segundos
   objetivoPrincipal?: string | null;
   localTreino?: string | null;
   possuiEquipamentosCasa?: boolean | null;

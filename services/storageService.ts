@@ -32,3 +32,24 @@ export const uploadImageAndGetURL = async (uri: string, userId: string): Promise
     throw error;
   }
 };
+
+/**
+ * Faz o upload de um arquivo de mídia para o Firebase Storage e retorna a URL de download.
+ * @param uri - A URI local do arquivo de mídia (do image picker).
+ * @param path - O caminho completo no Storage onde o arquivo será salvo (ex: `exerciseMedia/${userId}/${fileName}`).
+ * @returns A URL pública do arquivo de mídia após o upload.
+ */
+export const uploadMediaAndGetURL = async (uri: string, path: string): Promise<string> => {
+  try {
+    const response = await fetch(uri);
+    const blob = await response.blob();
+
+    const storageRef = ref(storage, path);
+    const snapshot = await uploadBytes(storageRef, blob);
+    const downloadURL = await getDownloadURL(snapshot.ref);
+    return downloadURL;
+  } catch (error) {
+    console.error("Erro ao fazer upload da mídia: ", error);
+    throw error;
+  }
+};

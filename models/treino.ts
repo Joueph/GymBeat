@@ -3,6 +3,7 @@ import { Exercicio } from './exercicio';
 export type DiaSemana = 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab';
 
 export interface Treino {
+  descricao: string;
   ordem: number;
   id: string;
   usuarioId: string;

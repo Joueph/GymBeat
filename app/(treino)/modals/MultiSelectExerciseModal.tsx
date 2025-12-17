@@ -1,3 +1,4 @@
+import { useAuth } from '@/app/authprovider';
 import { ExercicioModelo } from '@/models/exercicio';
 import { getExerciciosModelos, getTodosGruposMusculares } from '@/services/exercicioService';
 import { FontAwesome } from '@expo/vector-icons';
@@ -16,7 +17,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { VideoListItem } from '../editarTreino';
+import { VideoListItem } from '@/components/VideoListItem';
+import { CreateExerciseModal } from './CreateExerciseModal';
 
 interface MultiSelectExerciseModalProps {
   visible: boolean;
@@ -33,6 +35,7 @@ export const MultiSelectExerciseModal = ({
   onConfirm,
   existingExerciseIds,
 }: MultiSelectExerciseModalProps) => {
+  const { user } = useAuth(); // Get the current user
   const [exerciciosModelos, setExerciciosModelos] = useState<ExercicioModelo[]>([]);
   const [selectedExercises, setSelectedExercises] = useState<ExercicioModelo[]>([]);
   const [lastVisibleDoc, setLastVisibleDoc] = useState<DocumentSnapshot | null>(null);
@@ -42,6 +45,7 @@ export const MultiSelectExerciseModal = ({
   const [currentSearchInput, setCurrentSearchInput] = useState('');
   const [activeSearchTerm, setActiveSearchTerm] = useState('');
   const [allMuscleGroups, setAllMuscleGroups] = useState<string[]>([]);
+  const [isCreateModalVisible, setCreateModalVisible] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -117,13 +121,22 @@ export const MultiSelectExerciseModal = ({
     onClose();
   };
 
+  const handleExerciseCreated = (newExercise: ExercicioModelo) => {
+    setExerciciosModelos((prev) => [newExercise, ...prev]);
+    setSelectedExercises((prev) => [...prev, newExercise]);
+    setCreateModalVisible(false);
+  };
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose} presentationStyle="pageSheet">
       <SafeAreaView style={styles.modalContainer}>
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Selecionar Exercícios</Text>
-          <TouchableOpacity onPress={handleClose}>
-            <FontAwesome name="close" size={24} color="#fff" />
+          <TouchableOpacity onPress={handleClose} style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <FontAwesome name="arrow-down" size={18} color="#fff" style={{ marginRight: 10 }} />
+            <Text style={styles.modalTitle}>Selecionar Exercícios</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setCreateModalVisible(true)}>
+            <FontAwesome name="plus" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
 
@@ -168,8 +181,16 @@ export const MultiSelectExerciseModal = ({
                 onPress={() => handleToggleExercise(item)}
               >
                 <VideoListItem style={styles.modeloVideo} uri={item.imagemUrl} />
-                <Text style={styles.modeloName} numberOfLines={2}>{item.nome}</Text>
-                {isSelected && <FontAwesome name="check-circle" size={24} color="#1cb0f6" />}
+                <View style={styles.modeloTextContainer}>
+                  <Text style={styles.modeloName} numberOfLines={2}>{item.nome}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={styles.modeloMuscleGroup}>{item.grupoMuscular}</Text>
+                    {item.isCustom && (
+                      <Text style={styles.customExerciseText}> | {item.userId === user?.id ? 'adicionado por mim' : 'personalizado'}</Text>
+                    )}
+                  </View>
+                </View>
+                {isSelected && <FontAwesome name="check-circle" size={24} color="#3B82F6" />}
               </TouchableOpacity>
             );
           }}
@@ -183,27 +204,38 @@ export const MultiSelectExerciseModal = ({
             </TouchableOpacity>
           </View>
         )}
+
+        <CreateExerciseModal
+          visible={isCreateModalVisible}
+          onClose={() => setCreateModalVisible(false)}
+          onExerciseCreated={handleExerciseCreated}
+          muscleGroups={allMuscleGroups}
+        />
       </SafeAreaView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  modalContainer: { flex: 1, backgroundColor: '#030405' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#222' },
+  modalContainer: { flex: 1, backgroundColor: '#0B0D10' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 0.5, borderBottomColor: '#222' },
   modalTitle: { fontSize: 22, fontWeight: 'bold', color: '#fff' },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', margin: 15, backgroundColor: '#222', borderRadius: 8 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', margin: 15, backgroundColor: '#1A1D23', borderRadius: 8, borderWidth: 1, borderColor: '#222' },
   searchInput: { flex: 1, color: '#fff', padding: 12, fontSize: 16 },
   groupSelector: { paddingLeft: 15, marginBottom: 15 },
-  groupButton: { height: 45, paddingHorizontal: 20, backgroundColor: '#141414', borderRadius: 12, marginRight: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#ffffff1a' },
-  groupSelected: { backgroundColor: '#1cb0f6' },
+  groupButton: { height: 45, paddingHorizontal: 20, backgroundColor: '#1A1D23', borderRadius: 12, marginRight: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#222' },
+  groupSelected: { backgroundColor: '#3B82F6' },
   groupText: { color: '#fff', fontWeight: 'bold', textAlign: 'center', fontSize: 14 },
-  modeloCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#222', padding: 10, borderRadius: 8, marginBottom: 10, marginHorizontal: 15, borderWidth: 2, borderColor: 'transparent' },
-  modeloCardSelected: { borderColor: '#1cb0f6' },
+  modeloCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1A1D23', padding: 10, borderRadius: 8, marginBottom: 10, marginHorizontal: 15, borderWidth: 1, borderColor: '#222', justifyContent: 'space-between' },
+  modeloCardSelected: { borderColor: '#3B82F6' },
   modeloVideo: { width: 70, height: 70, borderRadius: 5, marginRight: 15, backgroundColor: '#333' },
-  modeloName: { color: '#fff', fontSize: 16, flex: 1, flexWrap: 'wrap' },
+  modeloTextContainer: { flex: 1, flexDirection: 'column', marginRight: 15 },
+  modeloContentContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 }, // New style
+  modeloName: { color: '#fff', fontSize: 16, flexWrap: 'wrap' },
+  modeloMuscleGroup: { color: '#aaa', fontSize: 12, marginTop: 2 }, // Added style
+  customExerciseText: { color: '#3B82F6', fontSize: 12, fontStyle: 'italic', marginLeft: 4 }, // New style for custom exercise text
   emptyListText: { color: '#aaa', textAlign: 'center', marginTop: 40 },
-  footer: { padding: 15, borderTopWidth: 1, borderTopColor: '#222' },
-  confirmButton: { backgroundColor: '#1cb0f6', padding: 15, borderRadius: 8, alignItems: 'center' },
+  footer: { padding: 15, borderTopWidth: 0.5, borderTopColor: '#222' },
+  confirmButton: { backgroundColor: '#3B82F6', padding: 15, borderRadius: 8, alignItems: 'center' },
   confirmButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
 });

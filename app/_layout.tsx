@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
 import { MenuProvider } from 'react-native-popup-menu';
-import { syncPendingOperations } from '../services/offlineSyncService';
+import { processQueue } from '../services/synchronizationService';
 import { AuthProvider, useAuth } from './authprovider'; // Verifique o caminho
 import { useNetwork } from './networkprovider';
 
@@ -31,11 +31,8 @@ function MainNavigation() {
     if (isOnline && user) {
       const attemptSync = async () => {
         try {
-          await syncPendingOperations(async (operations) => {
-            console.log('[Sync] Tentando sincronizar operações:', operations.length);
-            // TODO: Implementar lógica real de sincronização com Firestore
-            // Por enquanto, apenas registramos as operações
-          });
+          // Usa o novo serviço de sincronização
+          await processQueue();
         } catch (error) {
           console.error('[Sync] Erro ao sincronizar:', error);
         }
@@ -61,7 +58,7 @@ function MainNavigation() {
   // Enquanto não estiver inicializado, não mostre nada.
   // Isso evita "piscar" a tela.
   if (!initialized) {
-    return null; 
+    return null;
   }
 
   // Retorna a estrutura de navegação principal
@@ -83,7 +80,7 @@ function MainNavigation() {
         <Stack.Screen name="(projetos)" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
       </Stack>
-      </MenuProvider>
+    </MenuProvider>
   );
 }
 

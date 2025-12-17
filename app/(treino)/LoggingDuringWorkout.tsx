@@ -33,7 +33,7 @@ import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import * as NotificationsLiveActivity from '../../modules/notifications-live-activity'; // Adjust path if needed
 import { addLog } from '../../services/logService';
 import { cancelNotification } from '../../services/notificationService';
-import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
+import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
 import { addTreino, getTreinoById, updateTreino } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
@@ -713,7 +713,28 @@ export default function LoggingDuringWorkoutScreen() {
 
       // Se um treinoId for passado, carrega um treino estruturado
       else if (treinoId) {
-        const fetchedTreino = await getTreinoById(treinoId);
+        // CACHE-FIRST Strategy: Tenta carregar do cache primeiro para instant start
+        let fetchedTreino = await getCachedTreinoById(treinoId); // Usa a função de cache importada
+
+        if (fetchedTreino) {
+          console.log('[LoggingDuringWorkout] Template loaded from cache.');
+          // Opcional: Atualizar em background se estiver online (silent refresh)
+          getTreinoById(treinoId).then(fresh => {
+            if (fresh) {
+              console.log('[LoggingDuringWorkout] Template updated from network (deferred).');
+              // Aqui poderíamos atualizar o estado se quisermos, mas para um treino que ACABOU de começar,
+              // talvez mudar os exercícios no meio seja confuso. Vamos manter o do cache.
+              // Apenas atualizamos o cache para a próxima vez.
+              // getTreinoById já atualiza o cache interno.
+            }
+          }).catch(e => console.log('Silent refresh failed', e));
+
+        } else {
+          // Se não achou no cache, tenta online (blocking)
+          console.log('[LoggingDuringWorkout] Template not in cache, fetching online...');
+          fetchedTreino = await getTreinoById(treinoId);
+        }
+
         if (fetchedTreino) {
           const exercisesWithState = fetchedTreino.exercicios.map(ex => ({
             ...ex,

@@ -27,7 +27,7 @@ import { SetOptionsMenu } from '../../components/SetOptionsMenu';
 import { VideoListItem } from '../../components/VideoListItem';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
-import { getCachedActiveWorkoutLog } from '../../services/offlineCacheService';
+import { getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
@@ -311,29 +311,57 @@ export default function EditarTreinoScreen() {
     }
   }, [user]);
 
+  // ... imports
+
   useEffect(() => {
     const loadTreino = async () => {
+      let cachedLoaded = false;
+
+      // 1. Initial Cache Load (Offline First)
       if (treinoId) {
-        const fetchedTreino = await getTreinoById(treinoId as string);
-        if (fetchedTreino && fetchedTreino.exercicios) {
-          fetchedTreino.exercicios.forEach((ex, index) => {
-            if (!ex.modelo) {
-              console.error(`[editarTreino] ERRO: Exercício no índice ${index} (ID: ${ex.modeloId}) veio sem 'modelo'.`);
-            }
-          });
+        try {
+          const cachedTreino = await getCachedTreinoById(treinoId as string);
+          if (cachedTreino) {
+            console.log('[editarTreino] Loaded from cache first');
+            setTreino(cachedTreino);
+            setLoading(false);
+            cachedLoaded = true;
+          }
+        } catch (e) {
+          console.warn('[editarTreino] Failed to load cache:', e);
         }
-        setTreino(fetchedTreino ? { ...fetchedTreino, id: treinoId as string } : {
-          id: treinoId as string,
-          nome: 'Novo Treino',
-          usuarioId: user?.id || '',
-          fichaId: fichaId || undefined,
-          exercicios: [],
-          diasSemana: [],
-          intervalo: { min: 1, seg: 30 },
-          ordem: 0,
-          descricao: '',
-        });
+      }
+
+      // If we didn't load from cache (or it's a new treino), we act normally.
+      // If we did load from cache, we still run the network fetch for a silent update.
+
+      if (treinoId) {
+        try {
+          const fetchedTreino = await getTreinoById(treinoId as string);
+
+          if (fetchedTreino && fetchedTreino.exercicios) {
+            fetchedTreino.exercicios.forEach((ex, index) => {
+              if (!ex.modelo) {
+                console.error(`[editarTreino] ERRO: Exercício no índice ${index} (ID: ${ex.modeloId}) veio sem 'modelo'.`);
+              }
+            });
+          }
+
+          // If we already showed cache, only update if there are changes (not implemented deep compare here, just overwrite for now)
+          // Ideally we check if data changed effectively to avoid re-renders or overwriting user edits if they started editing instantly.
+          // But since this is a "view/edit" screen, if they started editing, we should be careful.
+          // For now, consistent with "stale-while-revalidate", we update.
+          // TODO: Handle "user started editing before sync finished" conflict? 
+          // Current simplistic approach: Just update.
+
+          if (fetchedTreino) {
+            setTreino({ ...fetchedTreino, id: treinoId as string });
+          }
+        } catch (error) {
+          console.error('[editarTreino] Network fetch failed (silent):', error);
+        }
       } else {
+        // New Treino
         setTreino({
           id: '',
           nome: 'Novo Treino',
@@ -346,7 +374,7 @@ export default function EditarTreinoScreen() {
           descricao: '',
         });
       }
-      setLoading(false);
+      setLoading(false); // Ensure loading is false at the end
     };
     loadTreino();
   }, [treinoId, fichaId, user]);
@@ -356,15 +384,15 @@ export default function EditarTreinoScreen() {
   };
 
   const handleStartWorkout = () => {
-    if (!treino || !treino.id) return;    
-    const targetPath = user?.workoutScreenType === 'simplified' 
-      ? '/(treino)/ongoingWorkout' 
+    if (!treino || !treino.id) return;
+    const targetPath = user?.workoutScreenType === 'simplified'
+      ? '/(treino)/ongoingWorkout'
       : '/(treino)/LoggingDuringWorkout';
 
-    router.push({ 
-        pathname: targetPath, 
-        params: { treinoId: treino.id, fichaId: treino.fichaId } 
-    });    
+    router.push({
+      pathname: targetPath,
+      params: { treinoId: treino.id, fichaId: treino.fichaId }
+    });
   };
 
   const handleOpenRepDrawer = (exerciseIndex: number, setIndex: number) => {
@@ -540,7 +568,7 @@ export default function EditarTreinoScreen() {
         onOpenRestTimeModal={handleOpenRestTimeModal}
         isActive={isActive}
         onUpdateExercise={(ex) => handleUpdateExercise(ex, index)}
-        onRemoveExercise={() => handleRemoveExercise(index)} setIsEditing={setIsEditing}      />
+        onRemoveExercise={() => handleRemoveExercise(index)} setIsEditing={setIsEditing} />
     );
   }, [treino]);
 
@@ -592,7 +620,7 @@ export default function EditarTreinoScreen() {
               <TouchableOpacity style={styles.configButton} onPress={() => setSettingsModalVisible(true)}>
                 <FontAwesome name="cog" size={22} color="#ccc" />
               </TouchableOpacity>
-              
+
               {!activeLog ? (
                 <TouchableOpacity style={styles.startButton} onPress={handleStartWorkout} disabled={isSaving}>
                   {isSaving ? <ActivityIndicator color="#000" /> : (
@@ -691,7 +719,7 @@ export default function EditarTreinoScreen() {
         onSave={handleRestTimeSave}
         initialValue={getRestTimeValue()}
       />
-      
+
       <RestTimeDrawer
         visible={isDefaultRestTimeDrawerVisible}
         onClose={() => setDefaultRestTimeDrawerVisible(false)}
@@ -705,8 +733,8 @@ export default function EditarTreinoScreen() {
         onClose={() => setSettingsModalVisible(false)}
         treino={treino}
         onUpdateTreino={(novoTreino) => {
-            if (!isEditing) setIsEditing(true);
-            setTreino(novoTreino);
+          if (!isEditing) setIsEditing(true);
+          setTreino(novoTreino);
         }}
       />
 
@@ -720,7 +748,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0B0D10',
-    paddingHorizontal:8,
+    paddingHorizontal: 8,
   },
   header: {
     flexDirection: 'row',

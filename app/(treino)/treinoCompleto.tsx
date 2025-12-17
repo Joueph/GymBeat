@@ -24,6 +24,7 @@ import { widgetService } from '@/services/widgetService';
 import Svg, { Circle } from 'react-native-svg';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '../../components/exercicios/ExpandableExerciseItem';
+import { getCachedUserLogs } from '../../services/offlineCacheService';
 
 const StepIndicator = ({ currentStep, totalSteps }: { currentStep: number, totalSteps: number }) => (
   <View style={styles.stepIndicatorContainer}>
@@ -158,8 +159,10 @@ export default function TreinoCompletoScreen() {
   };
 
 
+  // ... imports
+
   useEffect(() => {
-    // ... (código existente de useEffect fetch)
+    // ... (código existente)
     if (!logId || !user) {
       Alert.alert("Erro", "Não foi possível carregar os dados do treino.");
       router.back();
@@ -167,39 +170,68 @@ export default function TreinoCompletoScreen() {
     }
 
     const fetchData = async () => {
+      let cacheLoaded = false;
+
+      // 1. Cache First
+      try {
+        const cachedLogs = await getCachedUserLogs(user.id);
+        const cachedLog = cachedLogs.find(l => l.id === logId);
+        if (cachedLog) {
+          console.log('[TreinoCompleto] Loaded from cache first');
+          setLog(cachedLog);
+
+          const inicio = toDate(cachedLog.horarioInicio);
+          const fim = toDate(cachedLog.horarioFim);
+          if (inicio && fim) {
+            setDuration(Math.round((fim.getTime() - inicio.getTime()) / 1000));
+          }
+
+          await calculateCompletionData(cachedLog);
+          setLoading(false);
+          cacheLoaded = true;
+        }
+      } catch (e) {
+        console.warn('[TreinoCompleto] Cache load failed:', e);
+      }
+
+      // 2. Network (Silent Update)
       try {
         const logRef = doc(db, 'logs', logId);
         // ... (código existente de getDoc)
         const logSnap = await getDoc(logRef);
-        if (!logSnap.exists()) throw new Error("Log não encontrado.");
 
-        // DEBUG: Log para verificar a estrutura do log concluído
-        console.log('[TreinoCompleto] Log data from Firestore:', logSnap.data());
+        // If not passing exists check, we throw, which goes to catch.
+        // If cache was loaded, we treat this as silent failure.
+        // If cache was NOT loaded, we need to handle it.
 
-        const completedLog = { id: logSnap.id, ...logSnap.data() } as Log;
+        if (logSnap.exists()) {
+          console.log('[TreinoCompleto] Log data from Firestore:', logSnap.data());
+          const completedLog = { id: logSnap.id, ...logSnap.data() } as Log;
 
-        // DEBUG: Log para verificar o objeto 'treino' dentro do log
-        if (!completedLog.treino) {
-          console.error('[TreinoCompleto] ERRO: O log recuperado não possui a propriedade "treino".', completedLog);
+          if (!completedLog.treino) {
+            console.error('[TreinoCompleto] ERRO: O log recuperado não possui a propriedade "treino".', completedLog);
+          }
+
+          // Only update if difference? Simple overwrite for now.
+          setLog(completedLog);
+
+          const inicio = toDate(completedLog.horarioInicio);
+          const fim = toDate(completedLog.horarioFim);
+          if (inicio && fim) {
+            setDuration(Math.round((fim.getTime() - inicio.getTime()) / 1000));
+          }
+
+          await calculateCompletionData(completedLog);
+        } else {
+          if (!cacheLoaded) throw new Error("Log não encontrado.");
         }
-
-        setLog(completedLog);
-
-        const inicio = toDate(completedLog.horarioInicio);
-        const fim = toDate(completedLog.horarioFim);
-        let durationSecs = 0;
-        if (inicio && fim) {
-          durationSecs = Math.round((fim.getTime() - inicio.getTime()) / 1000);
-          setDuration(durationSecs);
-        }
-
-        await calculateCompletionData(completedLog);
 
       } catch (error) {
-        // ... (código existente de catch)
         console.error("Failed to fetch workout data:", error);
-        Alert.alert("Erro", "Não foi possível carregar os dados do treino.");
-        router.back();
+        if (!cacheLoaded) {
+          Alert.alert("Erro", "Não foi possível carregar os dados do treino.");
+          router.back();
+        }
       } finally {
         setLoading(false);
       }

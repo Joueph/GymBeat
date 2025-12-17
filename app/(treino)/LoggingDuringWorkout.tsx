@@ -1243,7 +1243,7 @@ export default function LoggingDuringWorkoutScreen() {
           exercicios: loggedExercises,
           horarioInicio: startTime,
           horarioFim: finalEndTime,
-          status: 'conclido',
+          status: 'concluido',
           cargaAcumulada: totalLoad,
           exerciciosFeitos: loggedExercises.filter(ex => ex.series.some(s => s.concluido)),
           nomeTreino: workoutName,

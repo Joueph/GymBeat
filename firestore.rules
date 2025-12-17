@@ -75,7 +75,9 @@ match /treinos/{treinoId} {
   // Permite a leitura se o usuário for o dono do treino, amigo do dono,
   // OU se o usuário for dono da ficha à qual este treino pertence.
   allow read: if isOwner(resource.data.usuarioId) || isMutualFriend(resource.data.usuarioId) || isOwner(get(/databases/$(database)/documents/fichas/$(resource.data.fichaId)).data.usuarioId);
-  allow create, delete: if isOwner(request.resource.data.usuarioId) || isOwner(resource.data.usuarioId);
+  
+  allow create: if isOwner(request.resource.data.usuarioId);
+  allow delete: if isOwner(resource.data.usuarioId);
   
   // Allow update if the user owns the workout OR if they are un-assigning it from a workout plan (ficha) they own.
   // This is crucial for the deleteFicha operation, which moves workouts to the "unassigned" folder.
@@ -95,10 +97,11 @@ match /logs/{logId} {
   allow read: if isOwner(resource.data.usuarioId) || (resource.data.projetoId != null && isProjectParticipant(resource.data.projetoId)) ||
                  isOwnerOfAssociatedFicha(resource.data);
 
-  // Permite criar, atualizar e apagar se o usuário for o dono do log.
-  // Para 'create', a regra verifica os dados que estão sendo enviados (request.resource.data).
-  // Para 'update' e 'delete', a regra verifica os dados já existentes (resource.data).
-  allow write: if isOwner(request.resource.data.usuarioId) || isOwner(resource.data.usuarioId);
+  // Permite criar se o usuário for o dono dos dados enviados.
+  allow create: if isOwner(request.resource.data.usuarioId);
+
+  // Permite atualizar e apagar se o usuário for o dono do log existente.
+  allow update, delete: if isOwner(resource.data.usuarioId);
 }
 
 // =================================================================

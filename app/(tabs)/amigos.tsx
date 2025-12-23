@@ -31,12 +31,12 @@ const toDate = (date: any): Date | null => {
 };
 
 const getStartOfWeek = (date: Date): Date => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day;
-    d.setDate(diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day;
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
 };
 
 const FriendListItem = memo(({ item }: { item: FriendData }) => {
@@ -179,6 +179,7 @@ const FriendListItem = memo(({ item }: { item: FriendData }) => {
 
 export default function AmigosScreen() {
   const { user } = useAuth();
+  const { isOnline } = useNetwork(); // Check network status
   const router = useRouter();
   const [friends, setFriends] = useState<FriendData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,7 +200,7 @@ export default function AmigosScreen() {
     useCallback(() => {
       const fetchData = async () => {
         if (!user) return;
-        
+
         if (isInitialLoad.current) {
           setLoading(true);
         }
@@ -207,7 +208,7 @@ export default function AmigosScreen() {
         try {
           const cachedDoc = await getDocFromCache(doc(db, "users", user.id));
           if (cachedDoc.exists()) {
-             // Cache hit logic if needed
+            // Cache hit logic if needed
           }
         } catch (error) {
           console.log("Aguardando conexão online.");
@@ -215,86 +216,86 @@ export default function AmigosScreen() {
 
         const unsubscribe = onSnapshot(doc(db, "users", user.id), async (userDoc) => {
           try {
-              // 1. Busca dados do próprio usuário (Treinos e Logs)
-              const [userWorkouts, userLogs] = await Promise.all([
-                getTreinosByUsuarioId(user.id),
-                getLogsByUsuarioId(user.id)
-              ]);
+            // 1. Busca dados do próprio usuário (Treinos e Logs)
+            const [userWorkouts, userLogs] = await Promise.all([
+              getTreinosByUsuarioId(user.id),
+              getLogsByUsuarioId(user.id)
+            ]);
 
-              setUserWorkoutsCount(userWorkouts.length);
-              const totalVolume = userLogs.reduce((sum, log) => sum + (log.cargaAcumulada || 0), 0);
-              setUserTotalVolume(totalVolume);
+            setUserWorkoutsCount(userWorkouts.length);
+            const totalVolume = userLogs.reduce((sum, log) => sum + (log.cargaAcumulada || 0), 0);
+            setUserTotalVolume(totalVolume);
 
-              if (userDoc.exists()) {
-                const userProfile = { id: userDoc.id, ...userDoc.data() } as Usuario;
+            if (userDoc.exists()) {
+              const userProfile = { id: userDoc.id, ...userDoc.data() } as Usuario;
 
-                // 2. Busca Projetos
-                if (userProfile.projetos && userProfile.projetos.length > 0) {
-                    const projetosPromises = userProfile.projetos.map(async (id: string) => {
-                        try {
-                            const docSnap = await getDoc(doc(db, 'projetos', id));
-                            return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } as Projeto : null;
-                        } catch (e) {
-                            console.warn(`Erro ao carregar projeto ${id}`, e);
-                            return null;
-                        }
-                    });
-                    const projetosSnapshots = await Promise.all(projetosPromises);
-                    setProjetos(projetosSnapshots.filter((p): p is Projeto => p !== null));
-                } else {
-                    setProjetos([]);
-                }
-                
-                const amizadesMap = userProfile.amizades || {};
-
-                // 3. Busca Solicitações de Amizade (com tratamento de erro individual)
-                const requesterIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === false);
-                const requestProfilesPromises = requesterIds.map(async (id) => {
-                    try {
-                        return await getUserProfile(id);
-                    } catch (error) {
-                        console.warn(`[Amigos] Ignorando solicitação de usuário inacessível/deletado (${id}):`, error);
-                        return null;
-                    }
-                });
-                const requestProfiles = await Promise.all(requestProfilesPromises);
-                setFriendRequests(requestProfiles.filter((p): p is Usuario => p !== null));
-
-                // 4. Busca Amigos Confirmados (com tratamento de erro individual)
-                const confirmedFriendIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === true);
-
-                const friendsDataPromises = confirmedFriendIds.map(async (friendId: string) => {
+              // 2. Busca Projetos
+              if (userProfile.projetos && userProfile.projetos.length > 0) {
+                const projetosPromises = userProfile.projetos.map(async (id: string) => {
                   try {
-                    const functions = getFunctions();
-                    const getFriendActivity = httpsCallable(functions, 'getFriendActivity');
-                    const result = await getFriendActivity({ friendId });
-                    
-                    const friendData = result.data as any;
-
-                    if (!friendData || !friendData.profile) {
-                      console.warn(`[Amigos] Dados incompletos para o amigo ${friendId}.`);
-                      return null;
-                    }
-
-                    const weeklyLogs = (friendData.weeklyLogs || []).map((log: any) => ({ ...log, horarioFim: toDate(log.horarioFim) })) as Log[];
-                    const lastTrainedDate = toDate(friendData.profile.lastTrained);
-                    const hasTrainedToday = lastTrainedDate ? lastTrainedDate.toDateString() === new Date().toDateString() : false;
-
-                    return { ...friendData.profile, hasTrainedToday, weeklyLogs } as FriendData;
-                  } catch (error) {
-                    console.warn(`[Amigos] Ignorando amigo inacessível/deletado (${friendId}).`, error);
-                    return null; 
+                    const docSnap = await getDoc(doc(db, 'projetos', id));
+                    return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } as Projeto : null;
+                  } catch (e) {
+                    console.warn(`Erro ao carregar projeto ${id}`, e);
+                    return null;
                   }
                 });
+                const projetosSnapshots = await Promise.all(projetosPromises);
+                setProjetos(projetosSnapshots.filter((p): p is Projeto => p !== null));
+              } else {
+                setProjetos([]);
+              }
 
-                const friendsData = (await Promise.all(friendsDataPromises)).filter(Boolean) as FriendData[];
-                setFriends(friendsData);
+              const amizadesMap = userProfile.amizades || {};
 
-              } 
+              // 3. Busca Solicitações de Amizade (com tratamento de erro individual)
+              const requesterIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === false);
+              const requestProfilesPromises = requesterIds.map(async (id) => {
+                try {
+                  return await getUserProfile(id);
+                } catch (error) {
+                  console.warn(`[Amigos] Ignorando solicitação de usuário inacessível/deletado (${id}):`, error);
+                  return null;
+                }
+              });
+              const requestProfiles = await Promise.all(requestProfilesPromises);
+              setFriendRequests(requestProfiles.filter((p): p is Usuario => p !== null));
+
+              // 4. Busca Amigos Confirmados (com tratamento de erro individual)
+              const confirmedFriendIds = Object.keys(amizadesMap).filter(id => amizadesMap[id] === true);
+
+              const friendsDataPromises = confirmedFriendIds.map(async (friendId: string) => {
+                try {
+                  const functions = getFunctions();
+                  const getFriendActivity = httpsCallable(functions, 'getFriendActivity');
+                  const result = await getFriendActivity({ friendId });
+
+                  const friendData = result.data as any;
+
+                  if (!friendData || !friendData.profile) {
+                    console.warn(`[Amigos] Dados incompletos para o amigo ${friendId}.`);
+                    return null;
+                  }
+
+                  const weeklyLogs = (friendData.weeklyLogs || []).map((log: any) => ({ ...log, horarioFim: toDate(log.horarioFim) })) as Log[];
+                  const lastTrainedDate = toDate(friendData.profile.lastTrained);
+                  const hasTrainedToday = lastTrainedDate ? lastTrainedDate.toDateString() === new Date().toDateString() : false;
+
+                  return { ...friendData.profile, hasTrainedToday, weeklyLogs } as FriendData;
+                } catch (error) {
+                  console.warn(`[Amigos] Ignorando amigo inacessível/deletado (${friendId}).`, error);
+                  return null;
+                }
+              });
+
+              const friendsData = (await Promise.all(friendsDataPromises)).filter(Boolean) as FriendData[];
+              setFriends(friendsData);
+
+            }
           } catch (globalError) {
-              console.error("[Amigos] Erro crítico ao processar dados:", globalError);
+            console.error("[Amigos] Erro crítico ao processar dados:", globalError);
           } finally {
-              setLoading(false);
+            setLoading(false);
           }
         });
 
@@ -306,14 +307,14 @@ export default function AmigosScreen() {
   );
 
   const handleJoinProject = () => {
-      const match = projectCode.match(/\{([^}]+)\}/);
-      const extractedId = match ? match[1] : projectCode;
-      if (extractedId.trim()) {
-          setJoinProjectModalVisible(false);
-          router.push(`/(projetos)/${extractedId.trim()}`);
-        } else {
-            Alert.alert("Código Inválido", "Por favor, insira um código de projeto válido.");
-        }
+    const match = projectCode.match(/\{([^}]+)\}/);
+    const extractedId = match ? match[1] : projectCode;
+    if (extractedId.trim()) {
+      setJoinProjectModalVisible(false);
+      router.push(`/(projetos)/${extractedId.trim()}`);
+    } else {
+      Alert.alert("Código Inválido", "Por favor, insira um código de projeto válido.");
+    }
   };
 
   const handleAddFriend = async () => {
@@ -321,7 +322,7 @@ export default function AmigosScreen() {
       Alert.alert("Código Inválido", "Por favor, insira um código de amigo.");
       return;
     }
-    
+
     if (friendCode.trim().toLowerCase() === user.email?.toLowerCase()) {
       Alert.alert("Ops!", "Você não pode adicionar a si mesmo como amigo.");
       return;
@@ -330,12 +331,12 @@ export default function AmigosScreen() {
     try {
       const functions = getFunctions();
       const sendFriendRequestCallable = httpsCallable(functions, 'sendFriendRequest');
-      
+
       await sendFriendRequestCallable({
         fromUserId: user.uid,
         friendCode: friendCode.trim(),
       });
-      
+
       Alert.alert("Sucesso", "Pedido de amizade enviado!");
       setFriendCode('');
     } catch (error: any) {
@@ -381,6 +382,20 @@ export default function AmigosScreen() {
     }
   };
 
+  if (!isOnline) {
+    return (
+      <View style={[styles.centered, { backgroundColor: "#030405" }]}>
+        <FontAwesome name="wifi" size={50} color="#555" style={{ marginBottom: 20 }} />
+        <Text style={[styles.emptyText, { fontSize: 18, textAlign: 'center' }]}>
+          Você está offline.
+        </Text>
+        <Text style={[styles.statLabel, { textAlign: 'center', marginTop: 10, maxWidth: '80%' }]}>
+          Recursos sociais como ranking, amigos e projetos precisam de internet para funcionar.
+        </Text>
+      </View>
+    );
+  }
+
   if (loading) {
     return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
   }
@@ -402,7 +417,7 @@ export default function AmigosScreen() {
       <View style={styles.userProfileCard}>
         <TouchableOpacity onPress={() => router.push('/perfil')}>
           <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/perfil')}>
-              <FontAwesome name="pencil" size={16} color="#ccc" />
+            <FontAwesome name="pencil" size={16} color="#ccc" />
           </TouchableOpacity>
           <View style={styles.userProfileInfo}>
             {user?.photoURL ? (
@@ -419,7 +434,7 @@ export default function AmigosScreen() {
         <View style={styles.userStatsContainer}>
           <View style={styles.statItem}><Text style={styles.statValue}>{friends.length}</Text><Text style={styles.statLabel}>Amigos</Text></View>
           <View style={styles.statItem}><Text style={styles.statValue}>{userWorkoutsCount}</Text><Text style={styles.statLabel}>Treinos</Text></View>
-          <View style={styles.statItem}><Text style={styles.statValue}>{userTotalVolume > 1000 ? `${(userTotalVolume/1000).toFixed(1)}t` : `${Math.round(userTotalVolume)}kg`}</Text><Text style={styles.statLabel}>Volume Total</Text></View>
+          <View style={styles.statItem}><Text style={styles.statValue}>{userTotalVolume > 1000 ? `${(userTotalVolume / 1000).toFixed(1)}t` : `${Math.round(userTotalVolume)}kg`}</Text><Text style={styles.statLabel}>Volume Total</Text></View>
         </View>
       </View>
       <View style={styles.section}>
@@ -471,42 +486,42 @@ export default function AmigosScreen() {
         ListEmptyComponent={<View style={styles.centered}><Text style={styles.emptyText}>Adicione amigos para vê-los aqui!</Text></View>}
       />
       <OngoingWorkoutFooter />
-      
+
       <Modal visible={isAddOptionsModalVisible} transparent={true} animationType="fade" onRequestClose={() => setAddOptionsModalVisible(false)}>
-          <TouchableOpacity style={styles.modalBackdrop} onPress={() => setAddOptionsModalVisible(false)}>
-              <View style={styles.drawerContainer}>
-                  <TouchableOpacity style={styles.drawerOption} onPress={() => { setAddOptionsModalVisible(false); router.push('/(projetos)/criar'); }}>
-                      <FontAwesome name="plus-circle" size={20} color="#fff" />
-                      <Text style={styles.drawerOptionText}>Criar um novo projeto</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.drawerOption} onPress={() => { setAddOptionsModalVisible(false); setJoinProjectModalVisible(true); }}>
-                      <FontAwesome name="sign-in" size={20} color="#fff" />
-                      <Text style={styles.drawerOptionText}>Entrar em um projeto</Text>
-                  </TouchableOpacity>
-              </View>
-          </TouchableOpacity>
+        <TouchableOpacity style={styles.modalBackdrop} onPress={() => setAddOptionsModalVisible(false)}>
+          <View style={styles.drawerContainer}>
+            <TouchableOpacity style={styles.drawerOption} onPress={() => { setAddOptionsModalVisible(false); router.push('/(projetos)/criar'); }}>
+              <FontAwesome name="plus-circle" size={20} color="#fff" />
+              <Text style={styles.drawerOptionText}>Criar um novo projeto</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.drawerOption} onPress={() => { setAddOptionsModalVisible(false); setJoinProjectModalVisible(true); }}>
+              <FontAwesome name="sign-in" size={20} color="#fff" />
+              <Text style={styles.drawerOptionText}>Entrar em um projeto</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       <Modal visible={isJoinProjectModalVisible} transparent={true} animationType="slide" onRequestClose={() => setJoinProjectModalVisible(false)}>
-          <View style={styles.modalCenteredView}>
-              <View style={styles.modalView}>
-                  <TouchableOpacity style={styles.closeButton} onPress={() => setJoinProjectModalVisible(false)}>
-                      <FontAwesome name="close" size={22} color="#ccc" />
-                  </TouchableOpacity>
-                  <Text style={styles.modalTitle}>Entrar em um Projeto</Text>
-                  <TextInput 
-                    style={styles.joinProjectInput} 
-                    placeholder="Cole a mensagem de convite aqui" 
-                    placeholderTextColor="#888" 
-                    value={projectCode} 
-                    onChangeText={setProjectCode}
-                    multiline
-                  />
-                  <TouchableOpacity style={styles.addButton} onPress={handleJoinProject}>
-                      <Text style={styles.addButtonText}>Acessar Projeto</Text>
-                  </TouchableOpacity>
-              </View>
+        <View style={styles.modalCenteredView}>
+          <View style={styles.modalView}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setJoinProjectModalVisible(false)}>
+              <FontAwesome name="close" size={22} color="#ccc" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Entrar em um Projeto</Text>
+            <TextInput
+              style={styles.joinProjectInput}
+              placeholder="Cole a mensagem de convite aqui"
+              placeholderTextColor="#888"
+              value={projectCode}
+              onChangeText={setProjectCode}
+              multiline
+            />
+            <TouchableOpacity style={styles.addButton} onPress={handleJoinProject}>
+              <Text style={styles.addButtonText}>Acessar Projeto</Text>
+            </TouchableOpacity>
           </View>
+        </View>
       </Modal>
 
       <Modal
@@ -589,7 +604,7 @@ export default function AmigosScreen() {
                   onChangeText={handleFriendCodeChange}
                   autoCapitalize="none"
                 />
-                <TouchableOpacity style={[styles.addButton, {width: 'auto', marginLeft: 10, paddingHorizontal: 15}]} onPress={handleAddFriend}>
+                <TouchableOpacity style={[styles.addButton, { width: 'auto', marginLeft: 10, paddingHorizontal: 15 }]} onPress={handleAddFriend}>
                   <Text style={styles.addButtonText}>Adicionar</Text>
                 </TouchableOpacity>
               </View>
@@ -895,7 +910,7 @@ const styles = StyleSheet.create({
     color: '#ccc',
     fontSize: 16,
     marginBottom: 10,
-  },  
+  },
   inputContainer: {
     flexDirection: 'row',
   },
@@ -1085,23 +1100,23 @@ const styles = StyleSheet.create({
     marginLeft: 15,
   },
   modalCenteredView: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: 'rgba(0,0,0,0.7)',
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
   },
   modalView: {
-      margin: 20,
-      backgroundColor: '#1A1D23',
-      borderRadius: 20,
-      padding: 35,
-      alignItems: 'center',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
-      shadowRadius: 4,
-      elevation: 5,
-      width: '90%',
+    margin: 20,
+    backgroundColor: '#1A1D23',
+    borderRadius: 20,
+    padding: 35,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    width: '90%',
   },
   joinProjectInput: {
     height: 60,

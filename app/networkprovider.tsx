@@ -18,6 +18,7 @@ export function useNetwork() {
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const [isOnline, setIsOnline] = useState(true);
   const [netInfo, setNetInfo] = useState<NetInfoState | null>(null);
+  const [initialized, setInitialized] = useState(false); // Add initialized state
 
   useEffect(() => {
     // Inicialmente, verifica o estado da internet
@@ -25,6 +26,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       const state = await NetInfo.fetch();
       setNetInfo(state);
       setIsOnline(state.isConnected ?? true);
+      setInitialized(true); // Mark as initialized after fetch
     };
 
     checkInitialConnection();
@@ -34,7 +36,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       setNetInfo(state);
       const connected = state.isConnected ?? true;
       setIsOnline(connected);
-      
+
       console.log(`[Network] Conexão: ${connected ? 'Online' : 'Offline'}`);
       if (state.type) {
         console.log(`[Network] Tipo: ${state.type}`);
@@ -45,6 +47,10 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       unsubscribe();
     };
   }, []);
+
+  if (!initialized) {
+    return null; // Or a splash screen/loading indicator if preferred, but null is safe for root layout
+  }
 
   return (
     <NetworkContext.Provider value={{ isOnline, netInfo }}>

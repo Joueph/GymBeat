@@ -2,19 +2,15 @@ export default {
   expo: {
     name: "GymBeat",
     slug: "GymBeat",
-    version: "0.2.0",
+    version: "0.2.1",
     orientation: "portrait",
-    icon: "./assets/  images/icon.png",
+    icon: "./assets/icons/ios/ios-dark.png",
     scheme: "gymbeat",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     ios: {
       supportsTablet: false,
-      icon: {
-        dark: "./assets/icons/ios/ios-dark.png",
-        light: "./assets/icons/ios/ios-light.png",
-        tinted: "./assets/icons/ios/ios-tinted.png",
-      },
+      icon: "./assets/icons/ios/ios-tinted.png",
       bundleIdentifier: "br.com.gymbeat",
       appleTeamId: "M4M9UUR2NT",
       buildNumber: "35",

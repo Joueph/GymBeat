@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import { MenuProvider } from 'react-native-popup-menu';
 import { processQueue } from '../services/synchronizationService';
 import { AuthProvider, useAuth } from './authprovider'; // Verifique o caminho
-import { useNetwork } from './networkprovider';
+import { NetworkProvider, useNetwork } from './networkprovider';
 
 // Configuração inicial para o comportamento das notificações
 Notifications.setNotificationHandler({
@@ -130,9 +130,11 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <AuthProvider>
-      <MainNavigation />
-    </AuthProvider>
+    <NetworkProvider>
+      <AuthProvider>
+        <MainNavigation />
+      </AuthProvider>
+    </NetworkProvider>
   );
 }
 

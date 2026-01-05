@@ -2,7 +2,7 @@ import { Log } from '@/models/log';
 import { DiaSemana, Treino } from '@/models/treino';
 import { reloadWidgetTimelines } from '@/modules/notifications-live-activity';
 import { Platform } from 'react-native';
-import SharedGroupPreferences from 'react-native-shared-group-preferences';
+import { saveWidgetData } from './native/widgetStorage';
 import { getPendingOperations } from './offlineSyncService';
 
 const APP_GROUP = 'group.br.com.gymbeat';
@@ -159,7 +159,7 @@ export const widgetService = {
     };
 
     console.log(`[WidgetDebug] 💾 Salvando JSON para 'widget_today_workout':`, JSON.stringify(data));
-    await SharedGroupPreferences.setItem('widget_today_workout', JSON.stringify(data), APP_GROUP);
+    await saveWidgetData('widget_today_workout', JSON.stringify(data), APP_GROUP);
   },
 
   async updateWeekStreak(logs: Log[]) {
@@ -188,6 +188,6 @@ export const widgetService = {
     };
 
     console.log(`[WidgetDebug] 💾 Salvando JSON para 'widget_week_streak':`, JSON.stringify(data));
-    await SharedGroupPreferences.setItem('widget_week_streak', JSON.stringify(data), APP_GROUP);
+    await saveWidgetData('widget_week_streak', JSON.stringify(data), APP_GROUP);
   }
 };

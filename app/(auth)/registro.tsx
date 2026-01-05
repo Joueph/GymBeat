@@ -1,11 +1,13 @@
 // app/(auth)/registro.tsx
 import { FontAwesome, Ionicons } from '@expo/vector-icons'; // Importar Ionicons
+import appleAuth from '@invertase/react-native-apple-authentication';
 import { useNetInfo } from '@react-native-community/netinfo';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { ResizeMode, Video } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
-import { createUserWithEmailAndPassword, signInAnonymously, User } from 'firebase/auth';
+import { createUserWithEmailAndPassword, GoogleAuthProvider, linkWithCredential, OAuthProvider, signInAnonymously, signInWithCredential, User } from 'firebase/auth';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 
@@ -42,6 +44,10 @@ import {
 import { uploadImageAndGetURL } from '../../services/storageService';
 import { DiaSemana, getTreinosModelosByIds } from '../../services/treinoService';
 import { createUserProfileDocument } from "../../userService";
+
+GoogleSignin.configure({
+  webClientId: '418244836174-0e2ch7p0rjdg58d1hcghn135munqat75.apps.googleusercontent.com',
+});
 
 const AnimatedImage = Animated.createAnimatedComponent(Image);
 
@@ -108,11 +114,11 @@ const StreakGoalItem = ({
   );
 };
 
-export default function CadastroScreen() { 
+export default function CadastroScreen() {
   const router = useRouter();
   const netInfo = useNetInfo();
   const TOTAL_FORM_STEPS = 22; // Aumentado para 22
-  
+
   const [onboardingStep, setOnboardingStep] = useState(0); // 0: Welcome, 1-25: Form steps
 
   const [animationDirection, setAnimationDirection] = useState<'forward' | 'backward'>('forward');
@@ -238,7 +244,7 @@ export default function CadastroScreen() {
       // Removemos o 'await' e adicionamos .catch() para rodar em background.
       iniciarOnboarding()
         .catch(error => console.error("Erro (background) ao iniciar onboarding:", error));
-      
+
       // ETAPA 3 (IMEDIATA): Navegar para o próximo passo.
       // Isso agora acontece imediatamente após o login, sem esperar o Firestore.
       setAnimationDirection('forward');
@@ -304,10 +310,10 @@ export default function CadastroScreen() {
     } finally { setIsRecommending(false); }
   };
 
-// ... (linha de adjacência)
+  // ... (linha de adjacência)
   const handleNext = () => { // Removido o 'async'
     // Salva os dados do passo atual no Firestore EM BACKGROUND
-    
+
     // Não usamos mais try/catch para não bloquear a UI.
     // Usamos .catch() para capturar erros de rede em background.
     if (onboardingStep === 1) {
@@ -431,9 +437,9 @@ export default function CadastroScreen() {
       // Lógica de finalização (ex: handleCadastro)
       // handleCadastro(); // Vamos implementar isso no último step
     }
-  };  
-  
-// ... (linha de adjacência)
+  };
+
+  // ... (linha de adjacência)
   const handleBack = () => {
     if (onboardingStep > 0) { // Permite voltar até o step 0 (vídeo)
       setAnimationDirection('backward');
@@ -537,6 +543,118 @@ export default function CadastroScreen() {
     });
   };
 
+  const handleSocialLinkOrSignIn = async (providerCredential: any) => {
+    setIsLoading(true);
+    try {
+      if (auth.currentUser && auth.currentUser.isAnonymous) {
+        // Tenta vincular à conta anônima atual
+        try {
+          await linkWithCredential(auth.currentUser, providerCredential);
+          // Sucesso no vinculo, prossegue com o cadastro usando o usuário atual
+          await handleCadastroSocial(auth.currentUser);
+          return;
+        } catch (linkError: any) {
+          if (linkError.code === 'auth/credential-already-in-use') {
+            // Conta já existe, faz login normal
+            const userCredential = await signInWithCredential(auth, providerCredential);
+            return;
+          }
+          throw linkError;
+        }
+      } else {
+        // Fallback para login
+        await signInWithCredential(auth, providerCredential);
+      }
+    } catch (error: any) {
+      console.error("Social Auth Error:", error);
+      Alert.alert("Erro", error.message || "Falha na autenticação social.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLink = async () => {
+    try {
+      await GoogleSignin.hasPlayServices();
+      const signInResponse = await GoogleSignin.signIn();
+      const idToken = signInResponse.data?.idToken;
+      if (!idToken) throw new Error("Google Sign-In: idToken não encontrado.");
+      const credential = GoogleAuthProvider.credential(idToken);
+      await handleSocialLinkOrSignIn(credential);
+    } catch (error: any) {
+      console.error(error);
+      if (error.code !== '12501') Alert.alert("Erro Google", "Não foi possível conectar com Google.");
+    }
+  };
+
+  const handleAppleLink = async () => {
+    try {
+      const appleAuthRequestResponse = await appleAuth.performRequest({
+        requestedOperation: appleAuth.Operation.LOGIN,
+        requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
+      });
+      const { identityToken } = appleAuthRequestResponse;
+      if (!identityToken) throw new Error("Apple: Token não encontrado.");
+      const provider = new OAuthProvider('apple.com');
+      const credential = provider.credential({ idToken: identityToken });
+      await handleSocialLinkOrSignIn(credential);
+    } catch (error: any) {
+      if ((error as any).code !== '1001') Alert.alert("Erro Apple", "Não foi possível conectar com Apple.");
+    }
+  };
+
+  const handleCadastroSocial = async (user: User) => {
+    try {
+      const alturaNum = altura;
+      const pesoNum = peso;
+      const finalNome = nome.trim() || user.displayName || user.email?.split('@')[0] || '';
+
+      let finalPhotoURL = user.photoURL || '';
+      if (photoURI) {
+        finalPhotoURL = await uploadImageAndGetURL(photoURI, user.uid);
+      }
+
+      if (acceptedFicha && recommendedFicha) {
+        const { copyFichaModeloToUser, setFichaAtiva } = require('../../services/fichaService');
+        const newFichaId = await copyFichaModeloToUser(recommendedFicha, user.uid, recommendedTreinos);
+        await setFichaAtiva(user.uid, newFichaId);
+      }
+
+      await atualizarPassoOnboarding({
+        nomePreferido: finalNome,
+        alturaCm: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : null,
+        pesoKg: !isNaN(pesoNum) && pesoNum > 0 ? pesoNum : null,
+        genero: genero || null,
+        nivelExperiencia: nivel || null,
+        compromissoSemanal: streakGoal,
+        metaSemanas: weeksStreakGoal,
+        dataNascimento: new Date(anoNascimento, mesNascimento - 1, diaNascimento).toISOString(),
+        adicionouFotoPerfil: !!photoURI || !!finalPhotoURL,
+      });
+
+      await finalizarOnboarding();
+
+      await createUserProfileDocument(user, {
+        nome: finalNome,
+        isPro: false,
+        altura: !isNaN(alturaNum) && alturaNum > 0 ? alturaNum : undefined,
+        historicoPeso: !isNaN(pesoNum) && pesoNum > 0 ? [{ valor: pesoNum, data: new Date() }] : [],
+        genero: genero || undefined,
+        nivel: nivel || undefined,
+        streakGoal: streakGoal,
+        weeksStreakGoal: weeksStreakGoal,
+        photoURL: finalPhotoURL,
+        objetivoPrincipal: onboardingData.objetivoPrincipal || null,
+        localTreino: onboardingData.localTreino || null,
+        possuiEquipamentosCasa: onboardingData.possuiEquipamentosCasa === undefined ? null : onboardingData.possuiEquipamentosCasa,
+        problemasParaTreinar: onboardingData.problemasParaTreinar || [],
+      });
+
+    } catch (error: any) {
+      Alert.alert("Erro ao finalizar cadastro", error.message);
+    }
+  };
+
   const handleCadastro = async (): Promise<void> => {
     if (!email.trim() || !senha.trim()) {
       Alert.alert("Erro", "E-mail e senha são obrigatórios.");
@@ -608,7 +726,7 @@ export default function CadastroScreen() {
         streakGoal: streakGoal,
         weeksStreakGoal: weeksStreakGoal,
         photoURL: photoURL || '',
-        
+
         // --- COPIANDO DADOS DE PERSONALIZAÇÃO ---
         objetivoPrincipal: onboardingData.objetivoPrincipal || null,
         localTreino: onboardingData.localTreino || null,
@@ -661,36 +779,36 @@ export default function CadastroScreen() {
               resizeMode={ResizeMode.COVER}
               style={styles.welcomeVideo}
             />
-          <View style={styles.welcomeContainer}>
-            <View style={styles.welcomeBottomContent}>
-              <Text style={styles.title}>Faça com que a academia se torne um vício</Text>
-              <View style={styles.welcomeButtonContainer}>
-                
-                {/* Lógica de Conexão:
+            <View style={styles.welcomeContainer}>
+              <View style={styles.welcomeBottomContent}>
+                <Text style={styles.title}>Faça com que a academia se torne um vício</Text>
+                <View style={styles.welcomeButtonContainer}>
+
+                  {/* Lógica de Conexão:
                     Mostra o botão "Vamos lá!" se 'isConnected' for true ou null (carregando).
                     Mostra a mensagem "Offline" se 'isConnected' for explicitamente false.
                 */}
-                {netInfo.isConnected === false ? (
-                  <View style={styles.offlineContainer}>
-                    <Ionicons name="cloud-offline-outline" size={24} color="#999" />
-                    <Text style={styles.offlineText}>Conecte-se à internet para prosseguir</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={[styles.welcomePrimaryButton, isStarting && styles.nextButtonDisabled]} onPress={handleIniciarOnboarding} disabled={isStarting}>
-                    {isStarting ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.welcomePrimaryButtonText}>Vamos lá!</Text>
-                    )}
-                  </TouchableOpacity>
-                )}
+                  {netInfo.isConnected === false ? (
+                    <View style={styles.offlineContainer}>
+                      <Ionicons name="cloud-offline-outline" size={24} color="#999" />
+                      <Text style={styles.offlineText}>Conecte-se à internet para prosseguir</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity style={[styles.welcomePrimaryButton, isStarting && styles.nextButtonDisabled]} onPress={handleIniciarOnboarding} disabled={isStarting}>
+                      {isStarting ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={styles.welcomePrimaryButtonText}>Vamos lá!</Text>
+                      )}
+                    </TouchableOpacity>
+                  )}
 
-                <TouchableOpacity onPress={() => router.push("./login")}>
-                  <Text style={styles.welcomeSecondaryButtonText}>Já tenho uma conta (Login)</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity onPress={() => router.push("./login")}>
+                    <Text style={styles.welcomeSecondaryButtonText}>Já tenho uma conta (Login)</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
           </>
         );
 
@@ -780,7 +898,7 @@ export default function CadastroScreen() {
         );
 
 
-case 4: // NOVO STEP: Problemas para treinar (Multi-select)
+      case 4: // NOVO STEP: Problemas para treinar (Multi-select)
         const problemasOptions = [
           { key: 'Falta de motivação', text: 'Falta de motivação', icon: 'battery-dead-outline' },
           { key: 'Falta de constância', text: 'Falta de constância', icon: 'refresh-outline' },
@@ -802,38 +920,38 @@ case 4: // NOVO STEP: Problemas para treinar (Multi-select)
                   entering={FadeInUp.duration(400).delay(index * 100)}
                 />
               ))}
-              <Text style={[styles.optionDescription, {marginTop: 10}]}>Pode escolher mais de um</Text>
+              <Text style={[styles.optionDescription, { marginTop: 10 }]}>Pode escolher mais de um</Text>
             </View>
           </ScrollView>
         );
 
       case 5: // NOVO STEP: Feature Streaks (Condicional - Onboarding 9.png)
         return (
-            <Video
-              source={require('../../assets/images/onboarding/Animations/CaseFaltaDeMotivacaofaltaDeConstancia.mp4')}
-              rate={1.0}
-              isMuted={true}
-              isLooping={false}
-              shouldPlay={true}
-              resizeMode={ResizeMode.CONTAIN}
-              style={styles.featureImage}
-            />
+          <Video
+            source={require('../../assets/images/onboarding/Animations/CaseFaltaDeMotivacaofaltaDeConstancia.mp4')}
+            rate={1.0}
+            isMuted={true}
+            isLooping={false}
+            shouldPlay={true}
+            resizeMode={ResizeMode.CONTAIN}
+            style={styles.featureImage}
+          />
         );
 
       case 6: // NOVO STEP: Feature Gráficos (Condicional - Onboarding 10.png)
         return (
-            <Video
-              source={require('../../assets/images/onboarding/Animations/CaseNaoVejoResultadosMeSintoIntimidado2.mp4')}
-              rate={1.0}
-              isMuted={true}
-              isLooping={false}
-              shouldPlay={true}
-              resizeMode={ResizeMode.CONTAIN}
-              style={styles.featureImage}
-            />
+          <Video
+            source={require('../../assets/images/onboarding/Animations/CaseNaoVejoResultadosMeSintoIntimidado2.mp4')}
+            rate={1.0}
+            isMuted={true}
+            isLooping={false}
+            shouldPlay={true}
+            resizeMode={ResizeMode.CONTAIN}
+            style={styles.featureImage}
+          />
         );
-        
-case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
+
+      case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
         return (
           <View style={styles.stepContentWrapper}>
             <Text style={[styles.mainTitle, { textAlign: 'center', fontSize: 36, marginBottom: 15 }]}>Muito bem!</Text>
@@ -877,16 +995,16 @@ case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
                 <OnboardingOption
                   key={opt.key}
                   text={opt.text}
-                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />} 
+                  icon={<Ionicons name={opt.icon as any} size={26} color="#fff" />}
                   isSelected={onboardingData.possuiEquipamentosCasa === (opt.key === 'Sim')}
                   onPress={() => setOnboardingData(prev => ({ ...prev, possuiEquipamentosCasa: opt.key === 'Sim' }))}
-                  entering={FadeInUp.duration(400).delay(index * 100)} 
+                  entering={FadeInUp.duration(400).delay(index * 100)}
                 />
               ))}
             </View>
           </ScrollView>
         );
-        
+
       case 10: // Nível (Antigo step 7)
         const nivelOptions = [
           { key: 'Iniciante', text: 'Iniciante', icon: 'body-outline' },
@@ -935,7 +1053,7 @@ case 7: // NOVO STEP: "Muito bem!" (Onboarding 11.png)
           </ScrollView>
         );
 
-case 15: // Altura
+      case 15: // Altura
         return (
           <View style={styles.stepContentWrapper}>
             <NumberSlider
@@ -943,13 +1061,12 @@ case 15: // Altura
               max={220}
               value={altura}
               onChange={(val) => setAltura(val)}
-              initialValue={175}
               vertical
             />
             <Text style={styles.sliderUnitText}>cm</Text>
           </View>
         );
-        
+
       case 16: // Peso
         return (
           <View style={[styles.stepContentWrapper, { justifyContent: 'center' }]}>
@@ -959,7 +1076,6 @@ case 15: // Altura
               value={peso}
               onChange={(val) => setPeso(val)}
               step={1}
-              initialValue={75}
               vertical={false} // Slider horizontal
             />
             <Text style={styles.sliderUnitTextHorizontal}>kg</Text>
@@ -1073,7 +1189,7 @@ case 15: // Altura
                       }
                     ]}
                   />
-                  <Text style={[styles.barLabel, weeksStreakGoal === w && {color: '#fff'}]}>{w}</Text>
+                  <Text style={[styles.barLabel, weeksStreakGoal === w && { color: '#fff' }]}>{w}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -1091,7 +1207,7 @@ case 15: // Altura
             </View>
           </>
         );
-        
+
       case 19: // Tela de Processamento da Recomendação
         return (
           <View style={styles.stepContentWrapper}>
@@ -1111,7 +1227,7 @@ case 15: // Altura
         if (!recommendedFicha) return <ActivityIndicator color="#fff" />;
         const DIAS_SEMANA_ARRAY: DiaSemana[] = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
         const originalDays = new Set(recommendedTreinos.flatMap(t => t.diasSemana));
-        
+
         // Ordena os treinos pela ordem dos dias da semana (dom a sab)
         const sortedTreinos = [...recommendedTreinos].sort((a, b) => (DIAS_SEMANA_ORDEM[a.diasSemana[0]] ?? 7) - (DIAS_SEMANA_ORDEM[b.diasSemana[0]] ?? 7));
 
@@ -1119,10 +1235,10 @@ case 15: // Altura
           if (!recommendedFicha || !recommendedFicha.totalDias || recommendedFicha.totalDias === (streakGoal || 0)) {
             return null;
           }
-      
+
           const userGoal = streakGoal || 0;
           const workoutGoal = recommendedFicha.totalDias;
-      
+
           if (workoutGoal > userGoal) {
             return (
               <View style={[styles.goalDiffCard, styles.goalDiffConstructive]}>
@@ -1155,8 +1271,8 @@ case 15: // Altura
             );
           }
         };
-        return(
-          <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
+        return (
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             {renderGoalDifferenceCard()}
             <View style={styles.recommendationCard}>
               <Image source={getStreakImage(recommendedFicha.totalDias || 0)} style={styles.recommendationCardImage} />
@@ -1194,8 +1310,8 @@ case 15: // Altura
           </ScrollView>
         );
       case 21: // Nome e Foto
-        return(
-          <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
+        return (
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <View style={styles.finalSummaryContainer}>
               <TouchableOpacity onPress={handlePickImage}>
                 {photoURI ? (
@@ -1214,7 +1330,7 @@ case 15: // Altura
         );
       case 22: // Credenciais
         return (
-          <ScrollView style={{width: '100%'}} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 20 }}>
             <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.input} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#ccc" />
             <TextInput placeholder="Senha (mínimo 6 caracteres)" secureTextEntry value={senha} onChangeText={setSenha} style={styles.input} placeholderTextColor="#ccc" />
             <TextInput placeholder="Confirme a senha" secureTextEntry value={confirmarSenha} onChangeText={setConfirmarSenha} style={styles.input} placeholderTextColor="#ccc" />
@@ -1225,6 +1341,25 @@ case 15: // Altura
             >
               {isLoading ? <ActivityIndicator color="#fff" /> : <Text style={styles.finalButtonText}>Finalizar Cadastro</Text>}
             </TouchableOpacity>
+
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', marginVertical: 20 }}>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#333' }} />
+              <Text style={{ color: '#888', marginHorizontal: 10, fontWeight: 'bold' }}>OU</Text>
+              <View style={{ flex: 1, height: 1, backgroundColor: '#333' }} />
+            </View>
+
+            <TouchableOpacity style={[styles.socialButton, styles.googleButton]} onPress={handleGoogleLink} disabled={isLoading}>
+              <FontAwesome name="google" size={20} color="#fff" />
+              <Text style={styles.socialButtonText}>Continuar com Google</Text>
+            </TouchableOpacity>
+
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity style={[styles.socialButton, styles.appleButton]} onPress={handleAppleLink} disabled={isLoading}>
+                <FontAwesome name="apple" size={20} color="#000" />
+                <Text style={[styles.socialButtonText, { color: '#000' }]}>Continuar com Apple</Text>
+              </TouchableOpacity>
+            )}
 
           </ScrollView>
         );
@@ -1286,7 +1421,6 @@ case 15: // Altura
                 max={31}
                 value={diaNascimento}
                 onChange={(val) => setDiaNascimento(val)}
-                initialValue={15}
                 vertical
                 fontSizeConfig={{ selected: 28, unselected: 16 }}
               />
@@ -1298,9 +1432,7 @@ case 15: // Altura
                 max={12}
                 value={mesNascimento}
                 onChange={(val) => setMesNascimento(val)}
-                initialValue={6}
                 vertical
-                displayValues={meses}
                 fontSizeConfig={{ selected: 28, unselected: 16 }}
               />
             </View>
@@ -1311,7 +1443,6 @@ case 15: // Altura
                 max={new Date().getFullYear()}
                 value={anoNascimento}
                 onChange={(val) => setAnoNascimento(val)}
-                initialValue={2000}
                 vertical
                 fontSizeConfig={{ selected: 28, unselected: 16 }}
               />
@@ -1330,9 +1461,9 @@ case 15: // Altura
     }
   };
 
-// ... (linha de adjacência)
-// ... (linha de adjacência)
-const getStepTitle = () => {
+  // ... (linha de adjacência)
+  // ... (linha de adjacência)
+  const getStepTitle = () => {
     switch (onboardingStep) {
       case 1: return "Onde você ouviu falar da GymBeat?";
       case 2: return "Você já tentou outros apps de treino antes?";
@@ -1361,9 +1492,9 @@ const getStepTitle = () => {
       default:
         return "";
     }
-}
-    
-const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
+  }
+
+  const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
   const title = getStepTitle();
   const subtitle = getStepSubtitle();
   const stepComplete = isStepComplete();
@@ -1381,16 +1512,16 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.stepContainer}>
-        
+
         {/* Cabeçalho com Progresso e Voltar */}
         <View style={styles.topNavContainer}>
           <TouchableOpacity style={styles.navButton} onPress={handleBack}>
             {/* O botão de voltar aparece em todos os steps > 0 */}
             <Ionicons name="arrow-back" size={18} color="#fff" />
           </TouchableOpacity>
-          
+
           <ProgressBar progress={progress} />
-          
+
           {/* View vazia para manter a barra de progresso centralizada */}
         </View>
 
@@ -1407,7 +1538,7 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
         {/* Rodapé com Botão "Avançar" */}
         {/* Oculta o botão no step 0 (tela de welcome) 
           e no step 17 (tela de credenciais), pois ele tem seu próprio botão "Finalizar Cadastro"
-        */} 
+        */}
         {onboardingStep > 0 && ![22].includes(onboardingStep) && (
           <View style={styles.footer}>
             {/* Mostra o botão na etapa 17 apenas quando o progresso for 100%, caso contrário, não mostra nada no rodapé. */}
@@ -1425,9 +1556,9 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
                 >
                   <Text style={styles.nextButtonText}>
                     {onboardingStep === TOTAL_FORM_STEPS ? "Finalizar Cadastro" :
-                     [5, 6, 7].includes(onboardingStep) ? "Eu vou conseguir" :
-                     onboardingStep === 20 ? "Usar este treino" :
-                     "Próximo"}
+                      [5, 6, 7].includes(onboardingStep) ? "Eu vou conseguir" :
+                        onboardingStep === 20 ? "Usar este treino" :
+                          "Próximo"}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -1440,477 +1571,477 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
   );
 
 };
-  
-  const styles = StyleSheet.create({
-    container: { flex: 1, justifyContent: "center", backgroundColor: "#01090c" },
-    welcomeScreenContainer: { flex: 1, backgroundColor: "#030405", justifyContent: 'flex-end' },
-    welcomeContainer: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
-    welcomeBottomContent: {
-      width: '100%',
-      padding: 30,
-      backgroundColor: '#030405fa',
-      paddingTop: 15,
-      borderTopLeftRadius: 30,
-      borderTopRightRadius: 30,
-      gap: 5,
-      borderTopWidth: 1,
-      borderTopColor: '#ffffff1a',
-      paddingBottom: 60,
-    },
-    welcomeHeader: {
-      alignItems: 'center',
-      height: 60,
-      width: '100%',
-      marginBottom: 15,
-    },
-    welcomeVideo: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      height: '65%', // Ocupa 65% da parte superior da tela
-    },
-    welcomeButtonContainer: { width: '100%', alignItems: 'center', gap: 30, marginTop: 20 },
-    welcomePrimaryButton: {
-      backgroundColor: '#1cb0f6',
-      paddingVertical: 15,
-      paddingHorizontal: 20,
-      borderRadius: 8,
-      width: '100%',
-      alignItems: 'center',
-    },
-    welcomePrimaryButtonText: {
-      color: '#fff',
-      fontSize: 25,
-      fontWeight: 'bold',
-    },
-    welcomeSecondaryButtonText: {
-      color: '#fffffffd',
-      fontSize: 16,
-    },
-    safeArea: {
-      flex: 1,
-      backgroundColor: "#030405",
-    },
-    stepContainer: {
-      flex: 1,
-      justifyContent: 'space-between',
-      paddingHorizontal: 20,
-      paddingBottom: 20,
-      backgroundColor: "#01090c",
-      // Removido borderRadius: 12,
-    },
-    footer: {
-      // Removido: flexDirection: 'row',
-      // Removido: justifyContent: 'space-between',
-      alignItems: 'center',
-      paddingVertical: 10,
-      // Removido: borderTopWidth: 1,
-      // Removido: borderTopColor: '#ffffff1a',
-    },
-    secondaryButton: {
-      paddingVertical: 15,
-      width: '100%',
-      alignItems: 'center',
-      marginBottom: 10,
-    },
-    secondaryButtonText: {
-      color: '#1cb0f6',
-      fontSize: 16,
-    },
-    // Removido: backButton e backButtonText
-    // Removido: skipButtonText
-    
-    formHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      width: '100%',
-      marginTop: 10,
-      marginBottom: 15,
-    },
-    headerButton: {
-      width: 44,
-      height: 44,
-      justifyContent: 'center',
-      alignItems: 'flex-start',
-    },
-    headerImage: {
-      width: 100, height: 110, resizeMode: 'contain'
-    },
-    title: {
-      fontSize: 45,
-      fontWeight: '600',
-      textAlign: "left",
-      color: "#fff",
-      letterSpacing: 1,
-      lineHeight: 40,
-    },
-    subtitle: { fontSize: 16, color: '#ccc', textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 },
-    // Removido: stepTitle
-    // NOVO: Título principal da tela
-    mainTitle: {
-      fontSize: 28, // Um pouco menor que o da Welcome
-      fontWeight: '600',
-      textAlign: "left",
-      color: "#fff",
-      width: '100%', // Ocupa a largura
-      marginBottom: 25, // Espaço antes das opções
-    },
-    input: {
-      backgroundColor: "#141414",
-      color: "#fff",
-      borderRadius: 8,
-      padding: 20,
-      marginBottom: 15,
-      fontSize: 16,
-      borderWidth: 1,
-      borderTopColor: "#ffffff3a",
-      borderLeftColor: "#ffffff3a",
-      borderRightColor: "#ffffff1a",
-      borderBottomColor: "#ffffff1a",
-  
-      height: 64,
-      width: '100%',
-    },
-    nameInput: {
-      backgroundColor: 'transparent',
-      color: '#fff',
-      borderBottomWidth: 2,
-      borderBottomColor: '#ffffff1a',
-      textAlign: 'center',
-      fontSize: 42,
-      fontWeight: 'bold',
-      paddingBottom: 10,
-      marginBottom: 20,
-      width: '100%',
-      paddingTop: 30,
-    },  
-    nextButton: {
-      backgroundColor: '#1cb0f6',
-      paddingVertical: 20,
-      // Removido: paddingHorizontal: 40,
-      borderRadius: 12, // Mais arredondado
-      width: '100%', // Ocupa 100%
-      alignItems: 'center', // Centraliza o texto
-    },
-    nextButtonDisabled: {
-      backgroundColor: '#555',
-    },
-    nextButtonText: {
-      color: '#fff',
-      fontSize: 16,
-      fontWeight: 'bold',
-    },
-    progressBarContainer: { 
-      height: 6, // Mais fino
-      flex: 1,
-      backgroundColor: '#173F5F', 
-      borderRadius: 3, 
-      marginHorizontal: 0, // Espaçamento dos botões
-      flexDirection: 'row',
-    },
-    progressBar: { 
-      height: '100%', 
-      width: '100%',
-      backgroundColor: '#1cb0f6', 
-      borderRadius: 3 
-    },
-    label: { fontSize: 16, color: "#ccc", marginBottom: 10, textAlign: 'center', width: '100%' },
-    sliderValueText: {
-      color: "#fff",
-      textAlign: "center",
-      fontSize: 28,
-    },
-    // NOVO ESTILO para o wrapper do conteúdo de cada etapa
-    stepContentWrapper: {
-      width: '100%',
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexGrow: 1,
-    },
-  
-    sliderContainer: { // Este estilo pode ser removido se não for usado em outro lugar
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-  
-    sliderUnitText: {
-      color: '#fff',
-      fontSize: 24,
-      fontWeight: 'bold',
-      position: 'absolute', // Posiciona ao lado do número central
-      left: '65%', // Ajuste conforme necessário
-    },
-  
-    sliderUnitTextHorizontal: {
-      color: '#fff',
-      fontSize: 24,
-      fontWeight: 'bold',
-      marginTop: 10, // Espaçamento abaixo do slider horizontal
-    },
-    optionContainerVertical: { 
-      flexDirection: 'column', 
-      alignItems: 'stretch', 
-      // Removido: marginBottom: 20, 
-      gap: 12, // Espaçamento entre os botões
-      width: '100%', // Ocupa 100%
-    },
-    optionContainerHorizontal: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 15, paddingHorizontal: 10 },
-    optionButton: { paddingVertical: 15, paddingHorizontal: 20, backgroundColor: '#173F5F', borderRadius: 8, borderWidth: 1, borderColor: '#ffffff1a', marginVertical: 5, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 15, minHeight: 80 },
-    genderButton: {
-      backgroundColor: '#173F5F',
-      borderWidth: 1,
-      borderColor: '#ffffff1a',
-      marginVertical: 5,
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 15,
-      width: 120,
-      height: 120,
-      borderRadius: 1000, // Make it a circle
-      borderTopColor: "#ffffff3a",
-      borderLeftColor: "#ffffff3a",
-      borderRightColor: "#ffffff1a",
-      borderBottomColor: "#ffffff1a",
-    },
-    optionSelected: { backgroundColor: '#1cb0f6', borderColor: '#fff' },
-    streakGoalButton: {
-      backgroundColor: '#173F5F',
-      borderWidth: 1,
-      borderColor: '#ffffff1a',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: 80,
-      height: 80,
-      borderRadius: 40,
-      borderTopColor: "#ffffff3a",
-      borderLeftColor: "#ffffff3a",
-      borderRightColor: "#ffffff1a",
-      borderBottomColor: "#ffffff1a",
-    },
-    weekGoalButton: {
-      backgroundColor: '#173F5F',
-      borderWidth: 1,
-      borderColor: '#ffffff1a',
-      alignItems: 'center',
-      justifyContent: 'center',
-      width: 100,
-      height: 100,
-      borderRadius: 12,
-      padding: 10,
-    },
-    weekGoalNumber: {
-      color: '#fff',
-      fontWeight: 'bold',
-      fontSize: 28,
-    },
-    weekGoalText: {
-      color: '#ccc',
-      fontSize: 14,
-      marginTop: 4,
-    },
-    optionText: { color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: 18 },
-    optionDescription: { color: '#ccc', fontSize: 14, textAlign: 'center', marginTop: 5 },
-    pfpContainer: { alignItems: 'center', marginBottom: 10 },
-    pfp: { width: 150, height: 150, borderRadius: 75, borderWidth: 2, borderColor: '#ffffff1a' },
-    pfpPlaceholder: { width: 150, height: 150, borderRadius: 75, backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#ffffff1a' },
-    pfpPlaceholderMedium: {
-      width: 100,
-      height: 100,
-      borderRadius: 50,
-      backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#ffffff1a'
-    },
-    streakImageTiny: {
-      width: 50,
-      height: 50,
-      resizeMode: 'contain',
-    },
-    pfpPlaceholderText: { fontSize: 60, color: '#ccc', fontWeight: '200' },
-    pfpSubtext: { textAlign: 'center', color: '#aaa', fontSize: 12 },
-    streakImage: {
-      width: 150,
-      height: 150,
-      resizeMode: 'contain',
-      marginBottom: 30,
-    },
-    streakImageSmall: {
-      width: 100,
-      height: 100,
-      resizeMode: 'contain',
-    },
-    centralDisplayContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 20,
-      marginBottom: 40,
-      padding: 20,
-      backgroundColor: '#173F5F20',
-      borderRadius: 20,
-      borderWidth: 1,
-      borderColor: '#ffffff1a',
-    },
-    centralDisplayNumber: {
-      color: '#fff',
-      fontSize: 48,
-      fontWeight: 'bold',
-    },
-    centralDisplayText: {
-      color: '#ccc',
-      fontSize: 18,
-    },
-    finalSummaryContainer: {
-      alignItems: 'center',
-      marginBottom: 25,
-      gap: 15,
-      width: '100%',
-    },
-    summaryPfpContainer: {
-      alignItems: 'center',
-      gap: 8,
-    },
-    summaryInfoRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 15,
-      backgroundColor: '#173F5F20',
-      paddingVertical: 10,
-      paddingHorizontal: 20,
-      borderRadius: 12,
-      borderWidth: 1,
-      width: '100%',
-      borderColor: '#ffffff1a',
-    },
-    summaryInfoText: {
-      color: '#fff',
-      fontSize: 16,
-      fontWeight: 'bold',
-    },
-    summaryDivider: {
-      width: 1,
-      height: '60%',
-      backgroundColor: '#ffffff3a',
-    },
-    summaryDividerVertical: {
-      width: 1,
-      height: '60%',
-      backgroundColor: '#ffffff3a',
-    },
-    summaryGoalContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 20,
-      backgroundColor: '#173F5F20',
-      padding: 15,
-      borderRadius: 12,
-      borderWidth: 1,
-      width: '100%',
-      borderColor: '#ffffff1a',
-    },
-    summaryGoalNumber: {
-      color: '#fff',
-      fontSize: 24,
-      fontWeight: 'bold',
-      textAlign: 'center',
-    },
-    summaryGoalText: {
-      color: '#ccc',
-      fontSize: 14,
-      textAlign: 'center',
-    },
-    finalButton: {
-      marginTop: 15,
-      padding: 15,
-      borderRadius: 8,
-      alignItems: 'center',
-    },
-    finalButtonText: {
-      color: '#fff',
-      fontSize: 18,
-      fontWeight: 'bold',
-    },
-    finalBackButton: {
-      marginTop: 15,
-      padding: 15,
-      alignItems: 'center',
-    },
-    finalBackButtonText: {
-      color: '#888',
-      fontSize: 16,
-      fontWeight: 'bold',
-    },
-    loginRedirectText: {
-      marginTop: 25,
-      color: '#aaa',
-      fontSize: 14,
-    },
-    loginRedirectLink: {
-      color: '#1cb0f6',
-      fontWeight: 'bold',
-      textDecorationLine: 'underline',
-    },
-    summaryContainer: {
-      paddingVertical: 15,
-      paddingHorizontal: 10,
-      alignItems: 'center',
-    },
-    summaryText: {
-      color: '#ccc',
-      fontSize: 16,
-      textAlign: 'center',
-      lineHeight: 24,
-    },
-    summaryHighlight: {
-      color: '#fff',
-      fontWeight: 'bold',
-    },
-    topNavContainer: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginVertical: 15,
-      width: '100%',
-    },
-    // NOVO: Botão de navegação (seta de voltar e view vazia)
-    navButton: {
-      width: 44, // Largura de toque
-      height: 44, // Altura de toque
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    // skipButtonContainer: { // Removido
-    //   width: 50,
-    //   alignItems: 'flex-end',
-    // },
-      // NOVO ESTILO para o container do conteúdo principal
-    contentContainer: {
-      flex: 1,
-      justifyContent: 'flex-start', // Alinha conteúdo no topo
-      alignItems: 'center',
-      // paddingTop: 15, // Removido
-      marginTop: 15, // Adicionado para criar espaço
-    },
-    
-    // --- ADICIONAR ESTES ESTILOS ---
-      featureImage: {
-        width: '100%',
-        height: '80%', // Ajuste a altura conforme necessário
-        resizeMode: 'contain',
-        marginBottom: 20, // Reduzido para aproximar do subtítulo
-      },
-      featureSubtitle: {
-        fontSize: 18,
-        color: '#ccc',
-        textAlign: 'center',
-        lineHeight: 25,
-        paddingHorizontal: 15,
-      },
 
-      summaryHighlightBig: {
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: "center", backgroundColor: "#01090c" },
+  welcomeScreenContainer: { flex: 1, backgroundColor: "#030405", justifyContent: 'flex-end' },
+  welcomeContainer: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
+  welcomeBottomContent: {
+    width: '100%',
+    padding: 30,
+    backgroundColor: '#030405fa',
+    paddingTop: 15,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    gap: 5,
+    borderTopWidth: 1,
+    borderTopColor: '#ffffff1a',
+    paddingBottom: 60,
+  },
+  welcomeHeader: {
+    alignItems: 'center',
+    height: 60,
+    width: '100%',
+    marginBottom: 15,
+  },
+  welcomeVideo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '65%', // Ocupa 65% da parte superior da tela
+  },
+  welcomeButtonContainer: { width: '100%', alignItems: 'center', gap: 30, marginTop: 20 },
+  welcomePrimaryButton: {
+    backgroundColor: '#1cb0f6',
+    paddingVertical: 15,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    width: '100%',
+    alignItems: 'center',
+  },
+  welcomePrimaryButtonText: {
+    color: '#fff',
+    fontSize: 25,
+    fontWeight: 'bold',
+  },
+  welcomeSecondaryButtonText: {
+    color: '#fffffffd',
+    fontSize: 16,
+  },
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#030405",
+  },
+  stepContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    backgroundColor: "#01090c",
+    // Removido borderRadius: 12,
+  },
+  footer: {
+    // Removido: flexDirection: 'row',
+    // Removido: justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    // Removido: borderTopWidth: 1,
+    // Removido: borderTopColor: '#ffffff1a',
+  },
+  secondaryButton: {
+    paddingVertical: 15,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  secondaryButtonText: {
+    color: '#1cb0f6',
+    fontSize: 16,
+  },
+  // Removido: backButton e backButtonText
+  // Removido: skipButtonText
+
+  formHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginTop: 10,
+    marginBottom: 15,
+  },
+  headerButton: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+  },
+  headerImage: {
+    width: 100, height: 110, resizeMode: 'contain'
+  },
+  title: {
+    fontSize: 45,
+    fontWeight: '600',
+    textAlign: "left",
+    color: "#fff",
+    letterSpacing: 1,
+    lineHeight: 40,
+  },
+  subtitle: { fontSize: 16, color: '#ccc', textAlign: 'center', marginBottom: 20, paddingHorizontal: 10 },
+  // Removido: stepTitle
+  // NOVO: Título principal da tela
+  mainTitle: {
+    fontSize: 28, // Um pouco menor que o da Welcome
+    fontWeight: '600',
+    textAlign: "left",
+    color: "#fff",
+    width: '100%', // Ocupa a largura
+    marginBottom: 25, // Espaço antes das opções
+  },
+  input: {
+    backgroundColor: "#141414",
+    color: "#fff",
+    borderRadius: 8,
+    padding: 20,
+    marginBottom: 15,
+    fontSize: 16,
+    borderWidth: 1,
+    borderTopColor: "#ffffff3a",
+    borderLeftColor: "#ffffff3a",
+    borderRightColor: "#ffffff1a",
+    borderBottomColor: "#ffffff1a",
+
+    height: 64,
+    width: '100%',
+  },
+  nameInput: {
+    backgroundColor: 'transparent',
+    color: '#fff',
+    borderBottomWidth: 2,
+    borderBottomColor: '#ffffff1a',
+    textAlign: 'center',
+    fontSize: 42,
+    fontWeight: 'bold',
+    paddingBottom: 10,
+    marginBottom: 20,
+    width: '100%',
+    paddingTop: 30,
+  },
+  nextButton: {
+    backgroundColor: '#1cb0f6',
+    paddingVertical: 20,
+    // Removido: paddingHorizontal: 40,
+    borderRadius: 12, // Mais arredondado
+    width: '100%', // Ocupa 100%
+    alignItems: 'center', // Centraliza o texto
+  },
+  nextButtonDisabled: {
+    backgroundColor: '#555',
+  },
+  nextButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  progressBarContainer: {
+    height: 6, // Mais fino
+    flex: 1,
+    backgroundColor: '#173F5F',
+    borderRadius: 3,
+    marginHorizontal: 0, // Espaçamento dos botões
+    flexDirection: 'row',
+  },
+  progressBar: {
+    height: '100%',
+    width: '100%',
+    backgroundColor: '#1cb0f6',
+    borderRadius: 3
+  },
+  label: { fontSize: 16, color: "#ccc", marginBottom: 10, textAlign: 'center', width: '100%' },
+  sliderValueText: {
+    color: "#fff",
+    textAlign: "center",
+    fontSize: 28,
+  },
+  // NOVO ESTILO para o wrapper do conteúdo de cada etapa
+  stepContentWrapper: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexGrow: 1,
+  },
+
+  sliderContainer: { // Este estilo pode ser removido se não for usado em outro lugar
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  sliderUnitText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    position: 'absolute', // Posiciona ao lado do número central
+    left: '65%', // Ajuste conforme necessário
+  },
+
+  sliderUnitTextHorizontal: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 10, // Espaçamento abaixo do slider horizontal
+  },
+  optionContainerVertical: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    // Removido: marginBottom: 20, 
+    gap: 12, // Espaçamento entre os botões
+    width: '100%', // Ocupa 100%
+  },
+  optionContainerHorizontal: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 15, paddingHorizontal: 10 },
+  optionButton: { paddingVertical: 15, paddingHorizontal: 20, backgroundColor: '#173F5F', borderRadius: 8, borderWidth: 1, borderColor: '#ffffff1a', marginVertical: 5, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 15, minHeight: 80 },
+  genderButton: {
+    backgroundColor: '#173F5F',
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+    marginVertical: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 15,
+    width: 120,
+    height: 120,
+    borderRadius: 1000, // Make it a circle
+    borderTopColor: "#ffffff3a",
+    borderLeftColor: "#ffffff3a",
+    borderRightColor: "#ffffff1a",
+    borderBottomColor: "#ffffff1a",
+  },
+  optionSelected: { backgroundColor: '#1cb0f6', borderColor: '#fff' },
+  streakGoalButton: {
+    backgroundColor: '#173F5F',
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderTopColor: "#ffffff3a",
+    borderLeftColor: "#ffffff3a",
+    borderRightColor: "#ffffff1a",
+    borderBottomColor: "#ffffff1a",
+  },
+  weekGoalButton: {
+    backgroundColor: '#173F5F',
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    padding: 10,
+  },
+  weekGoalNumber: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 28,
+  },
+  weekGoalText: {
+    color: '#ccc',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  optionText: { color: '#fff', textAlign: 'center', fontWeight: 'bold', fontSize: 18 },
+  optionDescription: { color: '#ccc', fontSize: 14, textAlign: 'center', marginTop: 5 },
+  pfpContainer: { alignItems: 'center', marginBottom: 10 },
+  pfp: { width: 150, height: 150, borderRadius: 75, borderWidth: 2, borderColor: '#ffffff1a' },
+  pfpPlaceholder: { width: 150, height: 150, borderRadius: 75, backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#ffffff1a' },
+  pfpPlaceholderMedium: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#173F5F', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#ffffff1a'
+  },
+  streakImageTiny: {
+    width: 50,
+    height: 50,
+    resizeMode: 'contain',
+  },
+  pfpPlaceholderText: { fontSize: 60, color: '#ccc', fontWeight: '200' },
+  pfpSubtext: { textAlign: 'center', color: '#aaa', fontSize: 12 },
+  streakImage: {
+    width: 150,
+    height: 150,
+    resizeMode: 'contain',
+    marginBottom: 30,
+  },
+  streakImageSmall: {
+    width: 100,
+    height: 100,
+    resizeMode: 'contain',
+  },
+  centralDisplayContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    marginBottom: 40,
+    padding: 20,
+    backgroundColor: '#173F5F20',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+  },
+  centralDisplayNumber: {
+    color: '#fff',
+    fontSize: 48,
+    fontWeight: 'bold',
+  },
+  centralDisplayText: {
+    color: '#ccc',
+    fontSize: 18,
+  },
+  finalSummaryContainer: {
+    alignItems: 'center',
+    marginBottom: 25,
+    gap: 15,
+    width: '100%',
+  },
+  summaryPfpContainer: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  summaryInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 15,
+    backgroundColor: '#173F5F20',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    width: '100%',
+    borderColor: '#ffffff1a',
+  },
+  summaryInfoText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  summaryDivider: {
+    width: 1,
+    height: '60%',
+    backgroundColor: '#ffffff3a',
+  },
+  summaryDividerVertical: {
+    width: 1,
+    height: '60%',
+    backgroundColor: '#ffffff3a',
+  },
+  summaryGoalContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 20,
+    backgroundColor: '#173F5F20',
+    padding: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+    width: '100%',
+    borderColor: '#ffffff1a',
+  },
+  summaryGoalNumber: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  summaryGoalText: {
+    color: '#ccc',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  finalButton: {
+    marginTop: 15,
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  finalButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  finalBackButton: {
+    marginTop: 15,
+    padding: 15,
+    alignItems: 'center',
+  },
+  finalBackButtonText: {
+    color: '#888',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  loginRedirectText: {
+    marginTop: 25,
+    color: '#aaa',
+    fontSize: 14,
+  },
+  loginRedirectLink: {
+    color: '#1cb0f6',
+    fontWeight: 'bold',
+    textDecorationLine: 'underline',
+  },
+  summaryContainer: {
+    paddingVertical: 15,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+  },
+  summaryText: {
+    color: '#ccc',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  summaryHighlight: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  topNavContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginVertical: 15,
+    width: '100%',
+  },
+  // NOVO: Botão de navegação (seta de voltar e view vazia)
+  navButton: {
+    width: 44, // Largura de toque
+    height: 44, // Altura de toque
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // skipButtonContainer: { // Removido
+  //   width: 50,
+  //   alignItems: 'flex-end',
+  // },
+  // NOVO ESTILO para o container do conteúdo principal
+  contentContainer: {
+    flex: 1,
+    justifyContent: 'flex-start', // Alinha conteúdo no topo
+    alignItems: 'center',
+    // paddingTop: 15, // Removido
+    marginTop: 15, // Adicionado para criar espaço
+  },
+
+  // --- ADICIONAR ESTES ESTILOS ---
+  featureImage: {
+    width: '100%',
+    height: '80%', // Ajuste a altura conforme necessário
+    resizeMode: 'contain',
+    marginBottom: 20, // Reduzido para aproximar do subtítulo
+  },
+  featureSubtitle: {
+    fontSize: 18,
+    color: '#ccc',
+    textAlign: 'center',
+    lineHeight: 25,
+    paddingHorizontal: 15,
+  },
+
+  summaryHighlightBig: {
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 28, // Maior
@@ -2052,7 +2183,7 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
     width: '100%',
     borderWidth: 1,
     borderTopColor: '#ffffff2a',
-    borderLeftColor: '#ffffff2a', 
+    borderLeftColor: '#ffffff2a',
     borderBottomColor: '#ffffff1a',
     borderRightColor: '#ffffff1a',
   },
@@ -2127,5 +2258,20 @@ const progress = (onboardingStep / TOTAL_FORM_STEPS) * 100;
   goalDiffButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   // Estilo para a unidade 'cm' ao lado do NumberSlider
 
-      // --- FIM DOS NOVOS ESTILOS ---
-  })
+  // --- FIM DOS NOVOS ESTILOS ---
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    padding: 15,
+    borderRadius: 8,
+    marginBottom: 10,
+    borderWidth: 1,
+  },
+  googleButton: { borderColor: '#555', backgroundColor: '#141414' },
+  appleButton: { borderColor: '#fff', backgroundColor: '#fff' },
+  socialButtonText: {
+    color: '#fff', fontWeight: 'bold', fontSize: 16, marginLeft: 15,
+  },
+})

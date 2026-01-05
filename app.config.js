@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "GymBeat",
     slug: "GymBeat",
-    version: "0.2.1",
+    version: "0.2.2",
     orientation: "portrait",
     icon: "./assets/icons/ios/ios-dark.png",
     scheme: "gymbeat",

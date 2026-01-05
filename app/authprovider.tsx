@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userDocRef,
         async (docSnap) => {
           setInitialized(true);
-          
+
           if (docSnap.exists()) {
             const userData = docSnap.data() as Omit<Usuario, 'id'>;
             const combinedUser: Usuario = {
@@ -98,18 +98,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(null);
           }
         },
-        (error) => {
+        async (error) => {
           console.error("Erro no ouvinte do Firestore (authprovider):", error);
-          // Se há erro, tenta usar dados em cache
-          if (!isOnline) {
-            getCachedUserSession().then(cachedUser => {
+          // Se há erro (offline ou permissão), tenta usar dados em cache
+          // NÃO checamos isOnline aqui, pois o erro no Firestore já indica problema de acesso
+          try {
+            const cachedUser = await getCachedUserSession();
+            if (cachedUser && cachedUser.id === currentUser.uid) {
               setUser(cachedUser);
-              console.log('[Auth] Usando usuário em cache devido a erro de conexão');
-            });
-          } else {
+              console.log('[Auth] Usando usuário em cache devido a erro de conexão/firestore');
+            } else {
+              console.warn('[Auth] Erro no Firestore e cache vazio ou incompatível.');
+              setUser(null);
+            }
+          } catch (e) {
+            console.error('[Auth] Erro ao recuperar cache:', e);
             setUser(null);
+          } finally {
+            setInitialized(true);
           }
-          setInitialized(true);
         }
       );
     });

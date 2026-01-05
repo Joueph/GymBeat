@@ -780,7 +780,7 @@
 
 "@bacons/apple-targets@^3.0.5":
   version "3.0.5"
-  resolved "https://registry.yarnpkg.com/@bacons/apple-targets/-/apple-targets-3.0.5.tgz#82bdd15512f51a0dea2f81c013bc3209c8054a5d"
+  resolved "https://registry.npmjs.org/@bacons/apple-targets/-/apple-targets-3.0.5.tgz"
   integrity sha512-+ehdXLwRMBRlCPZnaEDMXzQ1r4y4mryi0PuDhs7wuH8JqH1OviOXz+aq4BU5yj7t3oOchiBfc9rzyYBJpQCViw==
   dependencies:
     "@bacons/xcode" "1.0.0-alpha.27"
@@ -790,7 +790,7 @@
 
 "@bacons/xcode@1.0.0-alpha.27":
   version "1.0.0-alpha.27"
-  resolved "https://registry.yarnpkg.com/@bacons/xcode/-/xcode-1.0.0-alpha.27.tgz#d6ebdce9d4886d74c52662925363fb3b6f829bea"
+  resolved "https://registry.npmjs.org/@bacons/xcode/-/xcode-1.0.0-alpha.27.tgz"
   integrity sha512-WlemTiwpwwVH8IMvg4VBsyxGUuFWUfzeWKzxhU+dRxd8MHvnX7F9PlWCf7T0ZXmtjbl39iEgQB+/Tf3wuGJbyg==
   dependencies:
     "@expo/plist" "^0.0.18"
@@ -1168,7 +1168,7 @@
 
 "@expo/plist@^0.0.18":
   version "0.0.18"
-  resolved "https://registry.yarnpkg.com/@expo/plist/-/plist-0.0.18.tgz#9abcde78df703a88f6d9fa1a557ee2f045d178b0"
+  resolved "https://registry.npmjs.org/@expo/plist/-/plist-0.0.18.tgz"
   integrity sha512-+48gRqUiz65R21CZ/IXa7RNBXgAI/uPSdvJqoN9x1hfL44DNbUoWHgHiEXTx7XelcATpDwNTz6sHLfy0iNqf+w==
   dependencies:
     "@xmldom/xmldom" "~0.7.0"
@@ -2638,7 +2638,7 @@
 
 "@react-native/normalize-colors@^0.79.2":
   version "0.79.7"
-  resolved "https://registry.yarnpkg.com/@react-native/normalize-colors/-/normalize-colors-0.79.7.tgz#f7a3680dc81528b19761169cb6177ce64638b9ce"
+  resolved "https://registry.npmjs.org/@react-native/normalize-colors/-/normalize-colors-0.79.7.tgz"
   integrity sha512-RrvewhdanEWhlyrHNWGXGZCc6MY0JGpNgRzA8y6OomDz0JmlnlIsbBHbNpPnIrt9Jh2KaV10KTscD1Ry8xU9gQ==
 
 "@react-native/virtualized-lists@0.81.4":
@@ -3220,7 +3220,7 @@
 
 "@xmldom/xmldom@~0.7.0":
   version "0.7.13"
-  resolved "https://registry.yarnpkg.com/@xmldom/xmldom/-/xmldom-0.7.13.tgz#ff34942667a4e19a9f4a0996a76814daac364cf3"
+  resolved "https://registry.npmjs.org/@xmldom/xmldom/-/xmldom-0.7.13.tgz"
   integrity sha512-lm2GW5PkosIzccsaZIz7tp8cPADSIlIHWDFTR1N0SzfinhhYgeIQjFMz4rYzanCScr3DqQLeomUDArp6MWKm+g==
 
 abort-controller@^3.0.0:
@@ -4898,6 +4898,11 @@ execa@^5.0.0:
     signal-exit "^3.0.3"
     strip-final-newline "^2.0.0"
 
+expo-apple-authentication@~8.0.8:
+  version "8.0.8"
+  resolved "https://registry.yarnpkg.com/expo-apple-authentication/-/expo-apple-authentication-8.0.8.tgz#4982c99743ebf45bc961c5008927839aa1022310"
+  integrity sha512-TwCHWXYR1kS0zaeV7QZKLWYluxsvqL31LFJubzK30njZqeWoWO89HZ8nZVaeXbFV1LrArKsze4BmMb+94wS0AQ==
+
 expo-application@~7.0.7:
   version "7.0.7"
   resolved "https://registry.npmjs.org/expo-application/-/expo-application-7.0.7.tgz"
@@ -4963,7 +4968,7 @@ expo-crypto@~15.0.7:
 
 expo-dev-client@~6.0.17:
   version "6.0.17"
-  resolved "https://registry.yarnpkg.com/expo-dev-client/-/expo-dev-client-6.0.17.tgz#f1157bb2c2389c8f59f673d259aaa01cf25ec99d"
+  resolved "https://registry.npmjs.org/expo-dev-client/-/expo-dev-client-6.0.17.tgz"
   integrity sha512-zVilIum3sqXFbhYhPT6TuxR3ddH/IfHL82FiOTqJUiYaTQqun1I6ogSvU1djhY1eXUYhfYIBieQNWMVjXPxMvw==
   dependencies:
     expo-dev-launcher "6.0.17"
@@ -4974,7 +4979,7 @@ expo-dev-client@~6.0.17:
 
 expo-dev-launcher@6.0.17:
   version "6.0.17"
-  resolved "https://registry.yarnpkg.com/expo-dev-launcher/-/expo-dev-launcher-6.0.17.tgz#d7f39a4fd4738e171c4422c1ddc256844699c2a0"
+  resolved "https://registry.npmjs.org/expo-dev-launcher/-/expo-dev-launcher-6.0.17.tgz"
   integrity sha512-riLxFXaw6Nvgb27TiQtUvoHkW/zTz0aO7M+qxDBBaEbJMJSFl51KSwOJJBTItVQIE9f9jB8x5L1CfLw81/McZw==
   dependencies:
     expo-dev-menu "7.0.16"
@@ -4987,7 +4992,7 @@ expo-dev-menu-interface@2.0.0:
 
 expo-dev-menu@7.0.16:
   version "7.0.16"
-  resolved "https://registry.yarnpkg.com/expo-dev-menu/-/expo-dev-menu-7.0.16.tgz#1c2f91caca14c22341525e7ac72cf4b33dcf727d"
+  resolved "https://registry.npmjs.org/expo-dev-menu/-/expo-dev-menu-7.0.16.tgz"
   integrity sha512-/kjTjk5tcZV0ixYnV3JyzPXKlMimpBNYaDo4XxBbRFIkTf/vmb/9e1BTR2nALnoa/D3MRwtR43gZYT+W/wfKXw==
   dependencies:
     expo-dev-menu-interface "2.0.0"
@@ -5156,7 +5161,7 @@ expo-status-bar@~3.0.8:
 
 expo-store-review@~9.0.8:
   version "9.0.8"
-  resolved "https://registry.yarnpkg.com/expo-store-review/-/expo-store-review-9.0.8.tgz#575c079a4a6c71afa1d3e3e27963ae83596b62c6"
+  resolved "https://registry.npmjs.org/expo-store-review/-/expo-store-review-9.0.8.tgz"
   integrity sha512-S8ExQRqQBHHmZOX2gabEeRJDrgeAhzBf5FOtnhp5fMinpwT7umNOMHy+PwrTYJ/+AjnnKHgLoM1o/MDgcL3qCw==
 
 expo-structured-headers@~5.0.0:
@@ -7996,7 +8001,7 @@ react-native-screens@~4.16.0:
 
 react-native-shared-group-preferences@^1.1.24:
   version "1.1.24"
-  resolved "https://registry.yarnpkg.com/react-native-shared-group-preferences/-/react-native-shared-group-preferences-1.1.24.tgz#a3454a7bdb1a26ed0e9fdf92f0fcadde8c9b0296"
+  resolved "https://registry.npmjs.org/react-native-shared-group-preferences/-/react-native-shared-group-preferences-1.1.24.tgz"
   integrity sha512-lncFBltdqXLp8H87wNZUg/P7KvaCqscQ/8GXvrRl0RIUBVVSzrKdAQyBTcsHb7mkMULmph73u41/6nQ5BvUchw==
 
 react-native-svg@15.12.1:
@@ -9571,7 +9576,7 @@ xml2js@0.6.0:
 
 xmlbuilder@^14.0.0:
   version "14.0.0"
-  resolved "https://registry.yarnpkg.com/xmlbuilder/-/xmlbuilder-14.0.0.tgz#876b5aec4f05ffd5feb97b0a871c855d16fbeb8c"
+  resolved "https://registry.npmjs.org/xmlbuilder/-/xmlbuilder-14.0.0.tgz"
   integrity sha512-ts+B2rSe4fIckR6iquDjsKbQFK2NlUk6iG5nf14mDEyldgoc2nEKZ3jZWMPTxGQwVgToSjt6VGIho1H8/fNFTg==
 
 xmlbuilder@^15.1.1:

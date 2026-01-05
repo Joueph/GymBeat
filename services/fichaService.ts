@@ -164,14 +164,31 @@ export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => 
   }
 };
 
-export const setFichaAtiva = async (userId: string, fichaId: string): Promise<Ficha | null> => {
+export const setFichaAtiva = async (userId: string, fichaId: string, previousFichaId?: string): Promise<Ficha | null> => {
   const batch = writeBatch(db);
   const fichasRef = collection(db, 'fichas');
 
+  // Deactivate currently active fichas found by query
   const q = query(fichasRef, where('usuarioId', '==', userId), where('ativa', '==', true));
   const activeFichasSnapshot = await getDocs(q);
+
+  const fichasToDeactivate = new Set<string>();
+
   activeFichasSnapshot.forEach(doc => {
-    batch.update(doc.ref, { ativa: false });
+    fichasToDeactivate.add(doc.id);
+  });
+
+  // Also ensure the known previous active ficha is deactivated (fallback)
+  if (previousFichaId) {
+    fichasToDeactivate.add(previousFichaId);
+  }
+
+  fichasToDeactivate.forEach(id => {
+    // Avoid checking the one we are about to activate (optimization, though overwrite handles it)
+    if (id !== fichaId) {
+      const ref = doc(db, 'fichas', id);
+      batch.update(ref, { ativa: false });
+    }
   });
 
   const newActiveFichaRef = doc(db, 'fichas', fichaId);

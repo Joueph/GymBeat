@@ -17,6 +17,7 @@ import { getLogsByUsuarioId } from '../../services/logService';
 import { getTreinosByIds, getTreinosByUsuarioId } from '../../services/treinoService';
 import { acceptFriendRequest, getUserProfile, rejectFriendRequest } from '../../userService';
 import { useAuth } from '../authprovider';
+import { useNetwork } from '../networkprovider';
 
 interface FriendData extends Usuario {
   hasTrainedToday: boolean;

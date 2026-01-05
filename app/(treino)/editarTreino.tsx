@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   LayoutAnimation,
   Platform,
   StyleSheet,
@@ -17,13 +18,15 @@ import {
   View
 } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedRef, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
+import { InfoCard } from '../../components/InfoCard';
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 import { RepetitionsDrawer } from '../../components/RepetitionsDrawer';
 import { RestTimeDrawer } from '../../components/RestTimeDrawer';
 import { SetOptionsMenu } from '../../components/SetOptionsMenu';
+import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { VideoListItem } from '../../components/VideoListItem';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
@@ -51,6 +54,7 @@ interface ExerciseItemProps {
   onRemoveExercise: () => void;
   exerciseIndex: number;
   onOpenRepDrawer: (exerciseIndex: number, setIndex: number) => void;
+  onOpenTimeDrawer: (exerciseIndex: number, setIndex: number) => void;
   onOpenRestTimeModal: (exerciseIndex: number) => void;
   setIsEditing: (isEditing: boolean) => void;
 }
@@ -64,6 +68,24 @@ const formatRestTime = (seconds: number) => {
   return minutes > 0 ? `${minutes} min` : `${remainingSeconds} seg`;
 };
 
+const cascadeUpdate = (series: SerieEdit[], index: number, field: keyof SerieEdit, oldValue: any): SerieEdit[] => {
+  const newSeries = [...series];
+  const newValue = newSeries[index][field];
+
+  for (let i = index + 1; i < newSeries.length; i++) {
+    // Look for values that match the *old* value of the changed set
+    // Using loose equality (==) for safety with number/string mix, though typed strict is better
+    if (newSeries[i][field] == oldValue) {
+      newSeries[i] = { ...newSeries[i], [field]: newValue };
+    } else {
+      break;
+    }
+  }
+  return newSeries;
+};
+
+
+
 const ExerciseItem = ({
   item,
   drag,
@@ -72,12 +94,16 @@ const ExerciseItem = ({
   onRemoveExercise,
   exerciseIndex,
   onOpenRepDrawer,
+  onOpenTimeDrawer,
   onOpenRestTimeModal,
   setIsEditing,
 }: ExerciseItemProps) => {
   const [series, setSeries] = useState<SerieEdit[]>(
     item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' }))
   );
+
+  // Track the weight value on focus to enable cascade logic
+  const focusedWeightRef = React.useRef<number | null>(null);
 
   useEffect(() => {
     setSeries(item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' })));
@@ -110,7 +136,14 @@ const ExerciseItem = ({
         const currentSet = newSets[index];
         currentSet.isWarmup = !currentSet.isWarmup;
       } else if (option === 'toggleTime') {
-        newSets[index].isTimeBased = !newSets[index].isTimeBased;
+        const currentSet = newSets[index];
+        currentSet.isTimeBased = !currentSet.isTimeBased;
+        if (currentSet.isTimeBased) {
+          currentSet.peso = 0;
+          currentSet.repeticoes = '60';
+        } else {
+          currentSet.repeticoes = '10';
+        }
       }
       handleSeriesUpdate(newSets);
     }, 100);
@@ -132,27 +165,55 @@ const ExerciseItem = ({
         )}
         <View style={styles.inputGroup}>
           <TouchableOpacity
-            style={styles.repButton}
+            style={[
+              styles.repButton,
+              setItem.isTimeBased && { flexDirection: 'row', gap: 6 },
+              (index > 0 && series[index - 1].repeticoes === setItem.repeticoes) && { opacity: 0.7 }
+            ]}
             onPress={() => {
-              if (!setItem.isTimeBased) onOpenRepDrawer(exerciseIndex, index);
+              if (setItem.isTimeBased) {
+                onOpenTimeDrawer(exerciseIndex, index);
+              } else {
+                onOpenRepDrawer(exerciseIndex, index);
+              }
             }}
           >
-            <Text style={styles.repButtonText}>{String(setItem.repeticoes)}</Text>
+            {setItem.isTimeBased && <FontAwesome name="clock-o" size={16} color="#fff" />}
+            <Text style={styles.repButtonText}>
+              {setItem.isTimeBased
+                ? formatRestTime(parseInt(String(setItem.repeticoes), 10) || 0)
+                : String(setItem.repeticoes)}
+            </Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.xText}>x</Text>
         <View style={styles.inputGroup}>
           <TextInput
-            style={styles.setInput}
+            style={[styles.setInput, (index > 0 && series[index - 1].peso == setItem.peso) && { opacity: 0.7 }]}
             value={String(setItem.peso || '')}
+            onFocus={() => {
+              focusedWeightRef.current = typeof setItem.peso === 'number' ? setItem.peso : parseFloat(String(setItem.peso));
+            }}
             onChangeText={(text) => {
               const newSets = [...series];
               newSets[index] = { ...newSets[index], peso: text as any };
-              handleSeriesUpdate(newSets);
+              // We rely on state update for typing, but cascade happens on EndEditing
+              // We do call handleSeriesUpdate here to keep 'item' logic compliant, 
+              // BUT we must not cascade yet.
+              setSeries(newSets);
+              onUpdateExercise({ ...item, series: newSets });
+              setIsEditing(true);
             }}
             onEndEditing={(e) => {
-              const newSets = [...series];
-              newSets[index] = { ...newSets[index], peso: parseFloat(e.nativeEvent.text.replace(',', '.')) || 0 };
+              let newSets = [...series];
+              const val = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
+              newSets[index] = { ...newSets[index], peso: val };
+
+              // Apply cascade
+              if (focusedWeightRef.current !== null) {
+                newSets = cascadeUpdate(newSets, index, 'peso', focusedWeightRef.current);
+              }
+
               handleSeriesUpdate(newSets);
             }}
             keyboardType="decimal-pad"
@@ -263,6 +324,7 @@ export default function EditarTreinoScreen() {
   const [isModalVisible, setModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
+  const [isExerciseTimeDrawerVisible, setIsExerciseTimeDrawerVisible] = useState(false);
   const [isDefaultRestTimeDrawerVisible, setDefaultRestTimeDrawerVisible] = useState(false);
   const [isRestTimeModalVisible, setIsRestTimeModalVisible] = useState(false);
   const [editingIndices, setEditingIndices] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
@@ -270,6 +332,10 @@ export default function EditarTreinoScreen() {
   const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
   const [activeLog, setActiveLog] = useState<Log | null>(null);
   const [allUserLogs, setAllUserLogs] = useState<Log[]>([]);
+  const [carouselIndex, setCarouselIndex] = useState(0); // Track active carousel page
+
+
+  const carouselRef = useAnimatedRef<any>();
 
   const hasRelevantLogs = useMemo(() => {
     if (!treinoId || !allUserLogs || allUserLogs.length === 0) {
@@ -400,15 +466,46 @@ export default function EditarTreinoScreen() {
     setIsRepDrawerVisible(true);
   };
 
+  const handleOpenTimeDrawer = (exerciseIndex: number, setIndex: number) => {
+    setEditingIndices({ exerciseIndex, setIndex });
+    setIsExerciseTimeDrawerVisible(true);
+  };
+
+  const handleTimeBasedSetSave = (newSeconds: number) => {
+    if (!editingIndices || !treino) return;
+    const { exerciseIndex, setIndex } = editingIndices;
+    const updatedExercicios = [...treino.exercicios];
+    const seriesToUpdate = [...updatedExercicios[exerciseIndex].series] as SerieEdit[];
+
+    const oldValue = seriesToUpdate[setIndex].repeticoes;
+    seriesToUpdate[setIndex] = { ...seriesToUpdate[setIndex], repeticoes: String(newSeconds) };
+
+    // Cascade
+    const cascadedSeries = cascadeUpdate(seriesToUpdate, setIndex, 'repeticoes', oldValue);
+
+    updatedExercicios[exerciseIndex] = { ...updatedExercicios[exerciseIndex], series: cascadedSeries };
+
+    if (!isEditing) setIsEditing(true);
+    setTreino({ ...treino, exercicios: updatedExercicios });
+
+    setIsExerciseTimeDrawerVisible(false);
+    setEditingIndices(null);
+  };
+
   const handleRepetitionsSave = (newReps: string) => {
     if (!editingIndices || !treino) return;
 
     const { exerciseIndex, setIndex } = editingIndices;
     const updatedExercicios = [...treino.exercicios];
-    const seriesToUpdate = [...updatedExercicios[exerciseIndex].series];
+    const seriesToUpdate = [...updatedExercicios[exerciseIndex].series] as SerieEdit[];
 
+    const oldValue = seriesToUpdate[setIndex].repeticoes;
     seriesToUpdate[setIndex] = { ...seriesToUpdate[setIndex], repeticoes: newReps };
-    updatedExercicios[exerciseIndex] = { ...updatedExercicios[exerciseIndex], series: seriesToUpdate };
+
+    // Cascade
+    const cascadedSeries = cascadeUpdate(seriesToUpdate, setIndex, 'repeticoes', oldValue);
+
+    updatedExercicios[exerciseIndex] = { ...updatedExercicios[exerciseIndex], series: cascadedSeries };
 
     if (!isEditing) setIsEditing(true);
     setTreino({ ...treino, exercicios: updatedExercicios });
@@ -564,6 +661,7 @@ export default function EditarTreinoScreen() {
         item={item}
         exerciseIndex={index}
         onOpenRepDrawer={handleOpenRepDrawer}
+        onOpenTimeDrawer={handleOpenTimeDrawer}
         drag={drag}
         onOpenRestTimeModal={handleOpenRestTimeModal}
         isActive={isActive}
@@ -664,15 +762,80 @@ export default function EditarTreinoScreen() {
                 placeholder="Nome do Treino"
                 placeholderTextColor="#888"
               />
-              {treinoId && hasRelevantLogs && (
-                <View style={{ marginTop: 20, alignItems: 'center' }}>
-                  <HistoricoCargaTreinoChart
-                    treinoId={treinoId}
-                    allUserLogs={allUserLogs}
-                  />
+
+
+              <View style={{ marginTop: 16 }}>
+                <Animated.FlatList
+                  ref={carouselRef}
+                  data={[
+                    { key: 'info', type: 'info' },
+                    { key: 'chart', type: 'chart' }
+                  ]}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  onScroll={(e) => {
+                    // Simple calculation for index based on offset
+                    const offsetX = e.nativeEvent.contentOffset.x;
+                    const width = Dimensions.get('window').width - 16;
+                    const index = Math.round(offsetX / width);
+                    if (index !== carouselIndex) {
+                      setCarouselIndex(index);
+                    }
+                  }}
+                  scrollEventThrottle={16}
+                  keyExtractor={item => item.key}
+                  renderItem={({ item }) => {
+                    if (item.type === 'info') {
+                      return (
+                        <View style={{ width: Dimensions.get('window').width - 16, paddingHorizontal: 0 }}>
+                          <InfoCard
+                            treino={treino}
+                            allUserLogs={allUserLogs}
+                            onUpdateTreino={(updatedTreino: Treino) => setTreino(updatedTreino)}
+                            isEditing={isEditing}
+                            setIsEditing={setIsEditing}
+                            onPressProgresso={() => {
+                              carouselRef.current?.scrollToIndex({ index: 1, animated: true });
+                            }}
+                          />
+                        </View>
+                      );
+                    } else {
+                      return (
+                        <View style={{ width: Dimensions.get('window').width - 16, alignItems: 'center' }}>
+                          {treinoId && hasRelevantLogs ? (
+                            <HistoricoCargaTreinoChart
+                              treinoId={treinoId}
+                              allUserLogs={allUserLogs}
+                              style={{ marginTop: 0 }}
+                            />
+                          ) : (
+                            <View style={{ height: 200, justifyContent: 'center', alignItems: 'center' }}>
+                              <Text style={{ color: '#888' }}>Sem dados históricos suficientes.</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    }
+                  }}
+                  style={{ overflow: 'visible' }}
+                />
+
+                {/* Pagination Dots */}
+                <View style={styles.paginationContainer}>
+                  {[0, 1].map((index) => (
+                    <FontAwesome
+                      key={index}
+                      name={carouselIndex === index ? "circle" : "circle-o"}
+                      size={8}
+                      color="#666"
+                      style={{ marginHorizontal: 4 }}
+                    />
+                  ))}
                 </View>
-              )}
-              {/* Seletor de dias removido daqui */}
+              </View>
+              <Text style={styles.sectionTitle}>Exercícios</Text>
             </View>
           }
           ListFooterComponent={
@@ -706,6 +869,13 @@ export default function EditarTreinoScreen() {
         onClose={() => setIsRepDrawerVisible(false)}
         onSave={handleRepetitionsSave}
         initialValue={getRepetitionsValue()}
+      />
+
+      <TimeBasedSetDrawer
+        visible={isExerciseTimeDrawerVisible}
+        onClose={() => setIsExerciseTimeDrawerVisible(false)}
+        onSave={handleTimeBasedSetSave}
+        initialValue={parseInt(getRepetitionsValue(), 10) || 60}
       />
 
       {/* Modal de Dias removido daqui e passado para dentro do WorkoutSettingsModal */}
@@ -750,6 +920,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B0D10',
     paddingHorizontal: 8,
   },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -789,6 +966,15 @@ const styles = StyleSheet.create({
     color: '#1cb0f6',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  sectionTitle: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 10,
+    marginTop: 20,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   startButton: {
     backgroundColor: '#fff',

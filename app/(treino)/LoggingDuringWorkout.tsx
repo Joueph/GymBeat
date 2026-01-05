@@ -1206,12 +1206,23 @@ export default function LoggingDuringWorkoutScreen() {
       // **[MODIFICADO] Lógica para atualizar o treino existente**
       // Se não criamos um novo treino (era um existente), verificamos se o usuário é o dono antes de atualizar.
       if (finalTreinoId && treinoId && typeof treinoId === 'string') {
+        console.log(`[handleFinishWorkout] Checking ownership. Owner: ${workoutOwnerId}, User: ${user.id}`);
         // CORREÇÃO: Verifica se o usuário é o dono do treino antes de tentar atualizar
         if (workoutOwnerId === user.id) {
           try {
             console.log('[handleFinishWorkout] Atualizando o modelo do treino original com as alterações...');
+
+            // Sanitize exercises for the template: keep weight/reps updates but reset completion status
+            const exercisesForTemplate = loggedExercises.map(ex => ({
+              ...ex,
+              series: ex.series.map(s => ({
+                ...s,
+                concluido: false // Reset completion for the template
+              }))
+            }));
+
             await updateTreino(treinoId, {
-              exercicios: loggedExercises
+              exercicios: exercisesForTemplate
             });
             console.log('[handleFinishWorkout] Modelo do treino atualizado com sucesso.');
           } catch (error) {
@@ -1219,7 +1230,7 @@ export default function LoggingDuringWorkoutScreen() {
             // Não bloqueamos o fluxo, apenas logamos o erro, pois salvar o log é a prioridade.
           }
         } else {
-          console.log('[handleFinishWorkout] Usuário não é o dono do treino original. Pulasndo atualização do modelo.');
+          console.log('[handleFinishWorkout] Usuário não é o dono do treino original. Pulando atualização do modelo.');
         }
       }
 

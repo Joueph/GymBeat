@@ -72,6 +72,14 @@ public class NotificationsLiveActivityModule: Module {
         }
     }
 
+    // NOVA FUNÇÃO: Lista atividades ativas
+    AsyncFunction("listActivities") { () -> [String] in
+        if #available(iOS 16.1, *) {
+            return Activity<GymBeatWidgetAttributes>.activities.map { $0.id }
+        }
+        return []
+    }
+
     // NOVA FUNÇÃO: Recarrega os widgets da Home Screen
     Function("reloadAllTimelines") {
       if #available(iOS 14.0, *) {

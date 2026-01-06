@@ -47,6 +47,10 @@ export async function endActivity(activityId: string): Promise<void> {
   return await NotificationsLiveActivityModule.endActivity(activityId);
 }
 
+export async function listActivities(): Promise<string[]> {
+  return await NotificationsLiveActivityModule.listActivities();
+}
+
 export function reloadWidgetTimelines() {
   return NotificationsLiveActivityModule.reloadAllTimelines();
 }

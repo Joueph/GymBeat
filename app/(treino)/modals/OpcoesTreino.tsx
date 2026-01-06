@@ -11,7 +11,8 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  TouchableWithoutFeedback,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ficha } from '../../../models/ficha';
@@ -39,16 +40,16 @@ export default function OpcoesTreinoScreen() {
   }, [user]);
 
   const handleNavigation = (route: Href) => {
-    // Navega diretamente para a tela de edição de treino, sem forçar a seleção de uma pasta.
-    // O treino será criado como "avulso" (sem fichaId) por padrão.
-    router.push(route);
+    // Intercepta a navegação para perguntar em qual ficha o usuário quer adicionar
+    setNextRoute(route);
+    setFolderModalVisible(true);
   };
 
   const handleSelectFicha = (fichaId: string) => {
     if (nextRoute) {
-      const routeObject = typeof nextRoute === 'string' 
+      const routeObject = typeof nextRoute === 'string'
         ? { pathname: nextRoute, params: { fichaId } }
-        : { pathname: nextRoute.pathname, params: { ...nextRoute.params, fichaId } };
+        : { pathname: nextRoute.pathname as string, params: { ...nextRoute.params, fichaId } };
 
       router.push(routeObject as Href);
       setFolderModalVisible(false);
@@ -76,7 +77,13 @@ export default function OpcoesTreinoScreen() {
       await addFicha(newFicha);
       setNewFolderName('');
       setNewFolderInputVisible(false);
-      router.back(); // Volta para a tela de treinos, que irá recarregar
+
+      // Refresh fichas list
+      setLoadingFichas(true);
+      getFichasByUsuarioId(user.id)
+        .then(setUserFichas)
+        .finally(() => setLoadingFichas(false));
+
     } catch (error) {
       console.error("Erro ao criar nova pasta:", error);
       Alert.alert("Erro", "Não foi possível criar a pasta.");
@@ -101,7 +108,7 @@ export default function OpcoesTreinoScreen() {
             onPress={() => handleNavigation({ pathname: '/(treino)/editarTreino', params: { fromConfig: 'true' } })}
           >
             <FontAwesome5 name="calendar-plus" size={24} color="#fff" style={styles.cardIcon} />
-            <Text style={styles.cardTitle}>Criar um treino para depois</Text>
+            <Text style={styles.cardTitle}>Criar treino para depois</Text>
             <Text style={styles.cardDescription}>Monte um treino e adicione a uma ficha para usar no futuro.</Text>
           </TouchableOpacity>
 
@@ -127,6 +134,9 @@ export default function OpcoesTreinoScreen() {
             />
             <TouchableOpacity style={styles.primaryButton} onPress={handleCreateNewFolder} disabled={isCreatingFolder}>
               {isCreatingFolder ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Criar</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.cancelLinkButton} onPress={() => setNewFolderInputVisible(false)}>
+              <Text style={styles.cancelLinkText}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -157,42 +167,52 @@ export default function OpcoesTreinoScreen() {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Modal para selecionar a pasta */}
+      {/* Modal para selecionar a pasta (Drawer Style) */}
       <Modal
         animationType="slide"
         transparent={true}
         visible={isFolderModalVisible}
         onRequestClose={() => setFolderModalVisible(false)}
       >
-        <View style={styles.modalCenteredView}>
-          <View style={styles.modalView}>
-            <Text style={styles.modalTitle}>Selecionar Pasta</Text>
-            {loadingFichas ? <ActivityIndicator color="#fff" /> : (
-              <FlatList
-                data={[
-                  // Adiciona manualmente a opção "Meus Treinos" no topo da lista
-                  { id: 'unassigned', nome: 'Meus Treinos (Avulsos)' },
-                  ...userFichas
-                ]}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity 
-                    style={styles.fichaOption} 
-                    onPress={() => {
-                      // 'unassigned' será tratado como null/undefined nas telas de destino
-                      handleSelectFicha(item.id === 'unassigned' ? 'unassigned' : item.id);
-                    }}
-                  >
-                    <Text style={styles.fichaOptionText}>{item.nome}</Text>
-                  </TouchableOpacity>
-                )}
-                style={{ width: '100%' }}
-              />
-            )}
-            <TouchableOpacity style={styles.cancelButton} onPress={() => setFolderModalVisible(false)}>
-              <Text style={styles.cancelButtonText}>Cancelar</Text>
-            </TouchableOpacity>
+        <TouchableWithoutFeedback onPress={() => setFolderModalVisible(false)}>
+          <View style={styles.modalOverlay} />
+        </TouchableWithoutFeedback>
+
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Onde deseja salvar?</Text>
           </View>
+
+          {loadingFichas ? <ActivityIndicator color="#fff" style={{ marginTop: 20 }} /> : (
+            <FlatList
+              data={[
+                { id: 'unassigned', nome: 'Meus Treinos (Avulsos)' },
+                ...userFichas
+              ]}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={{ paddingBottom: 40 }}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.fichaOption}
+                  onPress={() => {
+                    handleSelectFicha(item.id === 'unassigned' ? 'unassigned' : item.id);
+                  }}
+                >
+                  <View style={styles.iconContainer}>
+                    <FontAwesome name={item.id === 'unassigned' ? "list-ul" : "folder"} size={20} color="#fff" />
+                  </View>
+                  <Text style={styles.fichaOptionText}>{item.nome}</Text>
+                  <Ionicons name="chevron-forward" size={20} color="#666" />
+                </TouchableOpacity>
+              )}
+              style={{ width: '100%' }}
+            />
+          )}
+
+          <TouchableOpacity style={styles.cancelButton} onPress={() => setFolderModalVisible(false)}>
+            <Text style={styles.cancelButtonText}>Cancelar</Text>
+          </TouchableOpacity>
         </View>
       </Modal>
 
@@ -212,10 +232,10 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start', // Alinha à esquerda
+    justifyContent: 'flex-start',
     paddingVertical: 10,
     marginBottom: 20,
-    gap: 15, // Espaço entre o botão e o título
+    gap: 15,
   },
   backButton: { padding: 5 },
   headerTitle: {
@@ -286,52 +306,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2A2E37',
   },
-  // Modal Styles
-  modalCenteredView: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-  },
-  modalView: {
-    margin: 20,
-    backgroundColor: '#1f1f1f',
-    borderRadius: 20,
-    padding: 25,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-    width: '90%',
-  },
-  modalTitle: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  fichaOption: {
-    backgroundColor: '#2c2c2e',
-    padding: 15,
-    borderRadius: 10,
-    width: '100%',
-    marginBottom: 10,
-  },
-  fichaOptionText: {
-    color: '#fff',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  cancelButton: {
-    marginTop: 15,
-    padding: 10,
-  },
-  cancelButtonText: {
-    color: '#1cb0f6',
-    fontSize: 16,
-  },
   input: {
     width: '100%',
     backgroundColor: '#262A32',
@@ -340,7 +314,6 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 20,
     fontSize: 16,
-    // textAlign: 'center', // Removido para alinhar à esquerda
   },
   primaryButton: {
     backgroundColor: '#3B82F6',
@@ -353,5 +326,84 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  cancelLinkButton: {
+    marginTop: 15,
+    alignSelf: 'center',
+  },
+  cancelLinkText: {
+    color: '#888',
+    fontSize: 14,
+  },
+
+  // Drawer/Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  modalContent: {
+    backgroundColor: '#1A1D23',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: 40,
+    height: '50%', // Half screen
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  modalHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#444',
+    borderRadius: 2,
+    marginBottom: 15,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  fichaOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#262A32',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#3B82F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  fichaOptionText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    flex: 1,
+  },
+  cancelButton: {
+    marginTop: 15,
+    padding: 15,
+    alignItems: 'center',
+    width: '100%',
+  },
+  cancelButtonText: {
+    color: '#FF453A',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

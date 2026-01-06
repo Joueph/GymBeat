@@ -31,10 +31,11 @@ import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, u
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import * as NotificationsLiveActivity from '../../modules/notifications-live-activity'; // Adjust path if needed
-import { addLog } from '../../services/logService';
+// addLog removed
+import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
 import { cancelNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
-import { addTreino, getTreinoById, updateTreino } from '../../services/treinoService';
+import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { ExerciseDetailModal } from './modals/ExerciseDetailModal';
@@ -68,7 +69,21 @@ const toDate = (date: any): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+const cascadeUpdate = (series: SerieEdit[], index: number, field: keyof SerieEdit, oldValue: any): SerieEdit[] => {
+  const newSeries = [...series];
+  const newValue = newSeries[index][field];
 
+  for (let i = index + 1; i < newSeries.length; i++) {
+    // Look for values that match the *old* value of the changed set
+    // Using loose equality (==) for safety with number/string mix
+    if (newSeries[i][field] == oldValue) {
+      newSeries[i] = { ...newSeries[i], [field]: newValue };
+    } else {
+      break;
+    }
+  }
+  return newSeries;
+};
 
 const LoggedExerciseCard = ({
   item,
@@ -80,6 +95,7 @@ const LoggedExerciseCard = ({
   onPesoBarraChange,
   startRestTimer, // This prop is passed but its type needs to be updated
   onMenuStateChange,
+  exerciseIndex, // Destructure this!
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -88,8 +104,14 @@ const LoggedExerciseCard = ({
   onNotesChange: (notes: string) => void;
   userWeight: number;
   onPesoBarraChange: (newPesoBarra: number) => void; // New prop
-  startRestTimer: (duration: number, isExercise: boolean, timedSetInfo?: { exerciseIndex: number, setIndex: number }) => void;
+  startRestTimer: (
+    duration: number,
+    isExercise: boolean,
+    timedSetInfo?: { exerciseIndex: number, setIndex: number },
+    completedSetInfo?: { exerciseIndex: number, setIndex: number } // New arg
+  ) => void;
   onMenuStateChange: (isOpen: boolean) => void;
+  exerciseIndex: number;
 }) => {
   const [isDetailModalVisible, setDetailModalVisible] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
@@ -109,6 +131,9 @@ const LoggedExerciseCard = ({
       isWarmup: s.isWarmup || false,
     }))
   );
+
+  // Track the weight value on focus to enable cascade logic
+  const focusedWeightRef = React.useRef<number | null>(null);
 
   useEffect(() => {
     const allSetsCompleted = series.length > 0 && series.every(s => s.concluido);
@@ -171,14 +196,20 @@ const LoggedExerciseCard = ({
 
   const handleRepetitionsSave = (newReps: string) => {
     if (editingSetIndex === null) return;
-    const newSets = [...series];
+    let newSets = [...series];
+
+    const oldValue = newSets[editingSetIndex].repeticoes;
     newSets[editingSetIndex].repeticoes = newReps;
+
+    // Cascade
+    newSets = cascadeUpdate(newSets, editingSetIndex, 'repeticoes', oldValue);
+
     handleSeriesUpdate(newSets);
     setIsRepDrawerVisible(false);
     setEditingSetIndex(null);
   };
 
-  const handleToggleComplete = (index: number, exerciseIndex: number) => {
+  const handleToggleComplete = (index: number) => {
     const newSeries = [...series];
     const set = newSeries[index];
     const isCompleting = !set.concluido;
@@ -200,7 +231,14 @@ const LoggedExerciseCard = ({
           }
         } else {
           if (!nextSet || nextSet.type !== 'dropset') {
-            startRestTimer(item.restTime || 60, false);
+            // Pass completedSetInfo so startTimer knows we just finished this set
+            // even if parent state is stale
+            startRestTimer(
+              item.restTime || 60,
+              false,
+              undefined,
+              { exerciseIndex, setIndex: index }
+            );
           }
         }
       }
@@ -255,7 +293,7 @@ const LoggedExerciseCard = ({
               <FontAwesome5 name="fire" size={16} color="#FFA500" />
             </View>
           ) : (
-            <View style={[styles.seriesNumberContainer, setItem.concluido && styles.seriesNumberCompleted]}>
+            <View style={[styles.seriesNumberContainer]}>
               <Text style={styles.seriesNumberText}>
                 {series.slice(0, itemIndex + 1).filter(s => s.type !== 'dropset').length}
               </Text>
@@ -264,7 +302,11 @@ const LoggedExerciseCard = ({
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>{setItem.isTimeBased ? 'Tempo (s)' : 'Reps'}</Text>
             <TouchableOpacity
-              style={[styles.repButton, setItem.isTimeBased && styles.timeBasedButton]}
+              style={[
+                styles.repButton,
+                setItem.isTimeBased && styles.timeBasedButton,
+                (itemIndex > 0 && series[itemIndex - 1].repeticoes == setItem.repeticoes) && { opacity: 0.7 }
+              ]}
               onPress={() => {
                 if (setItem.isTimeBased) {
                   setEditingSetIndex(itemIndex);
@@ -295,20 +337,39 @@ const LoggedExerciseCard = ({
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Peso (kg)</Text>
               <TextInput
-                style={styles.setInput}
+                style={[
+                  styles.setInput,
+                  (itemIndex > 0 && series[itemIndex - 1].peso == setItem.peso) && { opacity: 0.7 }
+                ]}
                 placeholder="kg"
                 placeholderTextColor="#888"
                 keyboardType="decimal-pad"
                 editable={!setItem.isTimeBased}
                 value={String(setItem.peso || '')}
+                onFocus={() => {
+                  focusedWeightRef.current = typeof setItem.peso === 'number' ? setItem.peso : parseFloat(String(setItem.peso));
+                }}
                 onChangeText={(text) => {
                   const newSets = [...series];
                   newSets[itemIndex].peso = text as any;
+                  // Don't update state here if validation is strictly numerical, 
+                  // but we want to allow typing "1." so string is fine primarily.
+                  // However, cascade only on end editing.
+                  setSeries(newSets);
+                  // Note: calling onSeriesChange here might trigger upstream updates which is fine but inefficient if done per char?
+                  // Keeping original behavior: 
                   handleSeriesUpdate(newSets);
                 }}
                 onEndEditing={(e) => {
-                  const newSets = [...series];
-                  newSets[itemIndex].peso = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
+                  let newSets = [...series];
+                  const val = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
+                  newSets[itemIndex] = { ...newSets[itemIndex], peso: val };
+
+                  // Apply cascade
+                  if (focusedWeightRef.current !== null) {
+                    newSets = cascadeUpdate(newSets, itemIndex, 'peso', focusedWeightRef.current);
+                  }
+
                   handleSeriesUpdate(newSets);
                 }}
               />
@@ -316,7 +377,7 @@ const LoggedExerciseCard = ({
           )}
           <TouchableOpacity
             style={styles.checkboxContainer}
-            onPress={() => handleToggleComplete(itemIndex, 0)} // TODO: Pass correct exerciseIndex
+            onPress={() => handleToggleComplete(itemIndex)}
           >
             <FontAwesome name={setItem.concluido ? 'check-square' : 'square-o'} size={24} color={setItem.concluido ? '#3B82F6' : '#aaa'} />
           </TouchableOpacity>
@@ -554,8 +615,13 @@ const LoggedExerciseCard = ({
           onClose={() => setIsExerciseTimeDrawerVisible(false)}
           onSave={(newDuration: number) => {
             if (editingSetIndex !== null) {
-              const newSets = [...series];
+              let newSets = [...series];
+              const oldValue = newSets[editingSetIndex].repeticoes;
               newSets[editingSetIndex].repeticoes = String(newDuration);
+
+              // Cascade for time-based sets logic (if we treat time as 'reps' here)
+              newSets = cascadeUpdate(newSets, editingSetIndex, 'repeticoes', oldValue);
+
               handleSeriesUpdate(newSets);
             }
           }}
@@ -577,7 +643,7 @@ export default function LoggingDuringWorkoutScreen() {
   const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
   const [isModalVisible, setModalVisible] = useState(false);
   const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
-  const [isFinishing, setIsFinishing] = useState(false);
+  const { finishWorkout, isSaving: isFinishing } = useWorkoutOperations();
   const [workoutName, setWorkoutName] = useState('');
   const [isNameEdited, setIsNameEdited] = useState(false);
   const [isOverviewModalVisible, setOverviewModalVisible] = useState(false);
@@ -644,6 +710,28 @@ export default function LoggingDuringWorkoutScreen() {
     });
 
     return () => subscription.remove();
+  }, []); // Remove dependencies to ensure this runs only once on mount
+
+  // Effect to check for existing live activity on mount
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      NotificationsLiveActivity.listActivities().then(async activities => {
+        if (activities && activities.length > 0) {
+          console.log('[LiveActivity] Found existing activities:', activities);
+          // Use the first one
+          const activeId = activities[0];
+          setCurrentActivityId(activeId);
+
+          // Kill others if any
+          if (activities.length > 1) {
+            console.log('[LiveActivity] Killing duplicates...');
+            for (let i = 1; i < activities.length; i++) {
+              await NotificationsLiveActivity.endActivity(activities[i]);
+            }
+          }
+        }
+      }).catch(e => console.log('Error checking activities:', e));
+    }
   }, []);
 
   const formatDuration = (seconds: number) => {
@@ -673,10 +761,12 @@ export default function LoggingDuringWorkoutScreen() {
       lastUpdate: Date.now()
     };
 
-    await NotificationsLiveActivity.setWidgetData(
-      "widget_today_workout",
-      JSON.stringify(widgetData)
-    );
+    if (Platform.OS === 'ios') {
+      await NotificationsLiveActivity.setWidgetData(
+        "widget_today_workout",
+        JSON.stringify(widgetData)
+      );
+    }
   }, [workoutName, loggedExercises, elapsedTime]);
 
   // Atualiza o widget periodicamente ou quando houver mudanças relevantes
@@ -893,11 +983,23 @@ export default function LoggingDuringWorkoutScreen() {
     const timestamp = isRest ? Date.now() + (durationOrTimestamp * 1000) : 0;
 
     try {
-      if (currentActivityId) {
+      // Check if we have a locally tracked ID
+      let activeId = currentActivityId;
+
+      // Double check with native side if we don't have one locally, just in case
+      if (!activeId) {
+        const activities = await NotificationsLiveActivity.listActivities();
+        if (activities.length > 0) {
+          activeId = activities[0];
+          setCurrentActivityId(activeId);
+        }
+      }
+
+      if (activeId) {
         // ATUALIZA a existente (R1)
-        console.log('[LiveActivity] 🔄 Atualizando atividade existente:', currentActivityId);
+        console.log('[LiveActivity] 🔄 Atualizando atividade existente:', activeId);
         await NotificationsLiveActivity.updateActivity(
-          currentActivityId,
+          activeId,
           timestamp,
           exerciseName,
           setIndex + 1,
@@ -907,8 +1009,7 @@ export default function LoggingDuringWorkoutScreen() {
           dropsetCount
         );
       } else {
-        console.log('[LiveActivity] ▶️ Attempting to start new activity with state (timestamp:', timestamp, 'exerciseName:', exerciseName, 'set:', setIndex + 1, '/', totalSets, 'weight:', weight, 'reps:', reps, 'dropsetCount:', dropsetCount, ')');
-        console.log('[LiveActivity] ▶️ Iniciando nova atividade');
+        console.log('[LiveActivity] ▶️ Attempting to start new activity');
         const id = await NotificationsLiveActivity.startActivity(
           timestamp,
           exerciseName,
@@ -928,7 +1029,8 @@ export default function LoggingDuringWorkoutScreen() {
   const startTimer = async (
     duration: number,
     isExerciseTimer: boolean,
-    timedSetInfo?: { exerciseIndex: number; setIndex: number }
+    timedSetInfo?: { exerciseIndex: number; setIndex: number },
+    completedSetInfo?: { exerciseIndex: number; setIndex: number }
   ) => {
     // Cancela qualquer timer que esteja rodando
     cancelAnimation(progress);
@@ -947,7 +1049,6 @@ export default function LoggingDuringWorkoutScreen() {
     }
 
     // Iniciando live activity no IOS
-    // --- LIVE ACTIVITY LOGIC ---
     // --- LIVE ACTIVITY LOGIC (R1 & R3) ---
     if (Platform.OS === 'ios') {
       let exerciseName = "Treino Livre";
@@ -968,28 +1069,61 @@ export default function LoggingDuringWorkoutScreen() {
         const set = exercise.series[timedSetInfo.setIndex];
         weightText = `${set.peso}kg`;
         repsText = `${set.repeticoes}`;
-      }
-      else {
+      } else {
         // Timer de descanso (ou transição entre séries)
-        // Busca o exercício ativo (não concluído)
-        const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+        let targetExerciseIndex = -1;
+        let targetSetIndex = -1;
 
-        if (currentExercise) {
+        if (completedSetInfo) {
+          // Priority: Calculate next set based on what was just completed (avoids stale state)
+          const ex = loggedExercises[completedSetInfo.exerciseIndex];
+          const nextSetIdx = completedSetInfo.setIndex + 1;
+
+          if (ex && nextSetIdx < ex.series.length) {
+            // Next set in SAME exercise
+            targetExerciseIndex = completedSetInfo.exerciseIndex;
+            targetSetIndex = nextSetIdx;
+          } else {
+            // Exercise finished, find next exercise with remaining sets
+            const nextExIdx = loggedExercises.findIndex((e, i) => i > completedSetInfo.exerciseIndex && !e.series.every(s => s.concluido));
+            if (nextExIdx !== -1) {
+              targetExerciseIndex = nextExIdx;
+              targetSetIndex = loggedExercises[nextExIdx].series.findIndex(s => !s.concluido);
+              if (targetSetIndex === -1) targetSetIndex = 0;
+            } else {
+              // Fallback: stay on last exercise if everything is done
+              targetExerciseIndex = completedSetInfo.exerciseIndex;
+              targetSetIndex = completedSetInfo.setIndex;
+            }
+          }
+        } else {
+          // Fallback: Use current state to find first incomplete set
+          const idx = loggedExercises.findIndex(ex => !ex.series.every(s => s.concluido));
+          if (idx !== -1) {
+            targetExerciseIndex = idx;
+            targetSetIndex = loggedExercises[idx].series.findIndex(s => !s.concluido);
+          } else if (loggedExercises.length > 0) {
+            targetExerciseIndex = 0;
+            targetSetIndex = 0;
+          }
+        }
+
+        if (targetExerciseIndex !== -1 && targetSetIndex !== -1 && loggedExercises[targetExerciseIndex]) {
+          const currentExercise = loggedExercises[targetExerciseIndex];
           exerciseName = currentExercise.modelo.nome;
           totalSets = currentExercise.series.length;
+          setIndexForActivity = targetSetIndex;
 
-          // Tenta achar a próxima série a ser feita
-          const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-          setIndexForActivity = nextSetIndex !== -1 ? nextSetIndex : 0;
-
-          const nextSet = currentExercise.series[setIndexForActivity];
-          weightText = `${nextSet.peso}kg`;
-          repsText = `${nextSet.repeticoes}`;
-          dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length;
+          const nextSet = currentExercise.series[targetSetIndex];
+          if (nextSet) {
+            weightText = `${nextSet.peso}kg`;
+            repsText = `${nextSet.repeticoes}`;
+            dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length;
+          }
         }
       }
 
-      // Se for timer de exercício OU descanso, queremos mostrar o relógio (isRest=true no helper ativa o calculo de timestamp futuro)
+      // Se for timer de exercício OU descanso, queremos mostrar o relógio
       await manageLiveActivity(
         true,
         duration,
@@ -1001,7 +1135,7 @@ export default function LoggingDuringWorkoutScreen() {
         dropsCount
       );
     }
-  }
+  };
   // Efeito unificado para ambos os timers
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
@@ -1050,10 +1184,28 @@ export default function LoggingDuringWorkoutScreen() {
           const remainingTime = Math.max(0, maxRestTime - elapsedSeconds);
           setRestCountdown(remainingTime);
 
-          // Se o tempo acabou, encerra a Live Activity
+          // Se o tempo acabou, NÃO encerra, apenas atualiza para estado estático (info do próximo exercício)
           if (remainingTime <= 0 && currentActivityId && Platform.OS === 'ios') {
-            NotificationsLiveActivity.endActivity(currentActivityId);
-            setCurrentActivityId(null);
+            // Encontra o exercício atual para mostrar info estática da próxima série
+            // O timer acabou de acabar (Descanso), então provavelmente vamos fazer a série que estava pendente.
+            // setIndexForActivity acima pegava o 'nextSetIndex'.
+            const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
+            if (currentExercise) {
+              const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
+              const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
+              const nextSet = currentExercise.series[setIndex];
+
+              manageLiveActivity(
+                false, // isRest = false -> static
+                0,
+                currentExercise.modelo.nome,
+                setIndex,
+                currentExercise.series.length,
+                `${nextSet.peso}kg`,
+                `${nextSet.repeticoes}`,
+                0
+              );
+            }
           }
           if (remainingTime <= 0) {
             setIsResting(false);
@@ -1170,119 +1322,17 @@ export default function LoggingDuringWorkoutScreen() {
         return;
       }
 
-      setIsFinishing(true);
-      const finalEndTime = new Date();
-
-      // Adicionado log para depuração
-      console.log('[handleFinishWorkout] Iniciando finalização do treino.');
-      console.log('[handleFinishWorkout] treinoId:', treinoId, '| fichaId:', fichaId);
-
-      let finalTreinoId = treinoId;
-
-      // Se for um treino livre (sem treinoId), cria um novo documento de treino primeiro.
-      if (!finalTreinoId) {
-        console.log('[handleFinishWorkout] Detectado treino livre. Criando novo documento de treino...');
-        const novoTreinoData: Omit<Treino, 'id'> = {
-          nome: workoutName,
-          usuarioId: user.id,
-          exercicios: loggedExercises,
-          diasSemana: [],
-          fichaId: null, // Treinos livres não pertencem a uma ficha.
-          intervalo: { min: 1, seg: 0 }, // Intervalo padrão
-          ordem: 999,
-          descricao: ''
-        };
-        try {
-          finalTreinoId = await addTreino(novoTreinoData);
-          console.log('[handleFinishWorkout] Novo treino livre criado com ID:', finalTreinoId);
-        } catch (treinoError) {
-          console.error('[handleFinishWorkout] Erro ao criar documento do treino livre:', treinoError);
-          Alert.alert('Erro', 'Não foi possível criar o registro do treino antes de salvar o log.');
-          setIsFinishing(false);
-          return;
-        }
-      }
-
-      // **[MODIFICADO] Lógica para atualizar o treino existente**
-      // Se não criamos um novo treino (era um existente), verificamos se o usuário é o dono antes de atualizar.
-      if (finalTreinoId && treinoId && typeof treinoId === 'string') {
-        console.log(`[handleFinishWorkout] Checking ownership. Owner: ${workoutOwnerId}, User: ${user.id}`);
-        // CORREÇÃO: Verifica se o usuário é o dono do treino antes de tentar atualizar
-        if (workoutOwnerId === user.id) {
-          try {
-            console.log('[handleFinishWorkout] Atualizando o modelo do treino original com as alterações...');
-
-            // Sanitize exercises for the template: keep weight/reps updates but reset completion status
-            const exercisesForTemplate = loggedExercises.map(ex => ({
-              ...ex,
-              series: ex.series.map(s => ({
-                ...s,
-                concluido: false // Reset completion for the template
-              }))
-            }));
-
-            await updateTreino(treinoId, {
-              exercicios: exercisesForTemplate
-            });
-            console.log('[handleFinishWorkout] Modelo do treino atualizado com sucesso.');
-          } catch (error) {
-            console.error('[handleFinishWorkout] Erro ao atualizar o modelo do treino:', error);
-            // Não bloqueamos o fluxo, apenas logamos o erro, pois salvar o log é a prioridade.
-          }
-        } else {
-          console.log('[handleFinishWorkout] Usuário não é o dono do treino original. Pulando atualização do modelo.');
-        }
-      }
-
-      try {
-        const newLog: Partial<Log> = {
-          usuarioId: user.id,
-          treino: {
-            id: finalTreinoId,
-            // CORREÇÃO: Usar `null` em vez de 'null' como string.
-            // O `as any` é um truque para contornar o erro do TypeScript, permitindo que o valor `null`
-            // seja enviado para o Firebase, que é o que a função `addLog` espera para campos vazios.
-            fichaId: (fichaId || null) as any,
-            nome: workoutName,
-            usuarioId: user.id,
-            exercicios: loggedExercises,
-            diasSemana: [],
-            intervalo: { min: 0, seg: 0 },
-            ordem: 0,
-            descricao: ''
-          },
-          exercicios: loggedExercises,
-          horarioInicio: startTime,
-          horarioFim: finalEndTime,
-          status: 'concluido',
-          cargaAcumulada: totalLoad,
-          exerciciosFeitos: loggedExercises.filter(ex => ex.series.some(s => s.concluido)),
-          nomeTreino: workoutName,
-          observacoes: loggedExercises.map((ex) => ex.notes).filter(Boolean).join('; '),
-        };
-
-        // Adicionado log para inspecionar o objeto que será salvo
-        console.log('[handleFinishWorkout] Objeto do log pronto para ser salvo:', JSON.stringify(newLog, null, 2));
-
-        const newLogId = await addLog(newLog);
-
-        // End Live Activity when workout finishes
-        if (currentActivityId && Platform.OS === 'ios') {
-          await NotificationsLiveActivity.endActivity(currentActivityId);
-          setCurrentActivityId(null);
-        }
-
-        console.log('[handleFinishWorkout] Log salvo com sucesso. ID:', newLogId);
-
-        await cacheActiveWorkoutLog(null);
-
-        router.replace({ pathname: '/(treino)/treinoCompleto', params: { logId: newLogId } });
-
-      } catch (error) {
-        console.error('[handleFinishWorkout] Erro ao salvar o log do treino:', error);
-        Alert.alert('Erro', 'Não foi possível salvar o log do treino.');
-        setIsFinishing(false);
-      }
+      await finishWorkout({
+        user,
+        workoutName,
+        loggedExercises,
+        startTime,
+        treinoId: treinoId as string | undefined, // Type assertion as it comes from params
+        fichaId: fichaId as string | undefined,
+        workoutOwnerId,
+        totalLoad,
+        currentActivityId
+      });
     };
 
     if (allSetsCompleted) {
@@ -1474,6 +1524,7 @@ export default function LoggingDuringWorkoutScreen() {
                     <LoggedExerciseCard
                       item={item}
                       userWeight={userWeight}
+                      exerciseIndex={index} // Pass correct index
                       onSeriesChange={(newSeries) =>
                         handleUpdateExerciseSeries(index, newSeries)
                       }
@@ -1489,7 +1540,14 @@ export default function LoggingDuringWorkoutScreen() {
                         setLoggedExercises(updatedExercises);
                       }}
                       onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
-                      startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
+                      startRestTimer={(duration, isExercise, timedSetInfo, completedSetInfo) =>
+                        startTimer(
+                          duration,
+                          isExercise,
+                          timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined,
+                          completedSetInfo
+                        )
+                      }
                       onMenuStateChange={setIsMenuOpen}
                     />
                   );

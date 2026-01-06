@@ -96,9 +96,6 @@ struct GymBeatWidgetLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                Image(systemName: "dumbbell.fill")
-                    .foregroundColor(gymBeatBlue) // R2
-            } compactTrailing: {
                 if isTimerActive {
                     Text(timerInterval: Date()...Date(timeIntervalSince1970: context.state.deadline / 1000), countsDown: true)
                         .monospacedDigit()
@@ -108,9 +105,20 @@ struct GymBeatWidgetLiveActivity: Widget {
                      Text("\(context.state.currentSet)/\(context.state.totalSets)")
                         .foregroundColor(gymBeatBlue) // R2
                 }
-            } minimal: {
+            } compactTrailing: {
                 Image(systemName: isTimerActive ? "timer" : "dumbbell.fill")
                     .foregroundColor(gymBeatBlue) // R2
+            } minimal: {
+                if isTimerActive {
+                    Text(timerInterval: Date()...Date(timeIntervalSince1970: context.state.deadline / 1000), countsDown: true)
+                        .monospacedDigit()
+                        .font(.system(size: 10)) // Fonte pequena para caber
+                        .foregroundColor(gymBeatBlue)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Image(systemName: "dumbbell.fill")
+                        .foregroundColor(gymBeatBlue)
+                }
             }
         }
     }

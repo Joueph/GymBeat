@@ -1,6 +1,7 @@
+import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { getLogsByUsuarioId } from '@/services/logService';
-import { addTreino, deleteTreino, getTreinoById, updateTreino } from '@/services/treinoService';
+import { deleteTreino, getTreinoById } from '@/services/treinoService';
 import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -33,6 +34,7 @@ import { Treino } from '../../models/treino';
 import { getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
+import { WorkoutReviewModal } from './modals/modalReviewTreinos';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
 import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
@@ -40,6 +42,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// ... interfaces
 interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
@@ -67,6 +70,44 @@ const formatRestTime = (seconds: number) => {
   }
   return minutes > 0 ? `${minutes} min` : `${remainingSeconds} seg`;
 };
+
+const formatDate = (date: any): string => {
+  if (!date) return '-';
+  const d = date.toDate ? date.toDate() : new Date(date);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
+const calculateDuration = (start: any, end: any): string => {
+  if (!start || !end) return '-';
+  const startDate = start.toDate ? start.toDate() : new Date(start);
+  const endDate = end.toDate ? end.toDate() : new Date(end);
+  const diffMs = endDate.getTime() - startDate.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  return `${diffMins} min`;
+};
+
+const SessionHistoryItem = ({ log, onPress }: { log: Log; onPress: () => void }) => (
+  <TouchableOpacity style={styles.historyItem} onPress={onPress}>
+    <View style={styles.historyLeft}>
+      <FontAwesome5 name="calendar-alt" size={14} color="#888" style={{ marginRight: 8 }} />
+      <Text style={styles.historyDate}>{formatDate(log.horarioFim || log.horarioInicio)}</Text>
+    </View>
+    <View style={styles.historyRight}>
+      <View style={styles.historyStat}>
+        <FontAwesome5 name="clock" size={12} color="#666" style={{ marginRight: 4 }} />
+        <Text style={styles.historyValue}>{calculateDuration(log.horarioInicio, log.horarioFim)}</Text>
+      </View>
+      {log.cargaAcumulada ? (
+        <View style={[styles.historyStat, { marginLeft: 12 }]}>
+          <FontAwesome5 name="weight-hanging" size={12} color="#666" style={{ marginRight: 4 }} />
+          <Text style={styles.historyValue}>{Math.round(log.cargaAcumulada)}kg</Text>
+        </View>
+      ) : null}
+      <FontAwesome5 name="chevron-right" size={12} color="#444" style={{ marginLeft: 12 }} />
+    </View>
+  </TouchableOpacity>
+);
 
 const cascadeUpdate = (series: SerieEdit[], index: number, field: keyof SerieEdit, oldValue: any): SerieEdit[] => {
   const newSeries = [...series];
@@ -320,7 +361,7 @@ export default function EditarTreinoScreen() {
 
   const [treino, setTreino] = useState<Treino | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const { saveTreino, isSaving } = useWorkoutOperations();
   const [isModalVisible, setModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
@@ -334,8 +375,19 @@ export default function EditarTreinoScreen() {
   const [allUserLogs, setAllUserLogs] = useState<Log[]>([]);
   const [carouselIndex, setCarouselIndex] = useState(0); // Track active carousel page
 
+  // State for Review Modal
+  const [selectedLog, setSelectedLog] = useState<Log | null>(null);
+  const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
+
 
   const carouselRef = useAnimatedRef<any>();
+
+  // ... (existing code) ...
+
+  const handleOpenReviewModal = (log: Log) => {
+    setSelectedLog(log);
+    setIsReviewModalVisible(true);
+  };
 
   const hasRelevantLogs = useMemo(() => {
     if (!treinoId || !allUserLogs || allUserLogs.length === 0) {
@@ -562,20 +614,17 @@ export default function EditarTreinoScreen() {
 
   const handleSave = async () => {
     if (!treino) return;
-    setIsSaving(true);
-    try {
-      if (treino.id && treino.id !== '') {
-        await updateTreino(treino.id, treino);
-      } else {
-        const newTreinoId = await addTreino(treino);
-        setTreino(prev => prev ? { ...prev, id: newTreinoId } : null);
+
+    // Validate if it is really a new workout or an update
+    const isNew = !treino.id || treino.id === '';
+
+    const savedId = await saveTreino(treino, isNew);
+
+    if (savedId) {
+      if (isNew) {
+        setTreino(prev => prev ? { ...prev, id: savedId } : null);
       }
       setIsEditing(false);
-    } catch (error) {
-      console.error("Erro ao salvar treino:", error);
-      Alert.alert('Erro', 'Não foi possível salvar o treino.');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -851,6 +900,30 @@ export default function EditarTreinoScreen() {
                   <Text style={styles.deleteWorkoutButtonText}>Apagar Treino</Text>
                 </TouchableOpacity>
               )}
+
+              {treinoId && hasRelevantLogs && (
+                <View style={styles.historySection}>
+                  <Text style={styles.sectionTitle}>Histórico de Sessões</Text>
+                  {allUserLogs
+                    .filter(log => log.treino?.id === treinoId && (log.horarioFim || log.status === 'concluido'))
+                    .sort((a, b) => {
+                      const dateA = a.horarioFim?.toDate ? a.horarioFim.toDate() : new Date(a.horarioFim || 0);
+                      const dateB = b.horarioFim?.toDate ? b.horarioFim.toDate() : new Date(b.horarioFim || 0);
+                      return dateB.getTime() - dateA.getTime();
+                    })
+                    .slice(0, 5)
+                    .map(log => (
+                      <SessionHistoryItem
+                        key={log.id}
+                        log={log}
+                        onPress={() => handleOpenReviewModal(log)}
+                      />
+                    ))}
+                  {allUserLogs.filter(log => log.treino?.id === treinoId).length === 0 && (
+                    <Text style={styles.emptyHistoryText}>Nenhuma sessão realizada ainda.</Text>
+                  )}
+                </View>
+              )}
             </>
           }
           contentContainerStyle={{ paddingBottom: 130 }}
@@ -906,6 +979,13 @@ export default function EditarTreinoScreen() {
           if (!isEditing) setIsEditing(true);
           setTreino(novoTreino);
         }}
+      />
+
+      <WorkoutReviewModal
+        visible={isReviewModalVisible}
+        onClose={() => setIsReviewModalVisible(false)}
+        initialLog={selectedLog}
+        allUserLogs={allUserLogs}
       />
 
       <OngoingWorkoutFooter />
@@ -1235,4 +1315,47 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   customRestTimeButton: { backgroundColor: '#555' },
+  historySection: {
+    marginTop: 30,
+    marginBottom: 20,
+    paddingHorizontal: 8,
+  },
+  historyItem: {
+    backgroundColor: '#1A1D23',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  historyLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyDate: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  historyStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyValue: {
+    color: '#ccc',
+    fontSize: 12,
+  },
+  emptyHistoryText: {
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
+  },
 });

@@ -32,7 +32,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import * as NotificationsLiveActivity from '../../modules/notifications-live-activity'; // Adjust path if needed
 // addLog removed
+import { MachineChooserDrawer } from '@/components/MachineChooserDrawer';
 import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
+import { getLastLogForMachine } from '@/services/machineService';
 import { cancelNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
 import { getTreinoById } from '../../services/treinoService';
@@ -57,6 +59,8 @@ interface SerieEdit extends Serie {
 export interface LoggedExercise extends Exercicio { // Adicionei restTime aqui
   notes: string;
   restTime: number;
+  machineName?: string; // For display
+
 
   // Futuramente, podemos adicionar mais propriedades específicas de log
 }
@@ -93,9 +97,10 @@ const LoggedExerciseCard = ({
   onNotesChange,
   userWeight,
   onPesoBarraChange,
-  startRestTimer, // This prop is passed but its type needs to be updated
+  startRestTimer,
   onMenuStateChange,
-  exerciseIndex, // Destructure this!
+  exerciseIndex,
+  onOpenMachineDrawer,
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -103,15 +108,16 @@ const LoggedExerciseCard = ({
   onRestTimeChange: (newRestTime: number) => void;
   onNotesChange: (notes: string) => void;
   userWeight: number;
-  onPesoBarraChange: (newPesoBarra: number) => void; // New prop
+  onPesoBarraChange: (newPesoBarra: number) => void;
   startRestTimer: (
     duration: number,
     isExercise: boolean,
     timedSetInfo?: { exerciseIndex: number, setIndex: number },
-    completedSetInfo?: { exerciseIndex: number, setIndex: number } // New arg
+    completedSetInfo?: { exerciseIndex: number, setIndex: number }
   ) => void;
   onMenuStateChange: (isOpen: boolean) => void;
   exerciseIndex: number;
+  onOpenMachineDrawer: () => void;
 }) => {
   const [isDetailModalVisible, setDetailModalVisible] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
@@ -134,6 +140,17 @@ const LoggedExerciseCard = ({
 
   // Track the weight value on focus to enable cascade logic
   const focusedWeightRef = React.useRef<number | null>(null);
+
+  // Sync state with props when machine changes or external updates occur
+  useEffect(() => {
+    setSeries(item.series.map((s, i) => ({
+      ...s,
+      id: s.id || `set-${Date.now()}-${i}`,
+      type: s.type || 'normal',
+      concluido: s.concluido || false,
+      isWarmup: s.isWarmup || false,
+    })));
+  }, [item.series, item]);
 
   useEffect(() => {
     const allSetsCompleted = series.length > 0 && series.every(s => s.concluido);
@@ -427,6 +444,18 @@ const LoggedExerciseCard = ({
               />
             </View>
 
+            {/* Machine Chooser Marker */}
+            <TouchableOpacity
+              style={styles.machineMarker}
+              onPress={onOpenMachineDrawer}
+            >
+              <FontAwesome5 name="dumbbell" size={12} color="#3B82F6" style={{ marginRight: 6 }} />
+              <Text style={styles.machineMarkerText}>
+                {(item.machineId && item.machineName) ? item.machineName : (item.machineId ? 'Máquina Selecionada' : 'Exercício Padrão')}
+              </Text>
+              <FontAwesome name="chevron-down" size={10} color="#3B82F6" style={{ marginLeft: 6 }} />
+            </TouchableOpacity>
+
             <View>
               {series.map((s, index) => renderSetItem({ item: s, getIndex: () => index }))}
             </View>
@@ -672,6 +701,58 @@ export default function LoggingDuringWorkoutScreen() {
   const scrollY = useSharedValue(0); // Restaurado
   // Estado para armazenar o ID do dono do treino original
   const [workoutOwnerId, setWorkoutOwnerId] = useState<string | null>(null);
+
+  // Machine Drawer State
+  const [isMachineDrawerVisible, setIsMachineDrawerVisible] = useState(false);
+  const [exerciseForMachine, setExerciseForMachine] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+
+  const handleMachineSelect = async (machineId: string | undefined, machineName: string | undefined, shouldClose: boolean = true) => {
+    if (!exerciseForMachine) return;
+
+    const { index, exercise } = exerciseForMachine;
+    const newExercises = [...loggedExercises];
+
+    // Update machine info
+    const updatedExercise = {
+      ...exercise,
+      machineId: machineId,
+      machineName: machineName
+    };
+
+    // If a machine is selected, try to fetch last log stats
+    if (machineId && user) {
+      try {
+        const lastLog = await getLastLogForMachine(exercise.modeloId, machineId, user.id);
+        if (lastLog && lastLog.exercicios) {
+          const prevEx = lastLog.exercicios.find(e => e.modeloId === exercise.modeloId && e.machineId === machineId);
+          if (prevEx && prevEx.series && prevEx.series.length > 0) {
+            updatedExercise.series = updatedExercise.series.map((s, i) => {
+              const prevSet = prevEx.series[i];
+              if (prevSet) {
+                return {
+                  ...s,
+                  repeticoes: prevSet.repeticoes,
+                  peso: prevSet.peso,
+                };
+              }
+              return s;
+            });
+          }
+        }
+      } catch (e) {
+        console.log("Error fetching machine history:", e);
+      }
+    }
+
+    (updatedExercise as any).machineName = machineName;
+
+    newExercises[index] = updatedExercise;
+    setLoggedExercises(newExercises);
+    if (shouldClose) {
+      setIsMachineDrawerVisible(false);
+      setExerciseForMachine(null);
+    }
+  }
 
   const appState = React.useRef(AppState.currentState);
 
@@ -1549,6 +1630,10 @@ export default function LoggingDuringWorkoutScreen() {
                         )
                       }
                       onMenuStateChange={setIsMenuOpen}
+                      onOpenMachineDrawer={() => {
+                        setExerciseForMachine({ index, exercise: item });
+                        setIsMachineDrawerVisible(true);
+                      }}
                     />
                   );
                 }}
@@ -1621,6 +1706,15 @@ export default function LoggingDuringWorkoutScreen() {
                 userWeight={userWeight}
                 onEditExercise={handleEditExerciseFromOverview} />
             )}
+
+            <MachineChooserDrawer
+              visible={isMachineDrawerVisible}
+              onClose={() => setIsMachineDrawerVisible(false)}
+              onSelectMachine={handleMachineSelect}
+              exerciseId={exerciseForMachine?.exercise.modeloId || ''}
+              currentMachineId={exerciseForMachine?.exercise.machineId}
+            />
+
           </KeyboardAvoidingView>
         </SafeAreaView>
         {(isResting || isDoingExercise) && (
@@ -2208,5 +2302,23 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     zIndex: 1, // Garante que o overlay fique sobre o conteúdo mas abaixo do menu
+  },
+  machineMarker: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    backgroundColor: '#1c1c1e', // darker contrast
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  machineMarkerText: {
+    color: '#3B82F6',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

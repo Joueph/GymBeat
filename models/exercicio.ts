@@ -41,5 +41,7 @@ export interface Exercicio {
   series: Serie[];
   isBiSet?: boolean;
   pesoBarra?: number;
+  machineId?: string; // ID da máquina selecionada
+  machineName?: string; // Nome da máquina para exibição UI
   // Outros campos como tempo de descanso, anotações, etc. podem ser adicionados aqui
 }

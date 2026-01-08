@@ -86,6 +86,12 @@ match /treinos/{treinoId} {
                     request.resource.data.fichaId == null);
 }
 
+match /machines/{machineId} {
+  allow read: if isOwner(resource.data.userId);
+  allow create: if isOwner(request.resource.data.userId);
+  allow update, delete: if isOwner(resource.data.userId);
+}
+
 // =================================================================
 // Regras para a Coleção de Logs
 // =================================================================

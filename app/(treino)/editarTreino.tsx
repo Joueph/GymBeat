@@ -1,6 +1,8 @@
+import { MachineChooserDrawer } from '@/components/MachineChooserDrawer';
 import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { getLogsByUsuarioId } from '@/services/logService';
+import { getLastLogForMachine } from '@/services/machineService';
 import { deleteTreino, getTreinoById } from '@/services/treinoService';
 import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -60,6 +62,7 @@ interface ExerciseItemProps {
   onOpenTimeDrawer: (exerciseIndex: number, setIndex: number) => void;
   onOpenRestTimeModal: (exerciseIndex: number) => void;
   setIsEditing: (isEditing: boolean) => void;
+  onOpenMachineDrawer: (exerciseIndex: number) => void;
 }
 
 const formatRestTime = (seconds: number) => {
@@ -138,6 +141,7 @@ const ExerciseItem = ({
   onOpenTimeDrawer,
   onOpenRestTimeModal,
   setIsEditing,
+  onOpenMachineDrawer,
 }: ExerciseItemProps) => {
   const [series, setSeries] = useState<SerieEdit[]>(
     item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' }))
@@ -316,6 +320,18 @@ const ExerciseItem = ({
           </View>
         )}
         <View style={styles.seriesContainer}>
+          {/* Machine Chooser Marker */}
+          <TouchableOpacity
+            style={styles.machineMarker}
+            onPress={() => onOpenMachineDrawer(exerciseIndex)}
+          >
+            <FontAwesome5 name="dumbbell" size={12} color="#3B82F6" style={{ marginRight: 6 }} />
+            {/* Machine Name Display */}
+            <Text style={styles.machineMarkerText}>
+              {(item.machineId && item.machineName) ? item.machineName : (item.machineId ? 'Máquina Selecionada' : 'Exercício Padrão')}
+            </Text>
+            <FontAwesome name="chevron-down" size={10} color="#3B82F6" style={{ marginLeft: 6 }} />
+          </TouchableOpacity>
           {series.length > 0 && renderSeriesHeader()}
           {series.map(renderSetItem)}
         </View>
@@ -387,6 +403,58 @@ export default function EditarTreinoScreen() {
   const handleOpenReviewModal = (log: Log) => {
     setSelectedLog(log);
     setIsReviewModalVisible(true);
+  };
+
+  // Machine Drawer Logic
+  const [isMachineDrawerVisible, setIsMachineDrawerVisible] = useState(false);
+  const [exerciseForMachine, setExerciseForMachine] = useState<{ index: number, exercise: Exercicio } | null>(null);
+
+  const handleMachineSelect = async (machineId: string | undefined, machineName: string | undefined, shouldClose: boolean = true) => {
+    if (!exerciseForMachine || !treino) return;
+
+    const { index, exercise } = exerciseForMachine;
+    const newExercises = [...treino.exercicios];
+
+    const updatedExercise = {
+      ...exercise,
+      machineId: machineId,
+      machineName: machineName,
+    };
+
+    // For display purposes we just set it above
+
+    if (machineId && user) {
+      try {
+        const lastLog = await getLastLogForMachine(exercise.modeloId, machineId, user.id);
+        if (lastLog && lastLog.exercicios) {
+          const prevEx = lastLog.exercicios.find(e => e.modeloId === exercise.modeloId && e.machineId === machineId);
+          if (prevEx && prevEx.series && prevEx.series.length > 0) {
+            updatedExercise.series = updatedExercise.series.map((s, i) => {
+              const prevSet = prevEx.series[i];
+              if (prevSet) {
+                return {
+                  ...s,
+                  repeticoes: prevSet.repeticoes,
+                  peso: prevSet.peso,
+                };
+              }
+              return s;
+            });
+          }
+        }
+      } catch (e) {
+        console.log("Error fetching machine history:", e);
+      }
+    }
+
+    newExercises[index] = updatedExercise;
+    setTreino({ ...treino, exercicios: newExercises });
+    if (!isEditing) setIsEditing(true);
+
+    if (shouldClose) {
+      setIsMachineDrawerVisible(false);
+      setExerciseForMachine(null);
+    }
   };
 
   const hasRelevantLogs = useMemo(() => {
@@ -715,7 +783,13 @@ export default function EditarTreinoScreen() {
         onOpenRestTimeModal={handleOpenRestTimeModal}
         isActive={isActive}
         onUpdateExercise={(ex) => handleUpdateExercise(ex, index)}
-        onRemoveExercise={() => handleRemoveExercise(index)} setIsEditing={setIsEditing} />
+        onRemoveExercise={() => handleRemoveExercise(index)}
+        setIsEditing={setIsEditing}
+        onOpenMachineDrawer={() => {
+          setExerciseForMachine({ index, exercise: item });
+          setIsMachineDrawerVisible(true);
+        }}
+      />
     );
   }, [treino]);
 
@@ -986,6 +1060,14 @@ export default function EditarTreinoScreen() {
         onClose={() => setIsReviewModalVisible(false)}
         initialLog={selectedLog}
         allUserLogs={allUserLogs}
+      />
+
+      <MachineChooserDrawer
+        visible={isMachineDrawerVisible}
+        onClose={() => setIsMachineDrawerVisible(false)}
+        onSelectMachine={handleMachineSelect}
+        exerciseId={exerciseForMachine?.exercise.modeloId || ''}
+        currentMachineId={exerciseForMachine?.exercise.machineId}
       />
 
       <OngoingWorkoutFooter />
@@ -1357,5 +1439,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
     fontStyle: 'italic',
+  },
+
+  machineMarker: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    backgroundColor: '#1c1c1e', // darker contrast
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 8, // inside seriesContainer usually has padding, but here we are inside it.
+    marginLeft: 10,
+    marginTop: 5,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  machineMarkerText: {
+    color: '#3B82F6',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

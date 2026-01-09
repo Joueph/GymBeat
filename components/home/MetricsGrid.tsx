@@ -103,7 +103,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ userProfile, weeklyMet
 
 const styles = StyleSheet.create({
     headerContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 },
-    sectionTitle: { fontSize: 22, fontWeight: 'bold', color: '#EAEAEA' },
+    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#EAEAEA', opacity: 0.7, },
     editButton: { flexDirection: 'row', alignItems: 'center', padding: 4 },
     editButtonText: { color: '#888', fontSize: 14, fontWeight: '500' },
     metricsContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },

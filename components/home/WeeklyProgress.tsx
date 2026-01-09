@@ -29,21 +29,25 @@ export const WeeklyProgress: React.FC<WeeklyProgressProps> = ({ logs, activeFich
     if (treinosNaSemana === 0) return null;
 
     return (
-        <View style={styles.weeklyProgressContainer}>
-            <View>
-                <Text style={styles.progressCountText}>{treinosRealizados} / {treinosNaSemana}</Text>
-                <Text style={styles.progressLabelText}>Treinos concluídos</Text>
-            </View>
-            <View style={styles.progressCircleContainer}>
-                <ProgressCircle progress={progress} size={80} strokeWidth={6} />
-                <Text style={styles.progressPercentageText}>{Math.round(progress * 100)}%</Text>
+        <View>
+            <Text style={styles.sectionTitle}>Progresso Semanal</Text>
+            <View style={styles.weeklyProgressContainer}>
+                <View>
+                    <Text style={styles.progressCountText}>{treinosRealizados} / {treinosNaSemana}</Text>
+                    <Text style={styles.progressLabelText}>Treinos concluídos</Text>
+                </View>
+                <View style={styles.progressCircleContainer}>
+                    <ProgressCircle progress={progress} size={80} strokeWidth={6} />
+                    <Text style={styles.progressPercentageText}>{Math.round(progress * 100)}%</Text>
+                </View>
             </View>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
-    weeklyProgressContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1A1D23', borderRadius: 12, borderWidth: 0.5, borderColor: '#2A2E37', padding: 20, marginTop: 8 },
+    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#EAEAEA', opacity: 0.7, marginTop: 16, marginBottom: 8 },
+    weeklyProgressContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1A1D23', borderRadius: 12, borderWidth: 0.5, borderColor: '#2A2E37', padding: 20 },
     progressCountText: { color: '#FFFFFF', fontSize: 40, fontWeight: 'bold' },
     progressLabelText: { color: '#888', fontSize: 14, marginTop: 4 },
     progressCircleContainer: { justifyContent: 'center', alignItems: 'center' },

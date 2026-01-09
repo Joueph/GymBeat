@@ -104,9 +104,10 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     title: {
-        fontSize: 22,
+        fontSize: 18,
         fontWeight: 'bold',
         color: '#EAEAEA',
+        opacity: 0.7,
     },
     expandText: {
         color: '#3B82F6',

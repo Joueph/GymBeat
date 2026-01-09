@@ -27,52 +27,55 @@ export const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({ logs, treinos })
     );
 
     return (
-        <View style={styles.calendarContainer}>
-            {weekDays.map((day, index) => {
-                const isToday = index === currentDayIndex;
-                const date = new Date();
-                date.setDate(today.getDate() - (currentDayIndex - index));
-                const dateString = date.toDateString();
-                const dayKey = weekDayMap[index];
-                const scheduledTreinoForDay = treinos.find(treino => treino.diasSemana.includes(dayKey));
-                const isScheduledButNotDone = scheduledTreinoForDay && !completedWorkoutIdsThisWeek.has(scheduledTreinoForDay.id!);
+        <View>
+            <View style={styles.calendarContainer}>
+                {weekDays.map((day, index) => {
+                    const isToday = index === currentDayIndex;
+                    const date = new Date();
+                    date.setDate(today.getDate() - (currentDayIndex - index));
+                    const dateString = date.toDateString();
+                    const dayKey = weekDayMap[index];
+                    const scheduledTreinoForDay = treinos.find(treino => treino.diasSemana.includes(dayKey));
+                    const isScheduledButNotDone = scheduledTreinoForDay && !completedWorkoutIdsThisWeek.has(scheduledTreinoForDay.id!);
 
-                const logDoDia = logs.find(log => {
-                    if (log.horarioFim) {
-                        const time = log.horarioFim.seconds ? log.horarioFim.seconds * 1000 : new Date(log.horarioFim).getTime();
-                        return new Date(time).toDateString() === dateString;
+                    const logDoDia = logs.find(log => {
+                        if (log.horarioFim) {
+                            const time = log.horarioFim.seconds ? log.horarioFim.seconds * 1000 : new Date(log.horarioFim).getTime();
+                            return new Date(time).toDateString() === dateString;
+                        }
+                        return !log.horarioFim && isToday;
+                    });
+
+                    let progress = 0;
+                    if (logDoDia) {
+                        const totalSeries = logDoDia.exercicios.reduce((acc, ex) => acc + (ex.series?.length || 0), 0);
+                        const seriesFeitas = logDoDia.exercicios.reduce((acc, ex) => acc + (ex.series?.filter(s => (s as any).concluido).length || 0), 0);
+                        if (totalSeries > 0) progress = seriesFeitas / totalSeries;
                     }
-                    return !log.horarioFim && isToday;
-                });
 
-                let progress = 0;
-                if (logDoDia) {
-                    const totalSeries = logDoDia.exercicios.reduce((acc, ex) => acc + (ex.series?.length || 0), 0);
-                    const seriesFeitas = logDoDia.exercicios.reduce((acc, ex) => acc + (ex.series?.filter(s => (s as any).concluido).length || 0), 0);
-                    if (totalSeries > 0) progress = seriesFeitas / totalSeries;
-                }
-
-                return (
-                    <View key={day} style={[styles.dayContainer, isToday && styles.todayContainer]}>
-                        <Text style={styles.dayText}>{day}</Text>
-                        <View style={styles.dateContainer}>
-                            {logDoDia ? (
-                                <ProgressCircle progress={progress} />
-                            ) : (
-                                isScheduledButNotDone && <View style={styles.scheduledDayCircle} />
-                            )}
-                            <View style={[StyleSheet.absoluteFillObject, styles.dateTextContainer]}>
-                                <Text style={styles.dateText}>{date.getDate()}</Text>
+                    return (
+                        <View key={day} style={[styles.dayContainer, isToday && styles.todayContainer]}>
+                            <Text style={styles.dayText}>{day}</Text>
+                            <View style={styles.dateContainer}>
+                                {logDoDia ? (
+                                    <ProgressCircle progress={progress} />
+                                ) : (
+                                    isScheduledButNotDone && <View style={styles.scheduledDayCircle} />
+                                )}
+                                <View style={[StyleSheet.absoluteFillObject, styles.dateTextContainer]}>
+                                    <Text style={styles.dateText}>{date.getDate()}</Text>
+                                </View>
                             </View>
                         </View>
-                    </View>
-                );
-            })}
+                    );
+                })}
+            </View>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
+    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#EAEAEA', opacity: 0.7, marginTop: 16, marginBottom: 8 },
     calendarContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 15 },
     dayContainer: { alignItems: 'center', justifyContent: 'center', gap: 8, width: 45, height: 65 },
     dateContainer: { width: 32, height: 32, justifyContent: 'center', alignItems: 'center', position: 'relative' },

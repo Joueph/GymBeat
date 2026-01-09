@@ -47,7 +47,7 @@ export const TodayWorkoutCard: React.FC<TodayWorkoutCardProps> = ({ treinos, act
 };
 
 const styles = StyleSheet.create({
-    sectionTitle: { fontSize: 22, fontWeight: 'bold', color: '#EAEAEA', marginTop: 16 },
+    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#EAEAEA', opacity: 0.7, marginTop: 16 },
     todayWorkoutHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingRight: 15 },
     currentFichaText: { color: '#888', fontSize: 14, fontWeight: '500' },
     todayWorkoutCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#1A1D23', borderRadius: 12, borderWidth: 0.5, borderColor: '#2A2E37', padding: 20, marginTop: 8 },

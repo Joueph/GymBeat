@@ -171,22 +171,31 @@ export default function MeusTreinosScreen() {
             return;
           }
 
-          const fichaAtualizada = await setFichaAtiva(user.id, folderId, activeFicha?.id);
-          if (fichaAtualizada) {
-            setActiveFicha(fichaAtualizada);
-            setFolders(prevFolders => {
-              const unassigned = prevFolders.find(f => f.type === 'unassigned');
-              const fichaFolders = prevFolders.filter(f => f.type === 'ficha');
+          const isCurrentlyActive = activeFicha?.id === folderId;
+          // If it's already active, we pass null to deactivate it (remove as principal)
+          // otherwise we pass the folderId to set it as new active
+          const targetFichaId = isCurrentlyActive ? null : folderId;
 
-              fichaFolders.sort((a, b) => {
+          const fichaAtualizada = await setFichaAtiva(user.id, targetFichaId, activeFicha?.id);
+
+          // Update local state
+          setActiveFicha(fichaAtualizada); // fichaAtualizada will be null if we removed principal
+          setFolders(prevFolders => {
+            const unassigned = prevFolders.find(f => f.type === 'unassigned');
+            const fichaFolders = prevFolders.filter(f => f.type === 'ficha');
+
+            fichaFolders.sort((a, b) => {
+              // If there's an active ficha, put it first
+              if (fichaAtualizada) {
                 if (a.id === fichaAtualizada.id) return -1;
                 if (b.id === fichaAtualizada.id) return 1;
-                return a.nome.localeCompare(b.nome);
-              });
-
-              return unassigned ? [...fichaFolders, unassigned] : fichaFolders;
+              }
+              // Otherwise (or for non-active ones), sort alphabetically
+              return a.nome.localeCompare(b.nome);
             });
-          }
+
+            return unassigned ? [...fichaFolders, unassigned] : fichaFolders;
+          });
           // Removed Success Alert as requested
         } catch (error) {
           console.error("Erro ao definir ficha ativa:", error);

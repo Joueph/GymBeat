@@ -88,19 +88,23 @@ export const StreakWidget: React.FC<StreakWidgetProps> = ({ logs, streakGoal = 3
     }, [logs, streakGoal]);
 
     return (
-        <View style={styles.container}>
-            <View style={styles.iconContainer}>
-                <Ionicons name="flame" size={24} color="#FFD700" />
-            </View>
-            <View>
-                <Text style={styles.streakCount}>{streak} Semanas</Text>
-                <Text style={styles.streakLabel}>Sequência atual</Text>
+        <View>
+            <Text style={styles.sectionTitle}>Sequência</Text>
+            <View style={styles.container}>
+                <View style={styles.iconContainer}>
+                    <Ionicons name="flame" size={24} color="#FFD700" />
+                </View>
+                <View>
+                    <Text style={styles.streakCount}>{streak} Semanas</Text>
+                    <Text style={styles.streakLabel}>Sequência atual</Text>
+                </View>
             </View>
         </View>
     );
 };
 
 const styles = StyleSheet.create({
+    sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#EAEAEA', opacity: 0.7, marginTop: 16, marginBottom: 8 },
     container: {
         flexDirection: 'row',
         alignItems: 'center',

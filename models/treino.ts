@@ -15,4 +15,6 @@ export interface Treino {
   };
   exercicios: Exercicio[];
   fichaId?: string | null; // Adicionado para rastrear a qual ficha o treino pertence
+  cor?: string; // Hex color code
+  tempoEstimado?: string; // Estimated time in minutes (e.g. "60")
 }

@@ -41,9 +41,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 0.5,
     borderColor: '#2A2E37',
-    width: '48%', // Para caber dois cards por linha com um espaço
+    width: '100%',
     overflow: 'hidden', // Garante que o gráfico não vaze
-    marginBottom: 8, // Adicionado para o espaçamento vertical
   },
   header: {
     flexDirection: 'row',

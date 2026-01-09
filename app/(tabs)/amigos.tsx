@@ -2,27 +2,24 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { doc, getDoc, getDocFromCache, onSnapshot } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import React, { memo, useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, FlatList, Image, Modal, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useCallback, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Modal, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
+import { AddFriendModal } from '../../components/amigos/AddFriendModal';
+import { FriendData, FriendListItem } from '../../components/amigos/FriendListItem';
+import { FriendRequestsModal } from '../../components/amigos/FriendRequestsModal';
+import { PerfilCard } from '../../components/amigos/PerfilCard';
+import { ProjetosSection } from '../../components/amigos/ProjetosSection';
 import { db } from '../../firebaseconfig';
-import { Ficha } from '../../models/ficha';
 import { Log } from '../../models/log';
 import { Projeto } from '../../models/projeto';
-import { Treino } from '../../models/treino';
 import { Usuario } from '../../models/usuario';
-import { getFichaAtiva } from '../../services/fichaService';
 import { getLogsByUsuarioId } from '../../services/logService';
-import { getTreinosByIds, getTreinosByUsuarioId } from '../../services/treinoService';
+import { getTreinosByUsuarioId } from '../../services/treinoService';
 import { acceptFriendRequest, getUserProfile, rejectFriendRequest } from '../../userService';
 import { useAuth } from '../authprovider';
 import { useNetwork } from '../networkprovider';
 
-interface FriendData extends Usuario {
-  hasTrainedToday: boolean;
-  weeklyLogs: Log[];
-}
 
 const toDate = (date: any): Date | null => {
   if (!date) return null;
@@ -30,153 +27,7 @@ const toDate = (date: any): Date | null => {
   const d = new Date(date);
   return isNaN(d.getTime()) ? null : d;
 };
-
-const getStartOfWeek = (date: Date): Date => {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day;
-  d.setDate(diff);
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
-
-const FriendListItem = memo(({ item }: { item: FriendData }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-  const [friendFicha, setFriendFicha] = useState<Ficha | null>(null);
-  const [friendTreinos, setFriendTreinos] = useState<Treino[]>([]);
-  const [monthlyLogs, setMonthlyLogs] = useState<Log[]>([]);
-
-  const toggleExpand = async () => {
-    const expanding = !isExpanded;
-    setIsExpanded(expanding);
-
-    if (expanding && !friendFicha) {
-      setIsLoadingDetails(true);
-      try {
-        const [ficha, logs] = await Promise.all([
-          getFichaAtiva(item.id),
-          getLogsByUsuarioId(item.id)
-        ]);
-        setFriendFicha(ficha);
-        setMonthlyLogs(logs);
-
-        if (ficha && ficha.treinos.length > 0) {
-          const treinos = await getTreinosByIds(ficha.treinos);
-          setFriendTreinos(treinos);
-        }
-      } catch (error) {
-        console.error("Error fetching friend details:", error);
-        Alert.alert("Erro", "Não foi possível carregar os detalhes do amigo.");
-      } finally {
-        setIsLoadingDetails(false);
-      }
-    }
-  };
-
-  const renderWeeklyDots = () => {
-    const trainedDays = new Set(
-      item.weeklyLogs.map(log => toDate(log.horarioFim)?.getDay())
-    );
-
-    return (
-      <View style={styles.weeklyDotsContainer}>
-        {Array.from({ length: 7 }).map((_, i) => (
-          <View key={i} style={[styles.dot, trainedDays.has(i) && styles.dotFilled]} />
-        ))}
-      </View>
-    );
-  };
-
-  const renderMonthlyCalendar = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-
-    const firstDayOfMonth = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    const loggedDays = new Set(
-      monthlyLogs
-        .filter(log => {
-          const logDate = toDate(log.horarioFim);
-          return logDate && logDate.getFullYear() === year && logDate.getMonth() === month;
-        })
-        .map(log => toDate(log.horarioFim)!.getDate())
-    );
-
-    const days = [];
-    for (let i = 0; i < firstDayOfMonth; i++) {
-      days.push(<View key={`blank-${i}`} style={styles.dayCell} />);
-    }
-
-    for (let i = 1; i <= daysInMonth; i++) {
-      const isLogged = loggedDays.has(i);
-      days.push(
-        <View key={i} style={styles.dayCell}>
-          <View style={[styles.dayRing, isLogged && styles.loggedDayRing]}>
-            <Text style={styles.dayText}>{i}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.calendarContainer}>
-        <View style={styles.weekDaysContainer}>
-          {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((day, i) => <Text key={i} style={styles.weekDayText}>{day}</Text>)}
-        </View>
-        <View style={styles.calendarGrid}>{days}</View>
-      </View>
-    );
-  };
-
-  return (
-    <View style={styles.card}>
-      <TouchableOpacity style={styles.cardHeader} onPress={toggleExpand}>
-        {item.photoURL ? (
-          <Image source={{ uri: item.photoURL }} style={styles.pfp} />
-        ) : (
-          <View style={styles.pfpPlaceholder}>
-            <FontAwesome name="user" size={20} color="#555" />
-          </View>
-        )}
-        <View style={styles.friendInfo}>
-          <Text style={styles.friendName} numberOfLines={1}>{item.nome}</Text>
-          {renderWeeklyDots()}
-        </View>
-        <FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#ccc" />
-      </TouchableOpacity>
-
-      {isExpanded && (
-        <View style={styles.expandedContent}>
-          {isLoadingDetails ? (
-            <ActivityIndicator color="#fff" style={{ marginVertical: 20 }} />
-          ) : (
-            <>
-              {friendFicha ? (
-                <View style={styles.fichaContainer}>
-                  <Text style={styles.expandedSectionTitle}>Ficha Ativa: {friendFicha.nome}</Text>
-                  {friendTreinos.map(treino => (
-                    <View key={treino.id} style={styles.treinoItem}>
-                      <Text style={styles.treinoName}>{treino.nome}</Text>
-                      <Text style={styles.treinoDays}>{treino.diasSemana.join(', ').toUpperCase()}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.emptyText}>Este amigo não possui uma ficha ativa.</Text>
-              )}
-              <View style={styles.divider} />
-              <Text style={styles.expandedSectionTitle}>Atividade em {new Date().toLocaleString('pt-BR', { month: 'long' })}</Text>
-              {renderMonthlyCalendar()}
-            </>
-          )}
-        </View>
-      )}
-    </View>
-  );
-});
+// FriendListItem extracted to components/amigos/FriendListItem.tsx
 
 export default function AmigosScreen() {
   const { user } = useAuth();
@@ -188,7 +39,7 @@ export default function AmigosScreen() {
   const [isNotificationsModalVisible, setNotificationsModalVisible] = useState(false);
   const [isJoinProjectModalVisible, setJoinProjectModalVisible] = useState(false);
   const [isAddFriendModalVisible, setAddFriendModalVisible] = useState(false);
-  const [friendCode, setFriendCode] = useState('');
+  const [friendCode, setFriendCode] = useState(''); // Only kept if needed by other logic, but should be removed if moved to modal
   const [projectCode, setProjectCode] = useState('');
   const [projetos, setProjetos] = useState<Projeto[]>([]);
   const [friendRequests, setFriendRequests] = useState<Usuario[]>([]);
@@ -318,48 +169,30 @@ export default function AmigosScreen() {
     }
   };
 
-  const handleAddFriend = async () => {
-    if (!user || !friendCode.trim()) {
-      Alert.alert("Código Inválido", "Por favor, insira um código de amigo.");
-      return;
-    }
-
-    if (friendCode.trim().toLowerCase() === user.email?.toLowerCase()) {
-      Alert.alert("Ops!", "Você não pode adicionar a si mesmo como amigo.");
-      return;
-    }
-
-    try {
-      const functions = getFunctions();
-      const sendFriendRequestCallable = httpsCallable(functions, 'sendFriendRequest');
-
-      await sendFriendRequestCallable({
-        fromUserId: user.uid,
-        friendCode: friendCode.trim(),
-      });
-
-      Alert.alert("Sucesso", "Pedido de amizade enviado!");
-      setFriendCode('');
-    } catch (error: any) {
-      console.error("Erro ao enviar pedido de amizade:", error);
-      Alert.alert("Erro", error.message || "Não foi possível enviar o pedido de amizade.");
-    }
-  };
+  // handleAddFriend logic moved to AddFriendModal
 
   const handleShareCode = async () => {
     if (!user) return;
     try {
-      const messageToShare = `Cole esta mensagem no código de amigo! O código é: {${user.email}}`;
-      await Share.share({ message: messageToShare, title: 'Meu Código de Amigo GymBeat' });
+      // Generate Deep Link
+      // Assuming the website handles the /invite path and redirects to app or store
+      // Or if strictly internal, could use gymbeat://invite, but web URL is safer for cross-platform sharing 
+      // where the recipient might not have the app.
+      const url = `https://gymbeat.com.br/invite?friendCode=${encodeURIComponent(user.email || '')}`;
+
+      const messageToShare = `Junte-se a mim no GymBeat! Clique aqui para aceitar meu convite de amizade: ${url}`;
+
+      await Share.share({
+        message: messageToShare,
+        // url: url, // iOS sometimes prefers url field, but message usually works for both textual + url
+        title: 'Convite GymBeat'
+      });
     } catch (error) {
       Alert.alert("Erro", "Não foi possível compartilhar seu código.");
     }
   }
 
-  const handleFriendCodeChange = (text: string) => {
-    const match = text.match(/\{([^}]+)\}/);
-    setFriendCode(match ? match[1] : text);
-  };
+  // handleFriendCodeChange logic moved to AddFriendModal
 
   const handleAcceptRequest = async (requesterId: string) => {
     if (!user) return;
@@ -390,7 +223,7 @@ export default function AmigosScreen() {
         <Text style={[styles.emptyText, { fontSize: 18, textAlign: 'center' }]}>
           Você está offline.
         </Text>
-        <Text style={[styles.statLabel, { textAlign: 'center', marginTop: 10, maxWidth: '80%' }]}>
+        <Text style={{ color: '#aaa', fontSize: 12, textAlign: 'center', marginTop: 10, maxWidth: '80%' }}>
           Recursos sociais como ranking, amigos e projetos precisam de internet para funcionar.
         </Text>
       </View>
@@ -410,67 +243,24 @@ export default function AmigosScreen() {
             <FontAwesome name="bell" size={20} color="#fff" />
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setAddFriendModalVisible(true)} style={styles.headerButton}>
+            <FontAwesome name="user-plus" size={20} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleShareCode} style={styles.headerButton}>
             <FontAwesome name="plus" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.userProfileCard}>
-        <TouchableOpacity onPress={() => router.push('/perfil')}>
-          <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/perfil')}>
-            <FontAwesome name="pencil" size={16} color="#ccc" />
-          </TouchableOpacity>
-          <View style={styles.userProfileInfo}>
-            {user?.photoURL ? (
-              <Image source={{ uri: user.photoURL }} style={styles.userPfp} />
-            ) : (
-              <View style={styles.userPfpPlaceholder}><FontAwesome name="user" size={24} color="#555" /></View>
-            )}
-            <View>
-              <Text style={styles.userName}>{user?.nome}</Text>
-              <Text style={styles.userEmail}>{user?.email}</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-        <View style={styles.userStatsContainer}>
-          <View style={styles.statItem}><Text style={styles.statValue}>{friends.length}</Text><Text style={styles.statLabel}>Amigos</Text></View>
-          <View style={styles.statItem}><Text style={styles.statValue}>{userWorkoutsCount}</Text><Text style={styles.statLabel}>Treinos</Text></View>
-          <View style={styles.statItem}><Text style={styles.statValue}>{userTotalVolume > 1000 ? `${(userTotalVolume / 1000).toFixed(1)}t` : `${Math.round(userTotalVolume)}kg`}</Text><Text style={styles.statLabel}>Volume Total</Text></View>
-        </View>
-      </View>
-      <View style={styles.section}>
-        <Text style={styles.mainSectionTitle}>Meus Projetos</Text>
-        <FlatList
-          data={[...projetos, { id: 'add' }]}
-          renderItem={({ item }: { item: Projeto | { id: 'add' } }) => {
-            if ('titulo' in item) {
-              return (
-                <TouchableOpacity style={styles.projetoCard} onPress={() => router.push(`/(projetos)/${item.id}`)}>
-                  <Image source={{ uri: item.fotoCapa || 'https://via.placeholder.com/350x150.png/141414/808080?text=Projeto' }} style={styles.projetoCardImage} />
-                  <View style={styles.projetoCardOverlay} />
-                  <View style={styles.projetoCardContent}>
-                    <Text style={styles.projetoCardTitle} numberOfLines={2}>{item.titulo}</Text>
-                    <View style={styles.projetoCardInfo}>
-                      <View style={styles.infoItem}><FontAwesome name="users" size={14} color="#fff" /><Text style={styles.infoText}>{item.participantes?.length || 0}</Text></View>
-                      <View style={styles.infoItem}><FontAwesome name="fire" size={14} color="#DAA520" /><Text style={styles.infoText}>{item.semanasSeguidas || 0}</Text></View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            } else {
-              return (
-                <TouchableOpacity style={styles.createProjetoCard} onPress={() => setAddOptionsModalVisible(true)}>
-                  <FontAwesome name="plus" size={30} color="#888" />
-                </TouchableOpacity>
-              );
-            }
-          }}
-          keyExtractor={(item) => item.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingLeft: 8, paddingVertical: 10 }}
-        />
-      </View>
+      <PerfilCard
+        user={user}
+        friendsCount={friends.length}
+        workoutsCount={userWorkoutsCount}
+        totalVolume={userTotalVolume}
+      />
+      <ProjetosSection
+        projetos={projetos}
+        onAddProjectPress={() => setAddOptionsModalVisible(true)}
+      />
       <Text style={[styles.mainSectionTitle, { marginTop: 15, marginBottom: 10 }]}>Amigos</Text>
     </>
   );
@@ -525,110 +315,24 @@ export default function AmigosScreen() {
         </View>
       </Modal>
 
-      <Modal
-        animationType="slide"
+      <FriendRequestsModal
         visible={isNotificationsModalVisible}
-        onRequestClose={() => setNotificationsModalVisible(false)}
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView style={styles.modalSafeArea}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Notificações</Text>
-              <View style={styles.modalHeaderActions}>
-                <TouchableOpacity onPress={() => setNotificationsModalVisible(false)}>
-                  <FontAwesome name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-            <FlatList
-              data={friendRequests}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <View style={styles.notificationItem}>
-                  <View style={styles.notificationUserInfo}>
-                    {item.photoURL ? (
-                      <Image source={{ uri: item.photoURL }} style={styles.notificationPfp} />
-                    ) : (
-                      <View style={styles.notificationPfpPlaceholder}>
-                        <FontAwesome name="user" size={20} color="#555" />
-                      </View>
-                    )}
-                    <View>
-                      <Text style={styles.notificationName}>{item.nome}</Text>
-                      <Text style={styles.notificationText}>enviou um pedido de amizade.</Text>
-                    </View>
-                  </View>
-                  <View style={styles.notificationActions}>
-                    <TouchableOpacity style={[styles.notificationButton, styles.acceptButton]} onPress={() => handleAcceptRequest(item.id)}>
-                      <Text style={styles.notificationButtonText}>Aceitar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.notificationButton, styles.rejectButton]} onPress={() => handleRejectRequest(item.id)}>
-                      <Text style={styles.notificationButtonText}>Recusar</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-              ListEmptyComponent={
-                <View style={styles.centered}>
-                  <Text style={styles.emptyText}>Nenhuma notificação nova.</Text>
-                </View>
-              }
-            />
-          </View>
-        </SafeAreaView>
-      </Modal>
+        onClose={() => setNotificationsModalVisible(false)}
+        requests={friendRequests}
+        onAccept={handleAcceptRequest}
+        onReject={handleRejectRequest}
+      />
 
-      <Modal
-        animationType="slide"
+      <AddFriendModal
         visible={isAddFriendModalVisible}
-        onRequestClose={() => setAddFriendModalVisible(false)}
-        presentationStyle="pageSheet"
-      >
-        <SafeAreaView style={styles.modalSafeArea}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Adicionar Amigo</Text>
-              <TouchableOpacity onPress={() => setAddFriendModalVisible(false)}>
-                <FontAwesome name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.addSection}>
-              <Text style={styles.sectionTitle}>Adicionar por código</Text>
-              <View style={styles.inputContainer}>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Digite o código do amigo"
-                  placeholderTextColor="#888"
-                  value={friendCode}
-                  onChangeText={handleFriendCodeChange}
-                  autoCapitalize="none"
-                />
-                <TouchableOpacity style={[styles.addButton, { width: 'auto', marginLeft: 10, paddingHorizontal: 15 }]} onPress={handleAddFriend}>
-                  <Text style={styles.addButtonText}>Adicionar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <View style={styles.shareSection}>
-              <Text style={styles.sectionTitle}>Meu código de amigo</Text>
-              <Text style={styles.friendCodeText}>{user?.email}</Text>
-              <TouchableOpacity style={styles.shareButton} onPress={handleShareCode}>
-                <FontAwesome name="share-alt" size={16} color="#fff" />
-                <Text style={styles.shareButtonText}>Compartilhar Código</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </SafeAreaView>
-      </Modal>
+        onClose={() => setAddFriendModalVisible(false)}
+        user={user}
+      />
     </>
   );
 }
 
-const cardWidth = Dimensions.get('window').width * 0.9;
+
 
 const styles = StyleSheet.create({
   headerContainer: {
@@ -664,204 +368,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  userProfileCard: {
-    backgroundColor: '#1A1D23',
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 20,
-    paddingTop: 15,
-    paddingHorizontal: 15,
-    borderWidth: 1,
-    borderColor: '#ffffff1a',
-  },
-  editProfileButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    padding: 5,
-  },
-  userProfileInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  userPfp: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 15,
-  },
-  userPfpPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#0B0D10',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  userName: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  userEmail: {
-    color: '#aaa',
-    fontSize: 14,
-  },
-  userStatsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    borderTopWidth: 1,
-    borderTopColor: '#ffffff1a',
-    marginTop: 15,
-    paddingTop: 15,
-    paddingBottom: 5,
-  },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statValue: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
-  },
-  statLabel: {
-    color: '#aaa',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  friendCountContainer: {},
-  friendCountNumber: {},
-  friendCountLabel: {},
-  card: {
-    marginVertical: 8,
-    marginHorizontal: 16,
-    backgroundColor: '#1A1D23',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ffffff1a',
-    overflow: 'hidden',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-  },
-  pfp: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 15,
-  },
-  pfpPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#0B0D10',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  friendInfo: {
-    flex: 1,
-  },
-  friendName: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  weeklyDotsContainer: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 8,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#333',
-  },
-  dotFilled: {
-    backgroundColor: '#DAA520',
-  },
-  expandedContent: {
-    padding: 15,
-    paddingTop: 0,
-    borderTopWidth: 0.5,
-    borderTopColor: '#ffffff1a',
-    marginTop: 10,
-  },
-  expandedSectionTitle: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  fichaContainer: {
-    paddingTop: 10,
-    marginBottom: 10,
-  },
-  treinoItem: {
-    backgroundColor: '#0B0D10',
-    borderRadius: 6,
-    padding: 10,
-    marginBottom: 5,
-  },
-  treinoName: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  treinoDays: {
-    color: '#aaa',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  calendarContainer: {
-    width: '100%',
-    backgroundColor: '#0B0D10',
-    borderRadius: 10,
-    padding: 10,
-  },
-  weekDaysContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 10,
-  },
-  weekDayText: {
-    color: '#ccc',
-    fontWeight: 'bold',
-    width: '14.28%',
-    textAlign: 'center',
-    fontSize: 12,
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  dayCell: {
-    width: '14.28%',
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dayRing: {
-    width: '85%',
-    height: '85%',
-    borderRadius: 50,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderColor: 'transparent',
-  },
-  loggedDayRing: {
-    borderColor: '#DAA520',
-  },
-  dayText: {
-    color: '#fff',
-    fontSize: 12,
-  },
+
   emptyText: {
     color: '#aaa',
     fontSize: 16,
@@ -1026,58 +533,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
   },
-  projetoCard: {
-    width: cardWidth,
-    height: 150,
-    borderRadius: 12,
-    marginRight: 15,
-    backgroundColor: '#1A1D23',
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  projetoCardImage: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  projetoCardOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  projetoCardContent: {
-    padding: 12,
-  },
-  projetoCardTitle: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  projetoCardInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  infoText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  createProjetoCard: {
-    width: 120,
-    height: 150,
-    borderRadius: 12,
-    marginRight: 15,
-    backgroundColor: '#1A1D23',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#222',
-    borderStyle: 'dashed',
-  },
+
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',

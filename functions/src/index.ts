@@ -29,7 +29,7 @@ export const sendFriendRequest = onCall(async (request) => {
   if (fromUserId === toUserId) {
     throw new HttpsError("invalid-argument", "Você não pode adicionar a si mesmo.");
   }
-  
+
   const fromUserRef = db.collection("users").doc(fromUserId);
   const toUserRef = db.collection("users").doc(toUserId);
   const batch = db.batch();
@@ -54,14 +54,14 @@ export const onFriendRequestAccepted = onDocumentUpdated("users/{acceptingUserId
     functions.logger.info("Dados de amizades ausentes ou incompletos.");
     return null;
   }
-  
+
   // LÓGICA CORRIGIDA (SOLUÇÃO PARA O MOTIVO 2)
   // Encontra o ID do amigo cujo status mudou de 'false' para 'true'
   const afterFriendsMap = afterData.amizades;
   const beforeFriendsMap = beforeData.amizades;
-  
+
   let acceptedFriendId: string | null = null;
-  
+
   // Itera sobre as amizades no estado "depois"
   for (const friendId in afterFriendsMap) {
     // Verifica se a amizade é nova ou se mudou de false para true
@@ -70,14 +70,14 @@ export const onFriendRequestAccepted = onDocumentUpdated("users/{acceptingUserId
 
     if (wasFalse && isTrueNow) {
       acceptedFriendId = friendId;
-      break; 
+      break;
     }
   }
 
   if (acceptedFriendId) {
     functions.logger.info(`Detectada aceitação de amizade. ${acceptingUserId} aceitou ${acceptedFriendId}.`);
     const requesterUserRef = db.collection("users").doc(acceptedFriendId);
-    
+
     // Atualiza o documento do solicitante (Usuário A) para confirmar a amizade mútua.
     await requesterUserRef.update({
       [`amizades.${acceptingUserId}`]: true
@@ -122,3 +122,50 @@ export const onFriendRequestRejected = onDocumentUpdated("users/{rejectingUserId
   return null;
 });
 
+
+export const getFriendActivity = onCall(async (request) => {
+  const { friendId } = request.data;
+  const auth = request.auth;
+
+  if (!friendId) {
+    throw new HttpsError("invalid-argument", "friendId é obrigatório.");
+  }
+
+  // Verificação básica de autenticação
+  if (!auth) {
+    throw new HttpsError("unauthenticated", "Usuário deve estar autenticado.");
+  }
+
+  try {
+    const userDoc = await db.collection("users").doc(friendId).get();
+
+    if (!userDoc.exists) {
+      throw new HttpsError("not-found", "Usuário não encontrado.");
+    }
+
+    // Busca logs dos últimos 7 dias na coleção RAIZ 'logs'
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const logsSnapshot = await db.collection("logs")
+      .where("usuarioId", "==", friendId)
+      .where("horarioFim", ">=", sevenDaysAgo)
+      .orderBy("horarioFim", "desc")
+      .get();
+
+    const weeklyLogs = logsSnapshot.docs.map(doc => {
+      const data = doc.data();
+      // Convert timestamps to string/number if needed for serialization, but Firestore SDK usually handles it.
+      // However, onCall usually serializes dates to ISO strings.
+      return { id: doc.id, ...data };
+    });
+
+    return {
+      profile: { id: userDoc.id, ...userDoc.data() },
+      weeklyLogs
+    };
+  } catch (error) {
+    functions.logger.error("Erro em getFriendActivity:", error);
+    throw new HttpsError("internal", "Erro ao buscar atividade.");
+  }
+});

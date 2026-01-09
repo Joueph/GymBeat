@@ -14,6 +14,7 @@ export default {
       bundleIdentifier: "br.com.gymbeat",
       appleTeamId: "M4M9UUR2NT",
       buildNumber: "35",
+      associatedDomains: ["applinks:gymbeat.com.br"],
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSSupportsLiveActivities: true,
@@ -28,6 +29,21 @@ export default {
         backgroundColor: "#000000",
         foregroundImage: "./assets/icons/adaptive-icon.png",
       },
+      associatedDomains: ["applinks:gymbeat.com.br"],
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "gymbeat.com.br",
+              pathPrefix: "/invite"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"],
+        },
+      ],
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: "br.com.gymbeat",

@@ -232,38 +232,46 @@ const ExerciseItem = ({
           </TouchableOpacity>
         </View>
         <Text style={styles.xText}>x</Text>
-        <View style={styles.inputGroup}>
-          <TextInput
-            style={[styles.setInput, (index > 0 && series[index - 1].peso == setItem.peso) && { opacity: 0.7 }]}
-            value={String(setItem.peso || '')}
-            onFocus={() => {
-              focusedWeightRef.current = typeof setItem.peso === 'number' ? setItem.peso : parseFloat(String(setItem.peso));
-            }}
-            onChangeText={(text) => {
-              const newSets = [...series];
-              newSets[index] = { ...newSets[index], peso: text as any };
-              // We rely on state update for typing, but cascade happens on EndEditing
-              // We do call handleSeriesUpdate here to keep 'item' logic compliant, 
-              // BUT we must not cascade yet.
-              setSeries(newSets);
-              onUpdateExercise({ ...item, series: newSets });
-              setIsEditing(true);
-            }}
-            onEndEditing={(e) => {
-              let newSets = [...series];
-              const val = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
-              newSets[index] = { ...newSets[index], peso: val };
+        {item.modelo?.caracteristicas?.isPesoCorporal ? (
+          <View style={styles.inputGroup}>
+            <View style={[styles.setInput, styles.bodyWeightContainer]}>
+              <Text style={styles.bodyWeightText}>Corporal</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.inputGroup}>
+            <TextInput
+              style={[styles.setInput, (index > 0 && series[index - 1].peso == setItem.peso) && { opacity: 0.7 }]}
+              value={String(setItem.peso || '')}
+              onFocus={() => {
+                focusedWeightRef.current = typeof setItem.peso === 'number' ? setItem.peso : parseFloat(String(setItem.peso));
+              }}
+              onChangeText={(text) => {
+                const newSets = [...series];
+                newSets[index] = { ...newSets[index], peso: text as any };
+                // We rely on state update for typing, but cascade happens on EndEditing
+                // We do call handleSeriesUpdate here to keep 'item' logic compliant, 
+                // BUT we must not cascade yet.
+                setSeries(newSets);
+                onUpdateExercise({ ...item, series: newSets });
+                setIsEditing(true);
+              }}
+              onEndEditing={(e) => {
+                let newSets = [...series];
+                const val = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
+                newSets[index] = { ...newSets[index], peso: val };
 
-              // Apply cascade
-              if (focusedWeightRef.current !== null) {
-                newSets = cascadeUpdate(newSets, index, 'peso', focusedWeightRef.current);
-              }
+                // Apply cascade
+                if (focusedWeightRef.current !== null) {
+                  newSets = cascadeUpdate(newSets, index, 'peso', focusedWeightRef.current);
+                }
 
-              handleSeriesUpdate(newSets);
-            }}
-            keyboardType="decimal-pad"
-          />
-        </View>
+                handleSeriesUpdate(newSets);
+              }}
+              keyboardType="decimal-pad"
+            />
+          </View>
+        )}
         <SetOptionsMenu
           isTimeBased={!!setItem.isTimeBased}
           isNormalSet={setItem.type === 'normal'}
@@ -283,7 +291,9 @@ const ExerciseItem = ({
       </View>
       <View style={styles.xText} />
       <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Peso (kg)</Text>
+        <Text style={styles.inputLabel}>
+          {item.modelo?.caracteristicas?.isPesoCorporal ? 'Peso' : 'Peso (kg)'}
+        </Text>
       </View>
       <View style={{ width: 40 }} />
     </View>
@@ -1459,5 +1469,15 @@ const styles = StyleSheet.create({
     color: '#3B82F6',
     fontSize: 12,
     fontWeight: '600',
+  },
+  bodyWeightContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 42, // Match the height of repButton
+  },
+  bodyWeightText: {
+    color: '#ccc',
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

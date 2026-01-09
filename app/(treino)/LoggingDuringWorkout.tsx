@@ -863,28 +863,27 @@ export default function LoggingDuringWorkoutScreen() {
     const loadWorkout = async () => {
       if (!user) return;
 
-      // **NOVA LÓGICA**: Prioriza carregar um log ativo do cache se um logId for passado
-      if (logId) {
-        try {
-          const cachedLog = await getCachedActiveWorkoutLog(); // CORRIGIDO: Função agora importada
-          if (cachedLog && cachedLog.id === logId) {
-            setLoggedExercises(cachedLog.exercicios || []);
-            setWorkoutName(String(cachedLog.nomeTreino || 'Treino'));
-            setStartTime(toDate(cachedLog.horarioInicio));
-            setTotalLoad(cachedLog.cargaAcumulada || 0);
-            setActiveLogId(cachedLog.id);
-            setWorkoutOwnerId(cachedLog.treino.usuarioId); // Salva o dono do treino
-            // A busca de peso do usuário ocorrerá no final da função
-          }
-        } catch (error) {
-          console.error("Erro ao carregar log do cache com logId:", error);
-          // Se falhar, a lógica abaixo tentará carregar o treino do zero
-        }
-      }
+      const cachedLog = await getCachedActiveWorkoutLog();
 
-      // Se um treinoId for passado, carrega um treino estruturado
-      else if (treinoId) {
-        // CACHE-FIRST Strategy: Tenta carregar do cache primeiro para instant start
+      const isMatchingLogId = logId && cachedLog?.id === logId;
+      const isMatchingTreinoId = treinoId && cachedLog?.treino?.id === treinoId;
+      const isResumeFreeWorkout = !treinoId && !logId && cachedLog;
+
+      if (cachedLog && (isMatchingLogId || isMatchingTreinoId || isResumeFreeWorkout)) {
+        console.log('[LoggingDuringWorkout] Resuming from cache:', cachedLog.id);
+        setLoggedExercises(cachedLog.exercicios || []);
+        setWorkoutName(String(cachedLog.nomeTreino || 'Treino'));
+        setStartTime(toDate(cachedLog.horarioInicio));
+        setTotalLoad(cachedLog.cargaAcumulada || 0);
+        setActiveLogId(cachedLog.id);
+        setWorkoutOwnerId(cachedLog.treino?.usuarioId || user.id);
+      } else if (logId) {
+        // Fallback or specific log load attempt if not cached (unlikely for active but possible)
+        console.log('[LoggingDuringWorkout] Log ID present but not in immediate active cache. Loading fresh/error.');
+        // Current logic was empty here assuming cache hit. Could add remote fetch if needed, 
+        // but context implies we are fixing the reset.
+      } else if (treinoId) {
+        // CACHE-FIRST Strategy for TEMPLATE: Tenta carregar do cache primeiro para instant start
         let fetchedTreino = await getCachedTreinoById(treinoId); // Usa a função de cache importada
 
         if (fetchedTreino) {
@@ -893,10 +892,6 @@ export default function LoggingDuringWorkoutScreen() {
           getTreinoById(treinoId).then(fresh => {
             if (fresh) {
               console.log('[LoggingDuringWorkout] Template updated from network (deferred).');
-              // Aqui poderíamos atualizar o estado se quisermos, mas para um treino que ACABOU de começar,
-              // talvez mudar os exercícios no meio seja confuso. Vamos manter o do cache.
-              // Apenas atualizamos o cache para a próxima vez.
-              // getTreinoById já atualiza o cache interno.
             }
           }).catch(e => console.log('Silent refresh failed', e));
 
@@ -918,36 +913,13 @@ export default function LoggingDuringWorkoutScreen() {
           setWorkoutOwnerId(fetchedTreino.usuarioId); // Salva o dono do treino
         }
       } else {
-        // Lógica existente para treino livre (cache ou novo)
-        try {
-          const cachedLog = await getCachedActiveWorkoutLog(); // CORRIGIDO: Função agora importada
-          if (cachedLog && cachedLog.id.startsWith('free-workout-')) {
-            // Carrega do cache
-            setLoggedExercises(cachedLog.exercicios || []);
-            setWorkoutName(String(cachedLog.nomeTreino || ''));
-            setStartTime(new Date(cachedLog.horarioInicio));
-            setTotalLoad(cachedLog.cargaAcumulada || 0);
-            setActiveLogId(cachedLog.id);
-            setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
-          } else {
-            // Inicia um novo treino livre
-            const newLogId = `free-workout-${Date.now()}`;
-            setActiveLogId(newLogId);
-            setStartTime(new Date());
-            setLoggedExercises([]);
-            setWorkoutName('Treino Livre');
-            setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
-          }
-        } catch (error) {
-          console.error("Failed to load workout from cache", error);
-          // Inicia um novo treino em caso de erro
-          const newLogId = `free-workout-${Date.now()}`;
-          setActiveLogId(newLogId);
-          setStartTime(new Date());
-          setLoggedExercises([]);
-          setWorkoutName('Treino Livre');
-          setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
-        }
+        // Inicia um novo treino livre
+        const newLogId = `free-workout-${Date.now()}`;
+        setActiveLogId(newLogId);
+        setStartTime(new Date());
+        setLoggedExercises([]);
+        setWorkoutName('Treino Livre');
+        setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
       }
 
       // Busca o peso do usuário independentemente do cache

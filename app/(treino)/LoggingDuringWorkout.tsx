@@ -35,12 +35,15 @@ import * as NotificationsLiveActivity from '../../modules/notifications-live-act
 import { MachineChooserDrawer } from '@/components/MachineChooserDrawer';
 import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
 import { getLastLogForMachine } from '@/services/machineService';
+import { ExerciseMenuAction, ExerciseOptionsMenu } from '../../components/menus/ExerciseOptionsMenu';
 import { cancelNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
 import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { ExerciseDetailModal } from './modals/ExerciseDetailModal';
+import { ExerciseNotesModal } from './modals/ExerciseNotesModal';
+import { ExerciseReorderModal } from './modals/ExerciseReorderModal';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
 import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 import { WorkoutOverviewModal } from './modals/modalOverview';
@@ -101,6 +104,8 @@ const LoggedExerciseCard = ({
   onMenuStateChange,
   exerciseIndex,
   onOpenMachineDrawer,
+  onReorder,
+  onOpenNotes,
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -118,14 +123,14 @@ const LoggedExerciseCard = ({
   onMenuStateChange: (isOpen: boolean) => void;
   exerciseIndex: number;
   onOpenMachineDrawer: () => void;
+  onReorder: () => void;
+  onOpenNotes: () => void;
 }) => {
   const [isDetailModalVisible, setDetailModalVisible] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
-  const [exerciseNotes, setExerciseNotes] = useState(item.notes || '');
   const [isExerciseTimeDrawerVisible, setIsExerciseTimeDrawerVisible] = useState(false);
   const [isRestTimePickerVisible, setIsRestTimePickerVisible] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(true);
   const [isAdvancedOptionsVisible, setIsAdvancedOptionsVisible] = useState(false);
 
   const [series, setSeries] = useState<SerieEdit[]>(
@@ -156,7 +161,6 @@ const LoggedExerciseCard = ({
     const allSetsCompleted = series.length > 0 && series.every(s => s.concluido);
     if (allSetsCompleted) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setIsExpanded(false);
     }
   }, [series]);
 
@@ -424,202 +428,137 @@ const LoggedExerciseCard = ({
               <Text style={styles.muscleGroup}>{item.modelo.grupoMuscular}</Text>
             </View>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setIsExpanded(!isExpanded);
-          }}><FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#fff" /></TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <ExerciseOptionsMenu
+              showAdvanced={true}
+              onSelect={(action: ExerciseMenuAction) => {
+                if (action === 'delete') {
+                  onRemove();
+                } else if (action === 'changeMachine') {
+                  onOpenMachineDrawer();
+                } else if (action === 'editRestTime') {
+                  setIsRestTimePickerVisible(true);
+                } else if (action === 'addNote') {
+                  onOpenNotes();
+                } else if (action === 'advanced') {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible);
+                } else if (action === 'reorder') {
+                  onReorder();
+                }
+              }}
+            />
+          </View>
         </View>
 
-        {isExpanded ? (
-          <>
-            <View style={styles.notesContainer}>
-              <FontAwesome name="pencil" size={12} color="#fff" />
-              <TextInput
-                style={styles.notesInput}
-                placeholder="Anotações do exercício"
-                placeholderTextColor="#888"
-                value={exerciseNotes}
-                onChangeText={setExerciseNotes}
-                onBlur={() => onNotesChange(exerciseNotes)}
-              />
-            </View>
+        <>
+          <View>
+            {series.map((s, index) => renderSetItem({ item: s, getIndex: () => index }))}
+          </View>
 
-            {/* Machine Chooser Marker */}
-            <TouchableOpacity
-              style={styles.machineMarker}
-              onPress={onOpenMachineDrawer}
-            >
-              <FontAwesome5 name="dumbbell" size={12} color="#3B82F6" style={{ marginRight: 6 }} />
-              <Text style={styles.machineMarkerText}>
-                {(item.machineId && item.machineName) ? item.machineName : (item.machineId ? 'Máquina Selecionada' : 'Exercício Padrão')}
-              </Text>
-              <FontAwesome name="chevron-down" size={10} color="#3B82F6" style={{ marginLeft: 6 }} />
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.addSetButton}
+            onPress={() => {
+              const lastNormalSet = series.slice().reverse().find(s => s.type !== 'dropset');
+              const newSet = {
+                id: `set-${Date.now()}`,
+                repeticoes: lastNormalSet?.repeticoes || '10',
+                peso: lastNormalSet?.peso || 10,
+                type: 'normal' as const,
+                isTimeBased: lastNormalSet?.isTimeBased || false,
+                concluido: false,
+              };
+              handleSeriesUpdate([...series, newSet]);
+            }}
+          >
+            <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+          </TouchableOpacity>
 
-            <View>
-              {series.map((s, index) => renderSetItem({ item: s, getIndex: () => index }))}
-            </View>
-
-            <TouchableOpacity
-              style={styles.addSetButton}
-              onPress={() => {
-                const lastNormalSet = series.slice().reverse().find(s => s.type !== 'dropset');
-                const newSet = {
-                  id: `set-${Date.now()}`,
-                  repeticoes: lastNormalSet?.repeticoes || '10',
-                  peso: lastNormalSet?.peso || 10,
-                  type: 'normal' as const,
-                  isTimeBased: lastNormalSet?.isTimeBased || false,
-                  concluido: false,
-                };
-                handleSeriesUpdate([...series, newSet]);
-              }}
-            >
-              <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
-            </TouchableOpacity>
-
-            <View style={styles.exerciseActionsRow}>
-              <View style={styles.exerciseActionsLeft}>
-                <TouchableOpacity style={styles.restTimerCard} onPress={() => setIsRestTimePickerVisible(true)}>
-                  <FontAwesome name="clock-o" size={18} color="#fff" />
-                  <Text style={styles.restTimerText}>{formatRestTime(item.restTime || 60)}</Text>
-                </TouchableOpacity>
-                <View style={styles.seriesCounterContainer}>
-                  <FontAwesome5 name="layer-group" size={16} color="#aaa" />
-                  <Text style={styles.seriesCounterText}>
-                    {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
-                  </Text>
+          {isAdvancedOptionsVisible && (
+            <View style={styles.advancedOptionsContainer}>
+              {item.modelo.caracteristicas?.usaBarra && (
+                <View style={styles.barbellWeightCard}>
+                  <Text style={styles.barbellWeightLabel}>Peso da Barra</Text>
+                  <TextInput
+                    style={styles.barbellWeightInput}
+                    value={String(item.pesoBarra || 0)}
+                    onChangeText={(text) => {
+                      const newPeso = parseFloat(text.replace(',', '.')) || 0;
+                      onPesoBarraChange(newPeso);
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder="kg"
+                    placeholderTextColor="#888"
+                  />
                 </View>
-              </View>
-              <TouchableOpacity
-                onPress={() => setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible)}
-                style={styles.avancadoButton}
-              >
-                <Text style={styles.avancadoButtonText}>Avançado</Text>
-                <FontAwesome name={isAdvancedOptionsVisible ? "chevron-up" : "chevron-down"} size={14} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            {isAdvancedOptionsVisible && (
-              <View style={styles.advancedOptionsContainer}>
-                {item.modelo.caracteristicas?.usaBarra && (
-                  <View style={styles.barbellWeightCard}>
-                    <Text style={styles.barbellWeightLabel}>Peso da Barra</Text>
-                    <TextInput
-                      style={styles.barbellWeightInput}
-                      value={String(item.pesoBarra || 0)}
-                      onChangeText={(text) => {
-                        const newPeso = parseFloat(text.replace(',', '.')) || 0;
-                        onPesoBarraChange(newPeso);
-                      }}
-                      keyboardType="decimal-pad"
-                      placeholder="kg"
-                      placeholderTextColor="#888"
-                    />
-                  </View>
-                )}
-                {item.modelo.caracteristicas?.isPesoBilateral &&
-                  !item.modelo.caracteristicas?.usaBarra &&
-                  series.length > 0 && (
-                    <View style={styles.bilateralInfoCard}>
-                      <View style={styles.dumbbellIconContainer}>
-                        <View style={styles.dumbbellWithWeight}>
-                          <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
-                          <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                        </View>
-                        <View style={styles.dumbbellWithWeight}>
-                          <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
-                          <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                        </View>
+              )}
+              {item.modelo.caracteristicas?.isPesoBilateral &&
+                !item.modelo.caracteristicas?.usaBarra &&
+                series.length > 0 && (
+                  <View style={styles.bilateralInfoCard}>
+                    <View style={styles.dumbbellIconContainer}>
+                      <View style={styles.dumbbellWithWeight}>
+                        <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
+                        <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                      </View>
+                      <View style={styles.dumbbellWithWeight}>
+                        <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
+                        <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
                       </View>
                     </View>
-                  )}
-                {item.modelo.caracteristicas?.usaBarra && series.length > 0 && (
-                  <View style={styles.bilateralInfoCard}>
-                    <View style={styles.barbellIconContainer}>
-                      <Image
-                        source={require('../../assets/images/Exercicios/ilustracaoBarra.png')}
-                        style={styles.barbellImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <View style={styles.barbellWeightDistribution}>
-                      <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                      <Text style={styles.barbellCenterWeightText}>{item.pesoBarra || 0} kg</Text>
-                      <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                    </View>
                   </View>
                 )}
-                {/* Detalhes do Cálculo de Volume */}
-                {isAdvancedOptionsVisible && (<View style={styles.volumeDetailsContainer}>
-                  <Text style={styles.volumeDetailsTitle}>Cálculo de Volume</Text>
-                  {series.filter(s => s.concluido).length > 0 ? (
-                    series.map((serie, index) => {
-                      if (!serie.concluido) return null;
+              {item.modelo.caracteristicas?.usaBarra && series.length > 0 && (
+                <View style={styles.bilateralInfoCard}>
+                  <View style={styles.barbellIconContainer}>
+                    <Image
+                      source={require('../../assets/images/Exercicios/ilustracaoBarra.png')}
+                      style={styles.barbellImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View style={styles.barbellWeightDistribution}>
+                    <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                    <Text style={styles.barbellCenterWeightText}>{item.pesoBarra || 0} kg</Text>
+                    <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                  </View>
+                </View>
+              )}
+              {/* Detalhes do Cálculo de Volume */}
+              {isAdvancedOptionsVisible && (<View style={styles.volumeDetailsContainer}>
+                <Text style={styles.volumeDetailsTitle}>Cálculo de Volume</Text>
+                {series.filter(s => s.concluido).length > 0 ? (
+                  series.map((serie, index) => {
+                    if (!serie.concluido) return null;
 
-                      const { calculationString } = calculateLoadForSerie(serie, item, userWeight);
-                      const normalSeriesCount = series.slice(0, index + 1).filter(s => s.type === 'normal').length;
+                    const { calculationString } = calculateLoadForSerie(serie, item, userWeight);
+                    const normalSeriesCount = series.slice(0, index + 1).filter(s => s.type === 'normal').length;
 
-                      return (
-                        <View
-                          key={serie.id}
-                          style={[
-                            styles.volumeDetailRow,
-                            serie.type === 'dropset' && styles.volumeDetailRowDropset,
-                          ]}
-                        >
-                          <Text style={styles.volumeDetailLabel}>
-                            {serie.type === 'dropset' ? 'Dropset:' : `Série ${normalSeriesCount}:`}
-                          </Text>
-                          <Text style={styles.volumeDetailCalculation}>{calculationString}</Text>
-                        </View>
-                      );
-                    })
-                  ) : (
-                    <Text style={styles.volumeDetailEmptyText}>
-                      Complete uma série para ver o cálculo do volume.
-                    </Text>
-                  )}
-                </View>)}
-              </View>
-            )}
-          </>
-        ) : (
-          <View style={styles.collapsedInfoContainer}>
-            <View style={styles.collapsedLeft}>
-              <View style={styles.seriesCounterContainer}>
-                <FontAwesome5 name="layer-group" size={16} color="#aaa" />
-                <Text style={styles.seriesCounterText}>
-                  {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
-                </Text>
-              </View>
-              <View style={styles.seriesCounterContainer}>
-                <FontAwesome5 name="weight-hanging" size={16} color="#aaa" />
-                <Text style={styles.seriesCounterText}>{Math.round(exerciseVolume)} kg</Text>
-              </View>
+                    return (
+                      <View
+                        key={serie.id}
+                        style={[
+                          styles.volumeDetailRow,
+                          serie.type === 'dropset' && styles.volumeDetailRowDropset,
+                        ]}
+                      >
+                        <Text style={styles.volumeDetailLabel}>
+                          {serie.type === 'dropset' ? 'Dropset:' : `Série ${normalSeriesCount}:`}
+                        </Text>
+                        <Text style={styles.volumeDetailCalculation}>{calculationString}</Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.volumeDetailEmptyText}>
+                    Complete uma série para ver o cálculo do volume.
+                  </Text>
+                )}
+              </View>)}
             </View>
-            <View style={styles.collapsedRight}>
-              <TouchableOpacity onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setIsExpanded(true);
-              }} style={[styles.avancadoButton, { backgroundColor: '#2A2E37' }]}>
-                <Text style={styles.avancadoButtonText}>
-                  {(() => {
-                    const completedSets = series.filter(s => s.concluido).length;
-                    const totalSets = series.length;
-                    if (totalSets > 0 && completedSets === totalSets) {
-                      return 'Finalizado';
-                    }
-                    if (completedSets > 0) {
-                      return 'Em andamento';
-                    }
-                    return 'Pendente';
-                  })()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+          )}
+        </>
+
 
         <RestTimeDrawer
           visible={isRestTimePickerVisible}
@@ -671,6 +610,7 @@ export default function LoggingDuringWorkoutScreen() {
   const { treinoId, fichaId, logId } = useLocalSearchParams<{ treinoId?: string; fichaId?: string, logId?: string }>();
   const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
   const [isModalVisible, setModalVisible] = useState(false);
+  const [isReorderModalVisible, setReorderModalVisible] = useState(false);
   const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
   const { finishWorkout, isSaving: isFinishing } = useWorkoutOperations();
   const [workoutName, setWorkoutName] = useState('');
@@ -705,6 +645,8 @@ export default function LoggingDuringWorkoutScreen() {
   // Machine Drawer State
   const [isMachineDrawerVisible, setIsMachineDrawerVisible] = useState(false);
   const [exerciseForMachine, setExerciseForMachine] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+  const [isNotesModalVisible, setIsNotesModalVisible] = useState(false);
+  const [exerciseForNotes, setExerciseForNotes] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
 
   const handleMachineSelect = async (machineId: string | undefined, machineName: string | undefined, shouldClose: boolean = true) => {
     if (!exerciseForMachine) return;
@@ -1451,6 +1393,23 @@ export default function LoggingDuringWorkoutScreen() {
     setLoggedExercises(prev => prev.filter((_, index) => index !== exerciseIndex));
   };
 
+  const handleNotesChange = (index: number, notes: string) => {
+    const newExercises = [...loggedExercises];
+    newExercises[index] = { ...newExercises[index], notes: notes };
+    setLoggedExercises(newExercises);
+  };
+
+  const handleRestTimeChange = (index: number, newRestTime: number) => {
+    setLoggedExercises(prevExercises => {
+      const updatedExercises = [...prevExercises];
+      updatedExercises[index] = {
+        ...updatedExercises[index],
+        restTime: newRestTime,
+      };
+      return updatedExercises;
+    });
+  };
+
   const handlePesoBarraChange = (exerciseIndex: number, newPesoBarra: number) => {
     setLoggedExercises(prevExercises => {
       const updatedExercises = [...prevExercises];
@@ -1606,17 +1565,30 @@ export default function LoggingDuringWorkoutScreen() {
                         setExerciseForMachine({ index, exercise: item });
                         setIsMachineDrawerVisible(true);
                       }}
+                      onReorder={() => setReorderModalVisible(true)}
+                      onOpenNotes={() => {
+                        setExerciseForNotes({ index, exercise: item });
+                        setIsNotesModalVisible(true);
+                      }}
                     />
                   );
                 }}
                 ListFooterComponent={
                   <>
-                    <TouchableOpacity
-                      style={styles.addMoreButton}
-                      onPress={() => setModalVisible(true)}
-                    >
-                      <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 15, marginTop: 10 }}>
+                      <TouchableOpacity
+                        style={[styles.addMoreButton, { flex: 1, margin: 0, marginTop: 0, marginHorizontal: 0 }]}
+                        onPress={() => setModalVisible(true)}
+                      >
+                        <Text style={styles.addSetButtonText}>+ Adicionar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.addMoreButton, { flex: 1, margin: 0, marginTop: 0, marginHorizontal: 0, backgroundColor: '#2A2E37', borderColor: '#333' }]}
+                        onPress={() => setReorderModalVisible(true)}
+                      >
+                        <Text style={styles.addSetButtonText}>Reordenar</Text>
+                      </TouchableOpacity>
+                    </View>
                     <TouchableOpacity
                       style={styles.settingsButton}
                       onPress={() => setSettingsModalVisible(true)}
@@ -1685,6 +1657,29 @@ export default function LoggingDuringWorkoutScreen() {
               onSelectMachine={handleMachineSelect}
               exerciseId={exerciseForMachine?.exercise.modeloId || ''}
               currentMachineId={exerciseForMachine?.exercise.machineId}
+            />
+
+            <ExerciseNotesModal
+              visible={isNotesModalVisible}
+              onClose={() => {
+                setIsNotesModalVisible(false);
+                setExerciseForNotes(null);
+              }}
+              exerciseId={exerciseForNotes?.exercise.modeloId || ''}
+              exerciseName={exerciseForNotes?.exercise.modelo.nome || ''}
+              currentNote={exerciseForNotes?.exercise.notes || ''}
+              onSaveNote={(note) => {
+                if (exerciseForNotes) {
+                  handleNotesChange(exerciseForNotes.index, note);
+                }
+              }}
+            />
+
+            <ExerciseReorderModal
+              visible={isReorderModalVisible}
+              onClose={() => setReorderModalVisible(false)}
+              exercises={loggedExercises}
+              onSave={(newOrder) => setLoggedExercises(newOrder as LoggedExercise[])}
             />
 
           </KeyboardAvoidingView>

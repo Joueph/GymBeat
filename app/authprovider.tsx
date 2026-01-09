@@ -86,10 +86,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               hasTrainedToday: userData.hasTrainedToday,
               streakGoal: userData.streakGoal,
               weeksStreakGoal: userData.weeksStreakGoal,
+              weeksStreakGoal: userData.weeksStreakGoal,
               workoutScreenType: userData.workoutScreenType,
-              uid: function (uid: any): unknown {
-                throw new Error('Function not implemented.');
-              }
             };
             setUser(combinedUser);
             // Salva em cache para acesso offline

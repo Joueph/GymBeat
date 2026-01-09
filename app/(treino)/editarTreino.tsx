@@ -25,6 +25,7 @@ import Animated, { useAnimatedRef, useAnimatedStyle, useSharedValue, withTiming 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { InfoCard } from '../../components/InfoCard';
+import { ExerciseMenuAction, ExerciseOptionsMenu } from '../../components/menus/ExerciseOptionsMenu';
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 import { RepetitionsDrawer } from '../../components/RepetitionsDrawer';
 import { RestTimeDrawer } from '../../components/RestTimeDrawer';
@@ -36,6 +37,8 @@ import { Treino } from '../../models/treino';
 import { getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
+import { ExerciseNotesModal } from './modals/ExerciseNotesModal';
+import { ExerciseReorderModal } from './modals/ExerciseReorderModal';
 import { WorkoutReviewModal } from './modals/modalReviewTreinos';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
 import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
@@ -63,6 +66,8 @@ interface ExerciseItemProps {
   onOpenRestTimeModal: (exerciseIndex: number) => void;
   setIsEditing: (isEditing: boolean) => void;
   onOpenMachineDrawer: (exerciseIndex: number) => void;
+  onReorder: () => void;
+  onOpenNotes: () => void;
 }
 
 const formatRestTime = (seconds: number) => {
@@ -142,6 +147,8 @@ const ExerciseItem = ({
   onOpenRestTimeModal,
   setIsEditing,
   onOpenMachineDrawer,
+  onReorder,
+  onOpenNotes,
 }: ExerciseItemProps) => {
   const [series, setSeries] = useState<SerieEdit[]>(
     item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' }))
@@ -312,9 +319,21 @@ const ExerciseItem = ({
             <Text style={styles.exercicioName}>{item.modelo?.nome}</Text>
             <Text style={styles.muscleGroup}>{item.modelo?.grupoMuscular}</Text>
           </View>
-          <TouchableOpacity onLongPress={drag} disabled={isActive} style={styles.dragHandle}>
-            <FontAwesome name="bars" size={20} color="#888" />
-          </TouchableOpacity>
+          <ExerciseOptionsMenu
+            onSelect={(action: ExerciseMenuAction) => {
+              if (action === 'delete') {
+                onRemoveExercise();
+              } else if (action === 'changeMachine') {
+                onOpenMachineDrawer(exerciseIndex);
+              } else if (action === 'editRestTime') {
+                onOpenRestTimeModal(exerciseIndex);
+              } else if (action === 'addNote') {
+                onOpenNotes();
+              } else if (action === 'reorder') {
+                onReorder();
+              }
+            }}
+          />
         </View>
         {item && (
           <View style={styles.notesContainer}>
@@ -331,17 +350,7 @@ const ExerciseItem = ({
         )}
         <View style={styles.seriesContainer}>
           {/* Machine Chooser Marker */}
-          <TouchableOpacity
-            style={styles.machineMarker}
-            onPress={() => onOpenMachineDrawer(exerciseIndex)}
-          >
-            <FontAwesome5 name="dumbbell" size={12} color="#3B82F6" style={{ marginRight: 6 }} />
-            {/* Machine Name Display */}
-            <Text style={styles.machineMarkerText}>
-              {(item.machineId && item.machineName) ? item.machineName : (item.machineId ? 'Máquina Selecionada' : 'Exercício Padrão')}
-            </Text>
-            <FontAwesome name="chevron-down" size={10} color="#3B82F6" style={{ marginLeft: 6 }} />
-          </TouchableOpacity>
+
           {series.length > 0 && renderSeriesHeader()}
           {series.map(renderSetItem)}
         </View>
@@ -365,15 +374,7 @@ const ExerciseItem = ({
           <FontAwesome name="plus" size={14} color="#3B82F6" />
           <Text style={styles.addSetButtonText}>Adicionar Série</Text>
         </TouchableOpacity>
-        <View style={styles.exerciseActions}>
-          <TouchableOpacity style={styles.restTimerCard} onPress={() => onOpenRestTimeModal(exerciseIndex)}>
-            <FontAwesome name="clock-o" size={18} color="#fff" />
-            <Text style={styles.restTimerText}>{formatRestTime(item.restTime || 90)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.removeExerciseButton} onPress={onRemoveExercise}>
-            <FontAwesome name="trash" size={16} color="#ff3b30" />
-          </TouchableOpacity>
-        </View>
+
       </View>
     </ScaleDecorator>
   );
@@ -400,6 +401,9 @@ export default function EditarTreinoScreen() {
   const [activeLog, setActiveLog] = useState<Log | null>(null);
   const [allUserLogs, setAllUserLogs] = useState<Log[]>([]);
   const [carouselIndex, setCarouselIndex] = useState(0); // Track active carousel page
+  const [isReorderModalVisible, setReorderModalVisible] = useState(false);
+  const [isNotesModalVisible, setIsNotesModalVisible] = useState(false);
+  const [exerciseForNotes, setExerciseForNotes] = useState<{ index: number, exercise: Exercicio } | null>(null);
 
   // State for Review Modal
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
@@ -799,6 +803,11 @@ export default function EditarTreinoScreen() {
           setExerciseForMachine({ index, exercise: item });
           setIsMachineDrawerVisible(true);
         }}
+        onReorder={() => setReorderModalVisible(true)}
+        onOpenNotes={() => {
+          setExerciseForNotes({ index, exercise: item });
+          setIsNotesModalVisible(true);
+        }}
       />
     );
   }, [treino]);
@@ -973,10 +982,16 @@ export default function EditarTreinoScreen() {
           }
           ListFooterComponent={
             <>
-              <TouchableOpacity style={styles.addExerciseButton} onPress={() => setModalVisible(true)}>
-                <FontAwesome name="plus" size={16} color="#fff" />
-                <Text style={styles.addExerciseButtonText}>Adicionar Exercício</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 15 }}>
+                <TouchableOpacity style={[styles.addExerciseButton, { flex: 1, margin: 0 }]} onPress={() => setModalVisible(true)}>
+                  <FontAwesome name="plus" size={16} color="#fff" />
+                  <Text style={styles.addExerciseButtonText}>Adicionar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.addExerciseButton, { flex: 1, margin: 0, backgroundColor: '#2A2E37', borderColor: '#333' }]} onPress={() => setReorderModalVisible(true)}>
+                  <FontAwesome name="bars" size={16} color="#fff" />
+                  <Text style={styles.addExerciseButtonText}>Reordenar</Text>
+                </TouchableOpacity>
+              </View>
 
               {treinoId && (
                 <TouchableOpacity style={styles.deleteWorkoutButton} onPress={handleDeleteTreino}>
@@ -1078,6 +1093,33 @@ export default function EditarTreinoScreen() {
         onSelectMachine={handleMachineSelect}
         exerciseId={exerciseForMachine?.exercise.modeloId || ''}
         currentMachineId={exerciseForMachine?.exercise.machineId}
+      />
+
+      <ExerciseNotesModal
+        visible={isNotesModalVisible}
+        onClose={() => {
+          setIsNotesModalVisible(false);
+          setExerciseForNotes(null);
+        }}
+        exerciseId={exerciseForNotes?.exercise.modeloId || ''}
+        exerciseName={exerciseForNotes?.exercise.modelo.nome || ''}
+        currentNote={exerciseForNotes?.exercise.notes || ''}
+        onSaveNote={(note) => {
+          if (exerciseForNotes) {
+            const updatedExercise = { ...exerciseForNotes.exercise, notes: note };
+            handleUpdateExercise(updatedExercise, exerciseForNotes.index);
+          }
+        }}
+      />
+
+      <ExerciseReorderModal
+        visible={isReorderModalVisible}
+        onClose={() => setReorderModalVisible(false)}
+        exercises={treino?.exercicios || []}
+        onSave={(newOrder) => {
+          if (!isEditing) setIsEditing(true);
+          setTreino(prev => prev ? { ...prev, exercicios: newOrder as Exercicio[] } : null);
+        }}
       />
 
       <OngoingWorkoutFooter />

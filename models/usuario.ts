@@ -4,8 +4,7 @@ import { Ficha } from './ficha';
 export type UserRole = 'usuario' | 'administrador' | 'personal';
 
 export interface Usuario {
-  peso(peso: any): unknown;
-  uid(uid: any): unknown;
+  peso?: number;
   settings: any;
   id: string;
   email: string;

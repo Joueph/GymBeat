@@ -2,13 +2,12 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
-import { AddFriendModal } from '../../components/amigos/AddFriendModal';
-import { FriendListItem } from '../../components/amigos/FriendListItem';
 import { FriendRequestsModal } from '../../components/amigos/FriendRequestsModal';
+import { FriendsHorizontalWidget } from '../../components/amigos/FriendsHorizontalWidget';
 import { PerfilCard } from '../../components/amigos/PerfilCard';
-import { ProjetosSection } from '../../components/amigos/ProjetosSection';
+import { PostFeedWidget } from '../../components/amigos/PostFeedWidget';
 import { SocialHeader } from '../../components/amigos/SocialHeader';
 import { useAmigosData } from '../../hooks/useAmigosData';
 
@@ -45,39 +44,32 @@ export default function AmigosScreen() {
     return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
   }
 
-  const ListHeader = () => (
-    <>
-      <SocialHeader
-        onNotificationsPress={() => modals.notifications.setVisible(true)}
-        onAddFriendPress={() => modals.addFriend.setVisible(true)}
-        onSharePress={() => actions.handleShareCode()}
-      />
-
-      <PerfilCard
-        user={user}
-        friendsCount={friends.length}
-        workoutsCount={stats.workoutsCount}
-        totalVolume={stats.totalVolume}
-      />
-      <ProjetosSection
-        projetos={projects}
-        onAddProjectPress={() => modals.addOptions.setVisible(true)}
-      />
-      <Text style={[styles.mainSectionTitle, { marginTop: 15, marginBottom: 10 }]}>Amigos</Text>
-    </>
-  );
-
   return (
     <>
-      <FlatList
-        data={friends}
-        renderItem={({ item }) => <FriendListItem item={item} />}
-        keyExtractor={(item) => item.id}
-        style={{ flex: 1, backgroundColor: "#030405" }}
-        contentContainerStyle={styles.container}
-        ListHeaderComponent={ListHeader}
-        ListEmptyComponent={<View style={styles.centered}><Text style={styles.emptyText}>Adicione amigos para vê-los aqui!</Text></View>}
-      />
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <SocialHeader
+          onNotificationsPress={() => modals.notifications.setVisible(true)}
+          onAddFriendPress={() => actions.handleShareCode()}
+        />
+
+        <PerfilCard
+          user={user}
+          friendsCount={friends.length}
+          workoutsCount={stats.workoutsCount}
+          postsCount={stats.postsCount}
+        />
+
+        <FriendsHorizontalWidget
+          friends={friends}
+          onAddFriendPress={() => actions.handleShareCode()}
+        />
+
+        <PostFeedWidget />
+      </ScrollView>
       <OngoingWorkoutFooter />
 
       {/* Modals - Keeping them here for now as they are page-level interactions */}
@@ -124,12 +116,6 @@ export default function AmigosScreen() {
         requests={requests}
         onAccept={actions.handleAcceptRequest}
         onReject={actions.handleRejectRequest}
-      />
-
-      <AddFriendModal
-        visible={modals.addFriend.visible}
-        onClose={() => modals.addFriend.setVisible(false)}
-        user={user}
       />
     </>
   );

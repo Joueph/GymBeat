@@ -6,10 +6,9 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 interface SocialHeaderProps {
     onNotificationsPress: () => void;
     onAddFriendPress: () => void;
-    onSharePress: () => void;
 }
 
-export function SocialHeader({ onNotificationsPress, onAddFriendPress, onSharePress }: SocialHeaderProps) {
+export function SocialHeader({ onNotificationsPress, onAddFriendPress }: SocialHeaderProps) {
     return (
         <View style={styles.headerContainer}>
             <Text style={styles.headerTitle}>Social</Text>
@@ -19,9 +18,6 @@ export function SocialHeader({ onNotificationsPress, onAddFriendPress, onSharePr
                 </TouchableOpacity>
                 <TouchableOpacity onPress={onAddFriendPress} style={styles.headerButton}>
                     <FontAwesome name="user-plus" size={20} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={onSharePress} style={styles.headerButton}>
-                    <FontAwesome name="plus" size={20} color="#fff" />
                 </TouchableOpacity>
             </View>
         </View>

@@ -11,6 +11,7 @@ import { Log } from '../models/log';
 import { Projeto } from '../models/projeto';
 import { Usuario } from '../models/usuario';
 import { getLogsByUsuarioId } from '../services/logService';
+import { deletePost, getRecentPosts, likePost, unlikePost } from '../services/postService';
 import { getTreinosByUsuarioId } from '../services/treinoService';
 import { acceptFriendRequest, getUserProfile, rejectFriendRequest } from '../userService';
 
@@ -40,6 +41,7 @@ export function useAmigosData() {
     // Stats
     const [userWorkoutsCount, setUserWorkoutsCount] = useState(0);
     const [userTotalVolume, setUserTotalVolume] = useState(0);
+    const [userPostsCount, setUserPostsCount] = useState(0);
 
     const isInitialLoad = useRef(true);
 
@@ -64,14 +66,16 @@ export function useAmigosData() {
                 const unsubscribe = onSnapshot(doc(db, "users", user.id), async (userDoc) => {
                     try {
                         // 1. Fetch User Stats
-                        const [userWorkouts, userLogs] = await Promise.all([
+                        const [userWorkouts, userLogs, userPosts] = await Promise.all([
                             getTreinosByUsuarioId(user.id),
-                            getLogsByUsuarioId(user.id)
+                            getLogsByUsuarioId(user.id),
+                            getRecentPosts('mine', user.id)
                         ]);
 
                         setUserWorkoutsCount(userWorkouts.length);
                         const totalVolume = userLogs.reduce((sum, log) => sum + (log.cargaAcumulada || 0), 0);
                         setUserTotalVolume(totalVolume);
+                        setUserPostsCount(userPosts.length);
 
                         if (userDoc.exists()) {
                             const userProfile = { id: userDoc.id, ...userDoc.data() } as Usuario;
@@ -217,9 +221,11 @@ export function useAmigosData() {
         isOnline,
         loading,
         friends,
+        friendIds: friends.map(f => f.id),
         stats: {
             workoutsCount: userWorkoutsCount,
-            totalVolume: userTotalVolume
+            totalVolume: userTotalVolume,
+            postsCount: userPostsCount
         },
         projects: projetos,
         requests: friendRequests,
@@ -237,7 +243,10 @@ export function useAmigosData() {
             handleJoinProject,
             handleShareCode,
             handleAcceptRequest,
-            handleRejectRequest
+            handleRejectRequest,
+            deletePost,
+            likePost,
+            unlikePost
         }
     };
 }

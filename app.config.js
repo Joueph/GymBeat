@@ -97,6 +97,13 @@ export default {
         },
       ],
       "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permita o acesso à galeria para postar a foto do seu treino.",
+          "cameraPermission": "Permita o acesso à câmera para tirar uma foto do seu treino."
+        }
+      ],
       "./plugins/with-rnfb-nonmodular-fix.js",
     ],
     experiments: {

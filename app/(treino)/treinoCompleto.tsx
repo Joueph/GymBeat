@@ -3,9 +3,14 @@ import { FontAwesome } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'; // Adicionado ThemedText
 import * as StoreReview from 'expo-store-review';
 // import { VideoView as Video, useVideoPlayer } from 'expo-video'; // Removido
+import * as Sharing from 'expo-sharing';
 import { doc, getDoc } from 'firebase/firestore';
-import React, { memo, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'; // Adicionado Svg, Circle
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'; // Adicionado Svg, Circle
+import ViewShot, { captureRef } from "react-native-view-shot";
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_WIDTH = SCREEN_WIDTH - 30; // 15 padding each side
 // import { BarChart, LineChart } from 'react-native-chart-kit'; // Removido
 import { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,8 +24,12 @@ import { useAuth } from '../authprovider';
 // --- Imports dos novos componentes ---
 import { Ficha } from '@/models/ficha';
 import { Treino } from '@/models/treino';
+import { createPost } from '@/services/postService';
 import { getTreinosByIds } from '@/services/treinoService';
 import { widgetService } from '@/services/widgetService';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '../../components/exercicios/ExpandableExerciseItem';
@@ -138,6 +147,15 @@ export default function TreinoCompletoScreen() {
   const [currentVolume, setCurrentVolume] = useState(0);
   const [allUserLogs, setAllUserLogs] = useState<Log[]>([]);
   const [userWeight, setUserWeight] = useState(70); // Fallback
+
+  // Post Feature State
+  const [postImage, setPostImage] = useState<string | null>(null);
+  const [posting, setPosting] = useState(false);
+  const [sharedImageUri, setSharedImageUri] = useState<string | null>(null);
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+
+  const viewShotRef = useRef<ViewShot>(null);
+  const flatListRef = useRef<FlatList>(null);
 
   // Animação para o gráfico de barras
   const chartHeight = useSharedValue(0);
@@ -327,6 +345,90 @@ export default function TreinoCompletoScreen() {
     router.replace('/(tabs)/treinoHoje');
   };
 
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Desculpe', 'Precisamos de permissão para acessar a galeria.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 5],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setPostImage(result.assets[0].uri);
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Desculpe', 'Precisamos de permissão para acessar a câmera.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 5],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      setPostImage(result.assets[0].uri);
+    }
+  };
+
+  const handlePost = async () => {
+    if (!log || !user) return;
+    setPosting(true);
+    try {
+      // 1. Capture the current card view
+      const uri = await captureRef(viewShotRef, {
+        format: "jpg",
+        quality: 0.9,
+      });
+      setSharedImageUri(uri);
+
+      const uniqueMuscles = Array.from(new Set(log.exercicios.map(e => e.modelo.grupoMuscular).filter(Boolean)));
+
+      const stats = {
+        duration: duration,
+        exercisesCount: log.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido)).length,
+        volume: currentVolume,
+        muscles: uniqueMuscles,
+      };
+
+      // Ensure we associate the correct image if the user selected the Image Card (index 1)
+      const imageToUpload = activeCardIndex === 1 ? postImage : undefined;
+
+      await createPost({
+        usuarioId: user.id,
+        logId: log.id,
+        stats: stats,
+        descricao: '',
+      }, imageToUpload || undefined);
+
+      // No Alert, just move to next step
+      setStep(s => s + 1);
+
+    } catch (error) {
+      Alert.alert('Erro', 'Falha ao publicar o post.');
+      console.error(error);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (sharedImageUri && await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(sharedImageUri);
+    }
+  };
+
   if (loading) {
     // ... (código existente de loading)
     return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
@@ -434,11 +536,177 @@ export default function TreinoCompletoScreen() {
     </View>
   );
 
+  const DefaultPostCard = ({ muscles, count, time }: { muscles: string[], count: number, time: string }) => (
+    <View style={[styles.postPreviewCard, styles.defaultCard]}>
+      <View style={styles.cardHeader}>
+        <Image source={require('../../assets/images/icon.png')} style={{ width: 40, height: 40, borderRadius: 8 }} contentFit="contain" />
+      </View>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardTitle}>TREINO CONCLUÍDO</Text>
+        <View style={styles.cardStatsGrid}>
+          <View style={styles.cardStatBox}>
+            <Text style={styles.cardStatValue}>{time}</Text>
+            <Text style={styles.cardStatLabel}>Tempo</Text>
+          </View>
+          <View style={styles.cardStatBox}>
+            <Text style={styles.cardStatValue}>{count}</Text>
+            <Text style={styles.cardStatLabel}>Exercícios</Text>
+          </View>
+        </View>
+        <Text style={styles.cardMuscles}>{muscles.join(' • ')}</Text>
+      </View>
+      <View style={styles.cardFooter}>
+        <Text style={styles.watermark}>@gymbeatapp</Text>
+      </View>
+    </View>
+  );
+
+  const StepPost = () => {
+    const uniqueMuscles = Array.from(new Set(log?.exercicios.map(e => e.modelo.grupoMuscular).filter(Boolean)));
+    const exercisesCount = log?.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido)).length || 0;
+
+    // Data source for carousel
+    const data = [{ key: 'default' }];
+    if (postImage) data.push({ key: 'image' });
+
+    const renderItem = ({ item }: { item: any }) => {
+      if (item.key === 'default') {
+        return (
+          <View style={{ width: CARD_WIDTH, paddingHorizontal: 5 }}>
+            <DefaultPostCard muscles={uniqueMuscles} count={exercisesCount} time={formatDuration(duration)} />
+          </View>
+        );
+      }
+      return (
+        <View style={{ width: CARD_WIDTH, paddingHorizontal: 5 }}>
+          <View style={styles.postPreviewCard}>
+            <Image source={{ uri: postImage! }} style={styles.postImageBackground} contentFit="cover" />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.8)']}
+              style={styles.postOverlay}
+            >
+              <View>
+                <Text style={styles.postTitle}>TREINO CONCLUÍDO</Text>
+                <View style={styles.postStatsRow}>
+                  <View style={styles.postStatItem}>
+                    <FontAwesome name="clock-o" size={14} color="#3B82F6" />
+                    <Text style={styles.postStatText}>{formatDuration(duration)}</Text>
+                  </View>
+                  <View style={styles.postStatItem}>
+                    <FontAwesome name="trophy" size={14} color="#3B82F6" />
+                    <Text style={styles.postStatText}>{exercisesCount} Exercícios</Text>
+                  </View>
+                </View>
+                <Text style={styles.postMusclesText}>{uniqueMuscles.join(' • ')}</Text>
+              </View>
+            </LinearGradient>
+          </View>
+        </View>
+      );
+    };
+
+    const handleScroll = (event: any) => {
+      const slideSize = event.nativeEvent.layoutMeasurement.width;
+      const index = event.nativeEvent.contentOffset.x / slideSize;
+      const roundIndex = Math.round(index);
+      setActiveCardIndex(roundIndex);
+    };
+
+    // Scroll to new image when added
+    useEffect(() => {
+      if (postImage && flatListRef.current) {
+        // small timeout to allow layout update
+        setTimeout(() => {
+          flatListRef.current?.scrollToIndex({ index: 1, animated: true });
+          setActiveCardIndex(1);
+        }, 100);
+      }
+    }, [postImage]);
+
+    return (
+      <View style={styles.stepContainer}>
+        <Text style={styles.statsSectionTitle}>Compartilhe com a comunidade</Text>
+
+        <ViewStepShotWrapper>
+          <FlatList
+            ref={flatListRef}
+            data={data}
+            renderItem={renderItem}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={item => item.key}
+            onMomentumScrollEnd={handleScroll}
+            style={{ width: CARD_WIDTH, alignSelf: 'center' }}
+          />
+        </ViewStepShotWrapper>
+
+        {/* Dots */}
+        {data.length > 1 && (
+          <View style={styles.paginationDots}>
+            {data.map((_, i) => (
+              <View key={i} style={[styles.dot, i === activeCardIndex && styles.activeDot]} />
+            ))}
+          </View>
+        )}
+
+        <View style={styles.postActionsContainer}>
+          <View style={styles.mediaButtonsRow}>
+            <TouchableOpacity style={styles.mediaButton} onPress={takePhoto}>
+              <FontAwesome name="camera" size={20} color="#fff" />
+              <Text style={styles.mediaButtonText}>Câmera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.mediaButton} onPress={pickImage}>
+              <FontAwesome name="image" size={20} color="#fff" />
+              <Text style={styles.mediaButtonText}>Galeria</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.postButton, posting && styles.disabledButton]}
+            onPress={handlePost}
+            disabled={posting}
+          >
+            {posting ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionButtonText}>Postar</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  const ViewStepShotWrapper = ({ children }: { children: React.ReactNode }) => (
+    <ViewShot ref={viewShotRef} options={{ format: "jpg", quality: 0.9 }}>
+      {children}
+    </ViewShot>
+  );
+
+  const StepShare = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.statsSectionTitle}>Post Publicado!</Text>
+      <View style={styles.sharePreviewContainer}>
+        {sharedImageUri && (
+          <Image source={{ uri: sharedImageUri }} style={styles.sharePreviewImage} contentFit="contain" />
+        )}
+      </View>
+      <TouchableOpacity style={[styles.actionButton, styles.postButton, { marginBottom: 15 }]} onPress={handleShare}>
+        <Text style={styles.actionButtonText}>Compartilhar</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.skipButton} onPress={handleCloseAndReview}>
+        <Text style={styles.skipButtonText}>Fechar</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   const steps = [
     <StepProgress key="progress" />,
     <StepPerformance key="performance" />,
     <StepExerciseSummary key="summary" />,
+    <StepPost key="post" />,
+    <StepShare key="share" />,
   ];
+
+  const isPostStep = step === steps.length - 2; // Before Share
+  const isShareStep = step === steps.length - 1;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -446,30 +714,40 @@ export default function TreinoCompletoScreen() {
       <View style={styles.completeModalHeader}>
         <Text style={styles.completeModalTitle}>Mandou Bem!</Text>
         <Text style={styles.completeModalSubtitle}>Você completou o treino de hoje!</Text>
-        <StepIndicator currentStep={step} totalSteps={steps.length} />
+        {!isShareStep && <StepIndicator currentStep={step} totalSteps={steps.length - 1} />}
       </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 80 }} // Space for the button
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
         {steps[step]}
       </ScrollView>
-      <View style={styles.navigationButtonsContainer}>
-        {step > 0 && (
-          <TouchableOpacity style={[styles.navButton, styles.prevButton]} onPress={() => setStep(s => s - 1)}>
-            <Text style={styles.navButtonText}>Voltar</Text>
-          </TouchableOpacity>
-        )}
-        {step < steps.length - 1 ? (
-          <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={() => setStep(s => s + 1)}>
-            <Text style={styles.navButtonText}>Próximo</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={handleCloseAndReview}>
-            <Text style={styles.navButtonText}>Fechar</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {!isShareStep && (
+        <View style={styles.navigationButtonsContainer}>
+          {step > 0 && !isPostStep && (
+            <TouchableOpacity style={[styles.navButton, styles.prevButton]} onPress={() => setStep(s => s - 1)}>
+              <Text style={styles.navButtonText}>Voltar</Text>
+            </TouchableOpacity>
+          )}
+          {!isPostStep && (
+            step < steps.length - 2 ? (
+              <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={() => setStep(s => s + 1)}>
+                <Text style={styles.navButtonText}>Próximo</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={() => setStep(s => s + 1)}>
+                <Text style={styles.navButtonText}>Próximo</Text>
+              </TouchableOpacity>
+            )
+          )}
+          {/* Custom handling for Skip in Post Step is inside the component */}
+          {isPostStep && (
+            <TouchableOpacity style={styles.skipButton} onPress={handleCloseAndReview}>
+              <Text style={styles.skipButtonText}>Pular e Fechar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -722,4 +1000,189 @@ const styles = StyleSheet.create({
     backgroundColor: '#3B82F6',
   },
   // Estilos de exerciseItem removidos (agora estão no componente)
+  postPreviewCard: {
+    width: '100%',
+    aspectRatio: 4 / 5,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#1A1D23',
+    marginBottom: 20,
+    position: 'relative',
+  },
+  postImageBackground: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  postOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    padding: 20,
+  },
+  postTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  postStatsRow: {
+    flexDirection: 'row',
+    gap: 15,
+    marginBottom: 8,
+  },
+  postStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  postStatText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  postMusclesText: {
+    color: '#ccc',
+    fontSize: 14,
+  },
+  postActionsContainer: {
+    gap: 12,
+  },
+  mediaButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  mediaButton: {
+    flex: 1,
+    backgroundColor: '#1A1D23',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  mediaButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionButton: {
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  postButton: {
+    backgroundColor: '#3B82F6',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  skipButton: {
+    alignItems: 'center',
+    padding: 10,
+  },
+  skipButtonText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
+  // Social Post Feature Styles
+  defaultCard: {
+    backgroundColor: '#0B0D10', // App Background Color
+    justifyContent: 'space-between',
+    padding: 20,
+    alignItems: 'center',
+  },
+  cardHeader: {
+    marginTop: 20,
+    alignItems: 'center',
+  },
+  cardBody: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  cardTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textTransform: 'uppercase',
+  },
+  cardStatsGrid: {
+    flexDirection: 'row',
+    gap: 20,
+    marginBottom: 20,
+  },
+  cardStatBox: {
+    alignItems: 'center',
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#1A1D23',
+    minWidth: 80,
+  },
+  cardStatValue: {
+    color: '#3B82F6',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  cardStatLabel: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  cardMuscles: {
+    color: '#ccc',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  cardFooter: {
+    marginBottom: 10,
+  },
+  watermark: {
+    color: '#fff',
+    opacity: 0.2,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  paginationDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginBottom: 15,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#444',
+  },
+  activeDot: {
+    backgroundColor: '#3B82F6',
+    width: 20,
+  },
+  sharePreviewContainer: {
+    width: '100%',
+    aspectRatio: 4 / 5,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#fff',
+  },
+  sharePreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
 });
+
+

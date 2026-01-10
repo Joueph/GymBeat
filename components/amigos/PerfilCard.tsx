@@ -8,10 +8,10 @@ interface PerfilCardProps {
     user: Usuario | null;
     friendsCount: number;
     workoutsCount: number;
-    totalVolume: number;
+    postsCount: number;
 }
 
-export const PerfilCard = ({ user, friendsCount, workoutsCount, totalVolume }: PerfilCardProps) => {
+export const PerfilCard = ({ user, friendsCount, workoutsCount, postsCount }: PerfilCardProps) => {
     const router = useRouter();
 
     return (
@@ -34,8 +34,8 @@ export const PerfilCard = ({ user, friendsCount, workoutsCount, totalVolume }: P
             </TouchableOpacity>
             <View style={styles.userStatsContainer}>
                 <View style={styles.statItem}><Text style={styles.statValue}>{friendsCount}</Text><Text style={styles.statLabel}>Amigos</Text></View>
+                <View style={styles.statItem}><Text style={styles.statValue}>{postsCount}</Text><Text style={styles.statLabel}>Posts</Text></View>
                 <View style={styles.statItem}><Text style={styles.statValue}>{workoutsCount}</Text><Text style={styles.statLabel}>Treinos</Text></View>
-                <View style={styles.statItem}><Text style={styles.statValue}>{totalVolume > 1000 ? `${(totalVolume / 1000).toFixed(1)}t` : `${Math.round(totalVolume)}kg`}</Text><Text style={styles.statLabel}>Volume Total</Text></View>
             </View>
         </View>
     );

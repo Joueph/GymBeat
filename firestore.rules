@@ -165,5 +165,14 @@ match /feature_suggestions/{suggestionId} {
                 && !(request.auth.uid in resource.data.votedBy)
                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'votedBy']);
 }
+
+// =================================================================
+// Regras para a Coleção de Posts (posts)
+// =================================================================
+match /posts/{postId} {
+  allow read: if request.auth != null;
+  allow create: if isOwner(request.resource.data.usuarioId);
+  allow update, delete: if isOwner(resource.data.usuarioId);
+}
 }
 }

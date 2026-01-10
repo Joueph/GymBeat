@@ -1,5 +1,6 @@
 import { WorkoutReviewModal } from '@/app/(treino)/modals/modalReviewTreinos';
 import { FichaSelectionDrawer } from '@/components/FichaSelectionDrawer';
+import { FriendsWidget } from '@/components/home/FriendsWidget';
 import { HomeHeader } from '@/components/home/HomeHeader';
 import { HomeLayoutConfigModal } from '@/components/home/HomeLayoutConfigModal';
 import { MetricsConfigModal } from '@/components/home/MetricsConfigModal';
@@ -88,6 +89,8 @@ export default function HomeScreen() {
             config={metricsLayout}
           />
         );
+      case 'friends':
+        return <FriendsWidget key={key} />;
       case 'pastWorkouts':
         return <PastWorkoutsWidget key={key} logs={logs} onSelectLog={handleSelectLog} />;
       default:

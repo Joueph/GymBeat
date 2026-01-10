@@ -18,6 +18,7 @@ const WIDGET_LABELS: { [key: string]: { label: string, icon: string } } = {
     weeklyProgress: { label: 'Progresso Semanal', icon: 'pie-chart' },
     todayWorkout: { label: 'Treino de Hoje', icon: 'barbell' },
     metrics: { label: 'Minhas Métricas', icon: 'stats-chart' },
+    friends: { label: 'Atividade dos Amigos', icon: 'people' },
     pastWorkouts: { label: 'Treinos Passados', icon: 'time' },
 };
 

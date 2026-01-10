@@ -101,7 +101,7 @@ match /logs/{logId} {
   // 2. O usuário for amigo do dono do log.
   // 3. O log tiver um 'projetoId' e o usuário for participante desse projeto.
   allow read: if isOwner(resource.data.usuarioId) || (resource.data.projetoId != null && isProjectParticipant(resource.data.projetoId)) ||
-                 isOwnerOfAssociatedFicha(resource.data);
+                 isOwnerOfAssociatedFicha(resource.data) || isMutualFriend(resource.data.usuarioId);
 
   // Permite criar se o usuário for o dono dos dados enviados.
   allow create: if isOwner(request.resource.data.usuarioId);

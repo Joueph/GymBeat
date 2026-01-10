@@ -34,6 +34,7 @@ export const useHomeData = () => {
         { key: 'weeklyProgress', visible: true },
         { key: 'todayWorkout', visible: true },
         { key: 'metrics', visible: true },
+        { key: 'friends', visible: true },
         { key: 'pastWorkouts', visible: true },
     ];
 

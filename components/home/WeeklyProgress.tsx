@@ -7,26 +7,29 @@ import { ProgressCircle } from '../ProgressCircle';
 type WeeklyProgressProps = {
     logs: Log[];
     activeFicha: Ficha | null;
+    streakGoal?: number;
 };
 
-export const WeeklyProgress: React.FC<WeeklyProgressProps> = ({ logs, activeFicha }) => {
+export const WeeklyProgress: React.FC<WeeklyProgressProps> = ({ logs, activeFicha, streakGoal = 3 }) => {
     const today = new Date();
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - today.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
 
-    const completedWorkoutsThisWeek = new Set(
-        logs.filter(log => {
-            if (!log.horarioFim || !log.treino?.id) return false;
-            const time = log.horarioFim.seconds ? log.horarioFim.seconds * 1000 : new Date(log.horarioFim).getTime();
-            return new Date(time) >= startOfWeek;
-        }).map(log => log.treino!.id)
-    );
+    const completedSessionsThisWeek = logs.filter(log => {
+        if (!log.horarioFim || !log.treino?.id) return false;
+        const time = log.horarioFim.seconds ? log.horarioFim.seconds * 1000 : new Date(log.horarioFim).getTime();
+        return new Date(time) >= startOfWeek;
+    }).length;
 
-    const treinosRealizados = completedWorkoutsThisWeek.size;
-    const treinosNaSemana = activeFicha?.treinos.length || 0;
+    const treinosRealizados = completedSessionsThisWeek;
+    const treinosNaSemana = streakGoal;
     const progress = treinosNaSemana > 0 ? treinosRealizados / treinosNaSemana : 0;
-    if (treinosNaSemana === 0) return null;
+    // Removed the "if (treinosNaSemana === 0) return null;" check because streakGoal defaults to 3, so it's rarely 0 unless explicitly set.
+    // Even if 0, we might want to show "Overachiever" status or handle it gracefully, but usually it won't optionally hide the whole widget arbitrarily if the goal is missing.
+    // However, if the user explicitly has NO goal, maybe they don't want to see it? But default is 3. 
+    // The previous logic hid if activeFicha had 0 workouts. Here we rely on goal.
+
 
     return (
         <View>

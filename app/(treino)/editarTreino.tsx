@@ -41,6 +41,7 @@ import { ExerciseNotesModal } from './modals/ExerciseNotesModal';
 import { ExerciseReorderModal } from './modals/ExerciseReorderModal';
 import { WorkoutReviewModal } from './modals/modalReviewTreinos';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
+import { SelectExerciseModal } from './modals/SelectExerciseModal';
 import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -68,6 +69,7 @@ interface ExerciseItemProps {
   onOpenMachineDrawer: (exerciseIndex: number) => void;
   onReorder: () => void;
   onOpenNotes: () => void;
+  onSubstitute: () => void;
 }
 
 const formatRestTime = (seconds: number) => {
@@ -149,6 +151,7 @@ const ExerciseItem = ({
   onOpenMachineDrawer,
   onReorder,
   onOpenNotes,
+  onSubstitute,
 }: ExerciseItemProps) => {
   const [series, setSeries] = useState<SerieEdit[]>(
     item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' }))
@@ -331,6 +334,8 @@ const ExerciseItem = ({
                 onOpenNotes();
               } else if (action === 'reorder') {
                 onReorder();
+              } else if (action === 'replace') {
+                onSubstitute();
               }
             }}
           />
@@ -422,6 +427,36 @@ export default function EditarTreinoScreen() {
   // Machine Drawer Logic
   const [isMachineDrawerVisible, setIsMachineDrawerVisible] = useState(false);
   const [exerciseForMachine, setExerciseForMachine] = useState<{ index: number, exercise: Exercicio } | null>(null);
+
+  // Substitute Logic
+  const [isSubstituteModalVisible, setSubstituteModalVisible] = useState(false);
+  const [exerciseForSubstitution, setExerciseForSubstitution] = useState<{ index: number, exercise: Exercicio } | null>(null);
+
+  const handleOpenSubstitute = (index: number) => {
+    if (!treino) return;
+    setExerciseForSubstitution({ index, exercise: treino.exercicios[index] });
+    setSubstituteModalVisible(true);
+  };
+
+  const handleConfirmSubstitute = (newModel: ExercicioModelo) => {
+    if (!exerciseForSubstitution || !treino) return;
+    const { index } = exerciseForSubstitution;
+
+    // Preserve sets, notes, etc., but update model
+    const updatedExercise: Exercicio = {
+      ...treino.exercicios[index],
+      modeloId: newModel.id,
+      modelo: newModel,
+    };
+
+    // Explicitly remove machine info to avoid passing 'undefined' to Firebase
+    delete updatedExercise.machineId;
+    delete updatedExercise.machineName;
+
+    handleUpdateExercise(updatedExercise, index);
+    setSubstituteModalVisible(false);
+    setExerciseForSubstitution(null);
+  };
 
   const handleMachineSelect = async (machineId: string | undefined, machineName: string | undefined, shouldClose: boolean = true) => {
     if (!exerciseForMachine || !treino) return;
@@ -566,7 +601,7 @@ export default function EditarTreinoScreen() {
           id: '',
           nome: 'Novo Treino',
           usuarioId: user?.id || '',
-          fichaId: fichaId || undefined,
+          fichaId: (typeof fichaId === 'string' && fichaId === 'unassigned') ? undefined : (fichaId || undefined),
           exercicios: [],
           diasSemana: [],
           intervalo: { min: 1, seg: 30 },
@@ -799,18 +834,19 @@ export default function EditarTreinoScreen() {
         onUpdateExercise={(ex) => handleUpdateExercise(ex, index)}
         onRemoveExercise={() => handleRemoveExercise(index)}
         setIsEditing={setIsEditing}
+        onReorder={() => setReorderModalVisible(true)}
         onOpenMachineDrawer={() => {
           setExerciseForMachine({ index, exercise: item });
           setIsMachineDrawerVisible(true);
         }}
-        onReorder={() => setReorderModalVisible(true)}
         onOpenNotes={() => {
           setExerciseForNotes({ index, exercise: item });
           setIsNotesModalVisible(true);
         }}
+        onSubstitute={() => handleOpenSubstitute(index)}
       />
     );
-  }, [treino]);
+  }, [treino, handleUpdateExercise, handleRemoveExercise, isEditing]);
 
   const viewingStyle = useAnimatedStyle(() => {
     return {
@@ -1123,6 +1159,19 @@ export default function EditarTreinoScreen() {
       />
 
       <OngoingWorkoutFooter />
+
+      {/* Substitute Modal */}
+      <SelectExerciseModal
+        visible={isSubstituteModalVisible}
+        onClose={() => {
+          setSubstituteModalVisible(false);
+          setExerciseForSubstitution(null);
+        }}
+        onSelect={handleConfirmSubstitute}
+        excludeIds={treino?.exercicios.map(e => e.modeloId) || []}
+        initialGroup={exerciseForSubstitution?.exercise.modelo.grupoMuscular}
+        sortByWordCount={true}
+      />
 
     </SafeAreaView>
   );

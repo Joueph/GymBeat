@@ -9,17 +9,31 @@ interface PerfilCardProps {
     friendsCount: number;
     workoutsCount: number;
     postsCount: number;
+    actionButton?: React.ReactNode;
+    onPress?: () => void;
 }
 
-export const PerfilCard = ({ user, friendsCount, workoutsCount, postsCount }: PerfilCardProps) => {
+export const PerfilCard = ({ user, friendsCount, workoutsCount, postsCount, actionButton, onPress }: PerfilCardProps) => {
     const router = useRouter();
+
+    const handlePress = onPress || (() => router.push('/perfil'));
 
     return (
         <View style={styles.userProfileCard}>
-            <TouchableOpacity onPress={() => router.push('/perfil')}>
-                <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/perfil')}>
-                    <FontAwesome name="pencil" size={16} color="#ccc" />
-                </TouchableOpacity>
+            <TouchableOpacity onPress={handlePress} disabled={!onPress && !(!actionButton)}>
+                {/* Logic: If custom action button is passed (view mode), maybe we don't want default navigation? 
+                    Actually, let's just use handlePress. Defaults to profile. 
+                    If the caller wants no action, they pass () => {}.
+                */}
+                {actionButton ? (
+                    <View style={styles.editProfileButton}>
+                        {actionButton}
+                    </View>
+                ) : (
+                    <TouchableOpacity style={styles.editProfileButton} onPress={() => router.push('/perfil')}>
+                        <FontAwesome name="pencil" size={16} color="#ccc" />
+                    </TouchableOpacity>
+                )}
                 <View style={styles.userProfileInfo}>
                     {user?.photoURL ? (
                         <Image source={{ uri: user.photoURL }} style={styles.userPfp} />

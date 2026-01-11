@@ -21,6 +21,7 @@ export interface ExercicioModelo {
     // Você pode adicionar outros flags aqui no futuro
     // ex: isUnilateral?: boolean;
   };
+  aliases?: string[];
 }
 
 export interface Serie {

@@ -60,6 +60,16 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
             const restTimeInSeconds = (profile.defaultRestTime?.min ?? 1) * 60 + (profile.defaultRestTime?.seg ?? 30);
             setDefaultRestTime(restTimeInSeconds);
             setRestTimeNotificationEnabled(profile.settings?.notifications?.restTimeEnding ?? false);
+
+            // Inactivity Settings defaults
+            setInactivitySettings({
+              nudgeEnabled: profile.settings?.inactivity?.nudgeEnabled ?? true,
+              nudgeTime: profile.settings?.inactivity?.nudgeTime ?? 15,
+              autoFinishEnabled: profile.settings?.inactivity?.autoFinishEnabled ?? true,
+              autoFinishTime: profile.settings?.inactivity?.autoFinishTime ?? 60,
+              autoCancelEnabled: profile.settings?.inactivity?.autoCancelEnabled ?? true,
+              autoCancelTime: profile.settings?.inactivity?.autoCancelTime ?? 90,
+            });
           }
           setIsLoading(false);
         }
@@ -67,6 +77,37 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
       fetchSettings();
     }
   }, [isVisible, user]);
+
+  const [inactivitySettings, setInactivitySettings] = useState({
+    nudgeEnabled: true,
+    nudgeTime: 15,
+    autoFinishEnabled: true,
+    autoFinishTime: 60,
+    autoCancelEnabled: true,
+    autoCancelTime: 90
+  });
+
+  const handleInactivityUpdate = async (key: keyof typeof inactivitySettings, value: any) => {
+    const newSettings = { ...inactivitySettings, [key]: value };
+    setInactivitySettings(newSettings);
+
+    if (user) {
+      try {
+        // We need to fetch current settings first to not overwrite other stuff? 
+        // Actually updateUserProfile does a merge at top level but settings is a map.
+        // We should merge deeply if possible, but for now we rely on the object structure.
+        // Let's assume we can merge 'settings.inactivity'.
+        await updateUserProfile(user.id, {
+          settings: {
+            ...user.settings,
+            inactivity: newSettings
+          }
+        });
+      } catch (e) {
+        console.error("Failed to save inactivity settings", e);
+      }
+    }
+  };
 
   const handleToggleDay = (day: DiaSemana) => {
     if (!treino || !onUpdateTreino) return;
@@ -269,6 +310,90 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
                 trackColor={{ false: "#767577", true: "#3B82F6" }}
               />
             </View>
+
+            {/* Inactivity Settings */}
+            <Text style={styles.sectionTitle}>Inatividade e Segurança</Text>
+
+            {/* Nudge Notification */}
+            <View style={styles.settingItemColumn}>
+              <View style={styles.settingRow}>
+                <FontAwesome name="bell" size={20} color="#ccc" style={styles.settingIcon} />
+                <View style={styles.settingTextContainer}>
+                  <Text style={styles.settingLabel}>Lembrete de Inatividade</Text>
+                  <Text style={[styles.settingValue, { marginTop: 2 }]}>Notificar quando esquecer o app aberto</Text>
+                </View>
+                <Switch
+                  onValueChange={(val) => handleInactivityUpdate('nudgeEnabled', val)}
+                  value={inactivitySettings.nudgeEnabled}
+                  trackColor={{ false: "#767577", true: "#3B82F6" }}
+                />
+              </View>
+              {inactivitySettings.nudgeEnabled && (
+                <View style={styles.subSettingRow}>
+                  <Text style={styles.subSettingLabel}>Tempo (min)</Text>
+                  <TextInput
+                    style={styles.smallInput}
+                    keyboardType="numeric"
+                    value={String(inactivitySettings.nudgeTime)}
+                    onChangeText={(text) => handleInactivityUpdate('nudgeTime', parseInt(text) || 0)}
+                  />
+                </View>
+              )}
+            </View>
+
+            {/* Auto Finish */}
+            <View style={styles.settingItemColumn}>
+              <View style={styles.settingRow}>
+                <FontAwesome name="check-circle" size={20} color="#ccc" style={styles.settingIcon} />
+                <View style={styles.settingTextContainer}>
+                  <Text style={styles.settingLabel}>Finalizar Automaticamente</Text>
+                  <Text style={[styles.settingValue, { marginTop: 2 }]}>Se o treino parecer abandonado</Text>
+                </View>
+                <Switch
+                  onValueChange={(val) => handleInactivityUpdate('autoFinishEnabled', val)}
+                  value={inactivitySettings.autoFinishEnabled}
+                  trackColor={{ false: "#767577", true: "#3B82F6" }}
+                />
+              </View>
+              {inactivitySettings.autoFinishEnabled && (
+                <View style={styles.subSettingRow}>
+                  <Text style={styles.subSettingLabel}>Tempo (min)</Text>
+                  <TextInput
+                    style={styles.smallInput}
+                    keyboardType="numeric"
+                    value={String(inactivitySettings.autoFinishTime)}
+                    onChangeText={(text) => handleInactivityUpdate('autoFinishTime', parseInt(text) || 0)}
+                  />
+                </View>
+              )}
+            </View>
+
+            {/* Auto Cancel */}
+            <View style={styles.settingItemColumn}>
+              <View style={styles.settingRow}>
+                <FontAwesome name="times-circle" size={20} color="#ccc" style={styles.settingIcon} />
+                <View style={styles.settingTextContainer}>
+                  <Text style={styles.settingLabel}>Cancelar Automaticamente</Text>
+                  <Text style={[styles.settingValue, { marginTop: 2 }]}>Se nenhum exercício foi feito</Text>
+                </View>
+                <Switch
+                  onValueChange={(val) => handleInactivityUpdate('autoCancelEnabled', val)}
+                  value={inactivitySettings.autoCancelEnabled}
+                  trackColor={{ false: "#767577", true: "#3B82F6" }}
+                />
+              </View>
+              {inactivitySettings.autoCancelEnabled && (
+                <View style={styles.subSettingRow}>
+                  <Text style={styles.subSettingLabel}>Tempo (min)</Text>
+                  <TextInput
+                    style={styles.smallInput}
+                    keyboardType="numeric"
+                    value={String(inactivitySettings.autoCancelTime)}
+                    onChangeText={(text) => handleInactivityUpdate('autoCancelTime', parseInt(text) || 0)}
+                  />
+                </View>
+              )}
+            </View>
           </ScrollView>
 
           <WorkoutScreenPreference
@@ -284,9 +409,9 @@ export const WorkoutSettingsModal: React.FC<WorkoutSettingsModalProps> = ({
             onSave={handleRestTimeSave}
             initialValue={defaultRestTime}
           />
-        </View>
-      </View>
-    </Modal>
+        </View >
+      </View >
+    </Modal >
   );
 };
 
@@ -432,4 +557,40 @@ const styles = StyleSheet.create({
     borderColor: '#fff',
     borderWidth: 3,
   },
+  settingItemColumn: {
+    backgroundColor: '#141414',
+    borderRadius: 12,
+    padding: 15,
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#ffffff1a',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  subSettingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 15,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#ffffff1a',
+  },
+  subSettingLabel: {
+    color: '#888',
+    fontSize: 14,
+  },
+  smallInput: {
+    backgroundColor: '#222',
+    color: '#fff',
+    borderRadius: 8,
+    padding: 8,
+    width: 60,
+    textAlign: 'center',
+    borderWidth: 1,
+    borderColor: '#333'
+  }
 });

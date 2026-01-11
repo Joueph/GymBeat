@@ -74,7 +74,7 @@ export default function HomeScreen() {
       case 'quickActions':
         return <QuickActionsWidget key={key} activeFicha={activeFicha} onStartEmptyWorkout={handleStartEmptyWorkout} />;
       case 'weeklyProgress':
-        return <WeeklyProgress key={key} logs={logs} activeFicha={activeFicha} />;
+        return <WeeklyProgress key={key} logs={logs} activeFicha={activeFicha} streakGoal={userProfile?.streakGoal} />;
       case 'todayWorkout':
         return <TodayWorkoutCard key={key} treinos={treinos} activeFicha={activeFicha} />;
       case 'metrics':

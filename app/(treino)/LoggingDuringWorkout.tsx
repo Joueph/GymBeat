@@ -12,17 +12,22 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert, AppState, AppStateStatus, FlatList,
+  Alert,
+  AppState,
+  AppStateStatus,
+  FlatList,
   Image,
   KeyboardAvoidingView,
-  LayoutAnimation, Platform,
+  LayoutAnimation,
+  PanResponder,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   UIManager,
   View
-} from 'react-native'; // Adicionado Platform
+} from 'react-native';
 import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler'; // Adicionado ScrollView
@@ -44,9 +49,10 @@ import { useAuth } from '../authprovider';
 import { ExerciseDetailModal } from './modals/ExerciseDetailModal';
 import { ExerciseNotesModal } from './modals/ExerciseNotesModal';
 import { ExerciseReorderModal } from './modals/ExerciseReorderModal';
-import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
-import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 import { WorkoutOverviewModal } from './modals/modalOverview';
+import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
+import { SelectExerciseModal } from './modals/SelectExerciseModal'; // Added import
+import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -106,6 +112,7 @@ const LoggedExerciseCard = ({
   onOpenMachineDrawer,
   onReorder,
   onOpenNotes,
+  onSubstitute,
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -125,6 +132,7 @@ const LoggedExerciseCard = ({
   onOpenMachineDrawer: () => void;
   onReorder: () => void;
   onOpenNotes: () => void;
+  onSubstitute: () => void;
 }) => {
   const [isDetailModalVisible, setDetailModalVisible] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
@@ -445,6 +453,8 @@ const LoggedExerciseCard = ({
                   setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible);
                 } else if (action === 'reorder') {
                   onReorder();
+                } else if (action === 'replace') {
+                  onSubstitute();
                 }
               }}
             />
@@ -608,20 +618,113 @@ const LoggedExerciseCard = ({
 export default function LoggingDuringWorkoutScreen() {
   const router = useRouter();
   const { treinoId, fichaId, logId } = useLocalSearchParams<{ treinoId?: string; fichaId?: string, logId?: string }>();
+  const { user } = useAuth();
+  const { finishWorkout, cancelWorkout, isSaving: isFinishing } = useWorkoutOperations();
+
+  // Core State
   const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
+  const [workoutName, setWorkoutName] = useState('');
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const [currentActivityId, setCurrentActivityId] = useState<string | null>(null); // Moved up
   const [isModalVisible, setModalVisible] = useState(false);
   const [isReorderModalVisible, setReorderModalVisible] = useState(false);
   const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
-  const { finishWorkout, isSaving: isFinishing } = useWorkoutOperations();
-  const [workoutName, setWorkoutName] = useState('');
+
+  // Additional State (Preserved)
   const [isNameEdited, setIsNameEdited] = useState(false);
   const [isOverviewModalVisible, setOverviewModalVisible] = useState(false);
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  const [elapsedTime, setElapsedTime] = useState(0); // in seconds
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [totalLoad, setTotalLoad] = useState(0);
-  const [userWeight, setUserWeight] = useState(70); // default fallback
-  const { user } = useAuth();
+  const [userWeight, setUserWeight] = useState(70);
+
+  // Inactivity State
+  const [inactivitySettings, setInactivitySettings] = useState({
+    nudgeEnabled: true,
+    nudgeTime: 15,
+    autoFinishEnabled: true,
+    autoFinishTime: 60,
+    autoCancelEnabled: true,
+    autoCancelTime: 90
+  });
+  const lastInteraction = React.useRef(Date.now());
+  const hasNudged = React.useRef(false);
+
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () => {
+        lastInteraction.current = Date.now();
+        hasNudged.current = false;
+        return false;
+      },
+    })
+  ).current;
+
+  // Fetch Inactivity Settings
+  useEffect(() => {
+    if (user) {
+      getUserProfile(user.id).then(profile => {
+        if (profile && profile.settings?.inactivity) {
+          setInactivitySettings(profile.settings.inactivity);
+        }
+      });
+    }
+  }, [user]);
+
+  // Inactivity Monitor Logic
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!Platform.OS || Platform.OS === 'web') return;
+
+      const now = Date.now();
+      const inactiveDurationMins = (now - lastInteraction.current) / 1000 / 60;
+
+      const anySetDone = loggedExercises.some(ex => ex.series.some(s => s.concluido));
+      // allSetsDone logic: simply check if no set is incomplete
+      const allSetsDone = loggedExercises.length > 0 && loggedExercises.every(ex => ex.series.every(s => s.concluido));
+
+      // 1. Nudge
+      if (inactivitySettings.nudgeEnabled && inactiveDurationMins >= inactivitySettings.nudgeTime && !hasNudged.current) {
+        hasNudged.current = true;
+        if (!allSetsDone && anySetDone) {
+          Alert.alert("Inatividade", "Você está há algum tempo sem mexer no app. Não esqueça de contar suas séries!");
+        } else if (allSetsDone) {
+          Alert.alert("Treino Concluído?", "Já acabou o treino? Finalize o treino aqui no app!");
+        } else {
+          // Started but nothing done?
+          Alert.alert("Vai treinar?", "O app está aberto mas você ainda não marcou nada.");
+        }
+      }
+
+      // 2. Auto Finish
+      if (inactivitySettings.autoFinishEnabled && inactiveDurationMins >= inactivitySettings.autoFinishTime && anySetDone) {
+        Alert.alert("Inatividade", "Seu treino foi contado como finalizado devido à inatividade.");
+        handleFinishWorkout();
+        clearInterval(interval);
+      }
+
+      // 3. Auto Cancel
+      if (inactivitySettings.autoCancelEnabled && inactiveDurationMins >= inactivitySettings.autoCancelTime && !anySetDone) {
+        Alert.alert("Inatividade", "Seu treino foi cancelado devido à inatividade.");
+        handleCancelWorkout(true);
+        clearInterval(interval);
+      }
+
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [inactivitySettings, loggedExercises, user, startTime, workoutName, currentActivityId]);
+
+  // Reset timer on AppState change
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        lastInteraction.current = Date.now();
+        hasNudged.current = false;
+      }
+    });
+    return () => subscription.remove();
+  }, []);
   const [activeLogId, setActiveLogId] = useState<string | null>(null);
   const [userLogs, setUserLogs] = useState<Log[]>([]);
   const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
@@ -637,7 +740,7 @@ export default function LoggingDuringWorkoutScreen() {
   const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
   const [setBeingTimed, setSetBeingTimed] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const progress = useSharedValue(0);
-  const [currentActivityId, setCurrentActivityId] = useState<string | null>(null);
+
   const scrollY = useSharedValue(0); // Restaurado
   // Estado para armazenar o ID do dono do treino original
   const [workoutOwnerId, setWorkoutOwnerId] = useState<string | null>(null);
@@ -647,6 +750,41 @@ export default function LoggingDuringWorkoutScreen() {
   const [exerciseForMachine, setExerciseForMachine] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
   const [isNotesModalVisible, setIsNotesModalVisible] = useState(false);
   const [exerciseForNotes, setExerciseForNotes] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+
+  // Substitute Logic
+  const [isSubstituteModalVisible, setSubstituteModalVisible] = useState(false);
+  const [exerciseForSubstitution, setExerciseForSubstitution] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+
+  const handleOpenSubstitute = (index: number) => {
+    setExerciseForSubstitution({ index, exercise: loggedExercises[index] });
+    setSubstituteModalVisible(true);
+  };
+
+  const handleConfirmSubstitute = (newModel: ExercicioModelo) => {
+    if (!exerciseForSubstitution) return;
+    const { index, exercise } = exerciseForSubstitution;
+
+    const updatedExercise: LoggedExercise = {
+      ...exercise,
+      modeloId: newModel.id,
+      modelo: newModel,
+      // Reset machine info
+      series: exercise.series,
+      notes: exercise.notes,
+      restTime: exercise.restTime
+    };
+
+    // Explicitly remove machine info to avoid 'undefined' issues
+    delete updatedExercise.machineId;
+    delete updatedExercise.machineName;
+
+    const newLogged = [...loggedExercises];
+    newLogged[index] = updatedExercise;
+    setLoggedExercises(newLogged);
+
+    setSubstituteModalVisible(false);
+    setExerciseForSubstitution(null);
+  }
 
   const handleMachineSelect = async (machineId: string | undefined, machineName: string | undefined, shouldClose: boolean = true) => {
     if (!exerciseForMachine) return;
@@ -1283,7 +1421,23 @@ export default function LoggingDuringWorkoutScreen() {
     router.back();
   };
 
-  const handleCancelWorkout = () => {
+  const handleCancelWorkout = (force: boolean = false) => {
+    const performCancel = async () => {
+      await cacheActiveWorkoutLog(null); // Limpa o cache
+      cancelNotification('rest-timer');
+      // End Live Activity when workout is cancelled
+      if (currentActivityId && Platform.OS === 'ios') {
+        await NotificationsLiveActivity.endActivity(currentActivityId);
+        setCurrentActivityId(null);
+      }
+      router.back();
+    };
+
+    if (force) {
+      performCancel();
+      return;
+    }
+
     Alert.alert(
       "Cancelar Treino?",
       "Seu progresso neste treino livre será perdido. Deseja continuar?",
@@ -1292,16 +1446,7 @@ export default function LoggingDuringWorkoutScreen() {
         {
           text: "Cancelar Treino",
           style: "destructive",
-          onPress: async () => {
-            await cacheActiveWorkoutLog(null); // Limpa o cache
-            cancelNotification('rest-timer');
-            // End Live Activity when workout is cancelled
-            if (currentActivityId && Platform.OS === 'ios') {
-              await NotificationsLiveActivity.endActivity(currentActivityId);
-              setCurrentActivityId(null);
-            }
-            router.back(); // Volta para a tela anterior
-          },
+          onPress: performCancel
         },
       ]
     );
@@ -1458,7 +1603,7 @@ export default function LoggingDuringWorkoutScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <MenuProvider>
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} {...panResponder.panHandlers}>
           {/* Cabeçalho Customizado (agora fixo) */}
           <View style={styles.customHeader}>
             <View style={styles.headerLeftGroup}>
@@ -1570,6 +1715,7 @@ export default function LoggingDuringWorkoutScreen() {
                         setExerciseForNotes({ index, exercise: item });
                         setIsNotesModalVisible(true);
                       }}
+                      onSubstitute={() => handleOpenSubstitute(index)}
                     />
                   );
                 }}
@@ -1598,7 +1744,7 @@ export default function LoggingDuringWorkoutScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
-                      onPress={handleCancelWorkout}
+                      onPress={() => handleCancelWorkout()}
                     >
                       <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
                     </TouchableOpacity>
@@ -1680,6 +1826,18 @@ export default function LoggingDuringWorkoutScreen() {
               onClose={() => setReorderModalVisible(false)}
               exercises={loggedExercises}
               onSave={(newOrder) => setLoggedExercises(newOrder as LoggedExercise[])}
+            />
+
+            <SelectExerciseModal
+              visible={isSubstituteModalVisible}
+              onClose={() => {
+                setSubstituteModalVisible(false);
+                setExerciseForSubstitution(null);
+              }}
+              onSelect={handleConfirmSubstitute}
+              excludeIds={loggedExercises.map(e => e.modeloId)}
+              initialGroup={exerciseForSubstitution?.exercise.modelo.grupoMuscular}
+              sortByWordCount={true}
             />
 
           </KeyboardAvoidingView>

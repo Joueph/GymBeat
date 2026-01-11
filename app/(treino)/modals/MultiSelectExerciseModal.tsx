@@ -1,9 +1,9 @@
 import { useAuth } from '@/app/authprovider';
+import { VideoListItem } from '@/components/VideoListItem';
 import { ExercicioModelo } from '@/models/exercicio';
 import { getExerciciosModelos, getTodosGruposMusculares } from '@/services/exercicioService';
 import { FontAwesome } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { DocumentSnapshot } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,7 +17,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { VideoListItem } from '@/components/VideoListItem';
 import { CreateExerciseModal } from './CreateExerciseModal';
 
 interface MultiSelectExerciseModalProps {
@@ -38,7 +37,7 @@ export const MultiSelectExerciseModal = ({
   const { user } = useAuth(); // Get the current user
   const [exerciciosModelos, setExerciciosModelos] = useState<ExercicioModelo[]>([]);
   const [selectedExercises, setSelectedExercises] = useState<ExercicioModelo[]>([]);
-  const [lastVisibleDoc, setLastVisibleDoc] = useState<DocumentSnapshot | null>(null);
+  const [lastVisibleDoc, setLastVisibleDoc] = useState<number | null>(null);
   const [loadingMoreExercicios, setLoadingMoreExercicios] = useState(false);
   const [allExerciciosLoaded, setAllExerciciosLoaded] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
@@ -84,6 +83,9 @@ export const MultiSelectExerciseModal = ({
             isNewSearch ? newExercicios : [...prev, ...newExercicios]
           );
           setLastVisibleDoc(newLastVisibleDoc);
+          if (newLastVisibleDoc === null) {
+            setAllExerciciosLoaded(true);
+          }
         } else {
           if (isNewSearch) setExerciciosModelos([]);
           setAllExerciciosLoaded(true);

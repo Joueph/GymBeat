@@ -18,7 +18,8 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
-serviceAccountKey.json
+*serviceAccountKey.json
+*gymbeat-4c3ff-firebase-adminsdk*
 
 build*
 

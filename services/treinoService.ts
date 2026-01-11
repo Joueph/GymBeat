@@ -1,5 +1,7 @@
 // services/treinoService.ts
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   doc,
   getDoc,
@@ -188,7 +190,17 @@ export const addTreino = async (treinoData: Omit<Treino, 'id'>, isSyncing: boole
   if (dataToSet.fichaId === undefined) {
     delete (dataToSet as Partial<Treino>).fichaId;
   }
+
   batch.set(newTreinoRef, dataToSet);
+
+  // If fichaId is present, add the new treino ID to the ficha's list of treinos
+  if (dataToSet.fichaId) {
+    const fichaRef = doc(db, 'fichas', dataToSet.fichaId);
+    batch.update(fichaRef, {
+      treinos: arrayUnion(newTreinoRef.id)
+    });
+  }
+
   await batch.commit();
   return newTreinoRef.id;
 
@@ -242,16 +254,12 @@ export const deleteTreino = async (treinoId: string, fichaId?: string): Promise<
   const treinoRef = doc(db, 'treinos', treinoId);
 
   // If a fichaId is provided, remove the treino from its list
+  // If a fichaId is provided, remove the treino from its list
   if (fichaId) {
     const fichaRef = doc(db, 'fichas', fichaId);
-    const fichaSnap = await getDoc(fichaRef);
-
-    if (fichaSnap.exists()) {
-      const fichaData = fichaSnap.data();
-      const existingTreinos = fichaData.treinos || [];
-      const newTreinos = existingTreinos.filter((id: string) => id !== treinoId);
-      batch.update(fichaRef, { treinos: newTreinos });
-    }
+    batch.update(fichaRef, {
+      treinos: arrayRemove(treinoId)
+    });
   }
 
   // Delete the treino document

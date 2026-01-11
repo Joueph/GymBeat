@@ -3,7 +3,10 @@ import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import * as Notifications from 'expo-notifications';
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect } from "react";
+import { View } from 'react-native';
 import { MenuProvider } from 'react-native-popup-menu';
+import { KeyboardDismissButton } from '../components/KeyboardDismissButton';
+import { syncExercicios } from '../services/exercicioService';
 import { processQueue } from '../services/synchronizationService';
 import { AuthProvider, useAuth } from './authprovider'; // Verifique o caminho
 import { NetworkProvider, useNetwork } from './networkprovider';
@@ -34,7 +37,13 @@ function MainNavigation() {
           // Usa o novo serviço de sincronização
           await processQueue();
         } catch (error) {
-          console.error('[Sync] Erro ao sincronizar:', error);
+          console.error('[Sync] Erro ao sincronizar queue:', error);
+        }
+
+        try {
+          await syncExercicios();
+        } catch (error) {
+          console.error('[Sync] Erro ao sincronizar exercícios:', error);
         }
       };
 
@@ -132,7 +141,10 @@ export default function RootLayout() {
   return (
     <NetworkProvider>
       <AuthProvider>
-        <MainNavigation />
+        <View style={{ flex: 1 }}>
+          <MainNavigation />
+          <KeyboardDismissButton />
+        </View>
       </AuthProvider>
     </NetworkProvider>
   );

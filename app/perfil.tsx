@@ -4,17 +4,15 @@ import * as Device from 'expo-device';
 import * as ImagePicker from 'expo-image-picker';
 import * as Notifications from 'expo-notifications';
 import { useNavigation } from 'expo-router';
-import { signOut } from "firebase/auth";
 import React, { useEffect, useLayoutEffect, useState } from "react";
 import { ActivityIndicator, Alert, Button, Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "./authprovider";
 
-import { auth } from "../firebaseconfig";
+import { ActivityCalendar } from '../components/ActivityCalendar';
 import { Usuario } from "../models/usuario";
 import { getLogsByUsuarioId } from "../services/logService";
 import { cancelNotification, scheduleNotification } from "../services/notificationService";
-import { uploadImageAndGetURL } from "../services/storageService";
 import { getUserProfile, updateUserProfile } from "../userService";
 import type { NotificationSettings, PrivacySettings } from './settings';
 import SettingsPage from "./settings";
@@ -67,7 +65,7 @@ const defaultPrivacySettings: PrivacySettings = {
 };
 
 export default function PerfilScreen() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileWithSettings>({});
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -76,7 +74,6 @@ export default function PerfilScreen() {
   const [isEditProfileModalVisible, setEditProfileModalVisible] = useState(false);
   const [isSettingsModalVisible, setSettingsModalVisible] = useState(false); // New state for the settings modal
   const [loggedDays, setLoggedDays] = useState<Set<string>>(new Set());
-  const [calendarDate, setCalendarDate] = useState(new Date());
   const navigation = useNavigation();
 
   useLayoutEffect(() => {
@@ -93,7 +90,7 @@ export default function PerfilScreen() {
             <FontAwesome name="cog" size={22} color="#fff" />
           </TouchableOpacity>
         </View>
-        ),
+      ),
     });
   }, [navigation]);
 
@@ -122,14 +119,14 @@ export default function PerfilScreen() {
       if (Device.isDevice) {
         try {
           const token = (await Notifications.getExpoPushTokenAsync()).data;
-          
+
           // Salva o token no perfil do usuário se for diferente do já salvo
           if (token && profile.expoPushToken !== token) {
             await updateUserProfile(user.id, { expoPushToken: token } as Partial<Usuario>);
             setProfile(prev => ({ ...prev, expoPushToken: token }));
           }
-        } catch (e) { 
-          console.error("Falha ao obter o token de notificação", e); 
+        } catch (e) {
+          console.error("Falha ao obter o token de notificação", e);
         }
       }
     };
@@ -184,8 +181,8 @@ export default function PerfilScreen() {
       setProfile(prev => ({ ...prev, photoURL: uri })); // Atualiza a preview na UI
     }
   };
-  
-const handleUpdate = async () => {
+
+  const handleUpdate = async () => {
     if (!user) return;
     try {
       setUploading(true); // Mostra o indicador de loading
@@ -213,7 +210,7 @@ const handleUpdate = async () => {
       } else {
         dataToUpdate.altura = undefined;
       }
-      
+
       // Adiciona um novo registro de peso ao histórico se um valor válido for fornecido.
       const pesoNum = Number(profile.novoPeso);
       if (!isNaN(pesoNum) && pesoNum > 0) {
@@ -222,7 +219,7 @@ const handleUpdate = async () => {
         const historicoAtual = profile.historicoPeso || [];
         dataToUpdate.historicoPeso = [...historicoAtual, novoRegistroPeso];
       }
-      
+
       // Adiciona a data de nascimento apenas se for uma data válida.
       if (profile.dataNascimento) {
         const dataNasc = toDate(profile.dataNascimento);
@@ -293,12 +290,12 @@ const handleUpdate = async () => {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await logout();
     } catch (error: any) {
       Alert.alert("Erro ao Sair", error.message);
     }
   };
-  
+
   const handleChange = (field: keyof ProfileWithSettings, value: any) => {
     setProfile(prev => ({ ...prev, [field]: value }));
   };
@@ -316,58 +313,14 @@ const handleUpdate = async () => {
     return d ? d.toLocaleDateString('pt-BR') : "";
   };
 
-  const renderCalendar = () => {
-    const year = calendarDate.getFullYear();
-    const month = calendarDate.getMonth();
-    const monthName = calendarDate.toLocaleString('pt-BR', { month: 'long' });
-
-    const firstDayOfMonth = new Date(year, month, 1).getDay();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    const days = [];
-    for (let i = 0; i < firstDayOfMonth; i++) {
-        days.push(<View key={`blank-${i}`} style={styles.dayCell} />);
-    }
-
-    for (let i = 1; i <= daysInMonth; i++) {
-        const dayDate = new Date(year, month, i);
-        const isLogged = loggedDays.has(dayDate.toDateString());
-        days.push(
-            <View key={i} style={styles.dayCell}>
-                <View style={[styles.dayRing, isLogged ? styles.loggedDayRing : styles.defaultDayRing]}>
-                    <Text style={styles.dayText}>{i}</Text>
-                </View>
-            </View>
-        );
-    }
-
-    return (
-        <View style={styles.calendarContainer}>
-            <View style={styles.calendarHeader}>
-                <TouchableOpacity onPress={() => setCalendarDate(new Date(year, month - 1, 1))}>
-                    <FontAwesome name="chevron-left" size={18} color="#fff" />
-                </TouchableOpacity>
-                <Text style={styles.calendarMonth}>{`${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${year}`}</Text>
-                <TouchableOpacity onPress={() => setCalendarDate(new Date(year, month + 1, 1))}>
-                    <FontAwesome name="chevron-right" size={18} color="#fff" />
-                </TouchableOpacity>
-            </View>
-            <View style={styles.weekDaysContainer}>
-                {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((day, i) => <Text key={i} style={styles.weekDayText}>{day}</Text>)}
-            </View>
-            <View style={styles.calendarGrid}>
-                {days}
-            </View>
-        </View>
-    );
-  };
+  // renderCalendar removed and replaced with ActivityCalendar component
 
   if (loading) {
     return <ActivityIndicator style={styles.container} size="large" color="#fff" />;
   }
 
   return (
-    <View style={{flex: 1, backgroundColor: "#030405"}}>
+    <View style={{ flex: 1, backgroundColor: "#030405" }}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.container}>
         <View>
           {profile.photoURL ? (
@@ -382,21 +335,21 @@ const handleUpdate = async () => {
 
         {/* Exibe o peso mais recente do histórico */}
         <View style={styles.widgetsContainer}>
-            <View style={styles.widget}>
-                <Text style={styles.widgetValue}>
-                  {profile.historicoPeso && profile.historicoPeso.length > 0 
-                    ? profile.historicoPeso[profile.historicoPeso.length - 1].valor 
-                    : '--'}
-                </Text>
-                <Text style={styles.widgetLabel}>Peso (kg)</Text>
-            </View>
-            <View style={styles.widget}>
-                <Text style={styles.widgetValue}>{profile.altura || '--'}</Text>
-                <Text style={styles.widgetLabel}>Altura (cm)</Text>
-            </View>
+          <View style={styles.widget}>
+            <Text style={styles.widgetValue}>
+              {profile.historicoPeso && profile.historicoPeso.length > 0
+                ? profile.historicoPeso[profile.historicoPeso.length - 1].valor
+                : '--'}
+            </Text>
+            <Text style={styles.widgetLabel}>Peso (kg)</Text>
+          </View>
+          <View style={styles.widget}>
+            <Text style={styles.widgetValue}>{profile.altura || '--'}</Text>
+            <Text style={styles.widgetLabel}>Altura (cm)</Text>
+          </View>
         </View>
 
-        {renderCalendar()}
+        <ActivityCalendar loggedDays={loggedDays} />
 
       </ScrollView>
 
@@ -408,88 +361,88 @@ const handleUpdate = async () => {
       >
         <SafeAreaView style={styles.modalSafeArea}>
           <ScrollView style={styles.modalScrollView} contentContainerStyle={styles.modalContainer}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Editar Perfil</Text>
-                <TouchableOpacity onPress={() => setEditProfileModalVisible(false)}>
-                    <FontAwesome name="close" size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.modalPfpContainer}>
-                <TouchableOpacity onPress={handlePickImage}>
-                  {newPhotoURI || profile.photoURL ? (
-                    <Image source={{ uri: profile.photoURL }} style={styles.pfp} />
-                  ) : (
-                    <View style={styles.pfpPlaceholder}><FontAwesome name="camera" size={40} color="#555" /></View>
-                  )}
-                </TouchableOpacity>
-                <Text style={styles.changePfpText}>Toque na imagem para alterar</Text>
-              </View>
-
-              <Text style={styles.label}>Nome</Text>
-              <TextInput style={styles.input} placeholder="Seu Nome" placeholderTextColor="#ccc" value={profile.nome} onChangeText={(text) => handleChange('nome', text)} />
-
-              <Text style={styles.label}>Altura (cm)</Text>
-              <TextInput style={styles.input} placeholder="Ex: 175" placeholderTextColor="#ccc" keyboardType="numeric" value={profile.altura ? String(profile.altura) : ''} onChangeText={(text) => handleChange('altura', text)} />
-
-              <Text style={styles.label}>Peso (kg)</Text>
-              <TextInput style={styles.input} placeholder="Adicionar novo registro de peso" placeholderTextColor="#ccc" keyboardType="numeric" value={profile.novoPeso ? String(profile.novoPeso) : ''} onChangeText={(text) => handleChange('novoPeso', text)} />
-              
-              <Text style={styles.label}>Gênero</Text>
-              <View style={styles.optionContainer}>
-                {(['Masculino', 'Feminino', 'Outro'] as const).map(g => (
-                    <TouchableOpacity key={g} style={[styles.optionButton, profile.genero === g && styles.optionSelected]} onPress={() => handleChange('genero', g)}>
-                        <Text style={styles.optionText}>{g}</Text>
-                    </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.label}>Nível na Academia</Text>
-              <View style={styles.optionContainerVertical}>
-                  {(['Iniciante', 'Intermediário', 'Avançado'] as const).map(n => (
-                      <TouchableOpacity key={n} style={[styles.optionButton, profile.nivel === n && styles.optionSelected]} onPress={() => handleChange('nivel', n)}>
-                          <Text style={styles.optionText}>{n}</Text>
-                      </TouchableOpacity>
-                  ))}
-              </View>
-
-              <Text style={styles.label}>Meta de Treinos Semanal (para Sequência)</Text>
-              <View style={styles.optionContainer}>
-                  {[2, 3, 4, 5, 6, 7].map(d => (
-                      <TouchableOpacity key={d} style={[styles.streakGoalButton, (profile.streakGoal || 2) === d && styles.optionSelected]} onPress={() => handleChange('streakGoal', d)}>
-                          <Text style={styles.optionText}>{d}</Text>
-                      </TouchableOpacity>
-                  ))}
-              </View>
-
-              <Text style={styles.label}>Data de Nascimento</Text>
-              <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.input}>
-                <Text style={{ color: profile.dataNascimento ? '#fff' : '#ccc' }}>
-                  {profile.dataNascimento ? formatDate(profile.dataNascimento) : "Selecione a Data"}
-                </Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar Perfil</Text>
+              <TouchableOpacity onPress={() => setEditProfileModalVisible(false)}>
+                <FontAwesome name="close" size={24} color="#fff" />
               </TouchableOpacity>
+            </View>
 
-              {showDatePicker && (
-                <DateTimePicker testID="dateTimePicker" value={toDate(profile.dataNascimento) || new Date()} mode="date" display="default" onChange={handleDateChange} maximumDate={new Date()} themeVariant="dark" textColor="white" style={{ backgroundColor: '#141414' }} />
-              )}
+            <View style={styles.modalPfpContainer}>
+              <TouchableOpacity onPress={handlePickImage}>
+                {newPhotoURI || profile.photoURL ? (
+                  <Image source={{ uri: profile.photoURL }} style={styles.pfp} />
+                ) : (
+                  <View style={styles.pfpPlaceholder}><FontAwesome name="camera" size={40} color="#555" /></View>
+                )}
+              </TouchableOpacity>
+              <Text style={styles.changePfpText}>Toque na imagem para alterar</Text>
+            </View>
 
-              <Text style={styles.label}>Plano</Text>
-              {profile.isPro ? (
-                  <View style={styles.proPlanContainer}><Text style={styles.proPlanText}>Você é um membro PRO! ✨</Text></View>
-              ) : (
-                  <View style={styles.freePlanContainer}>
-                      <Text style={styles.freePlanText}>Você está no plano Gratuito.</Text>
-                      <Button title="Upgrade para o PRO" onPress={() => Alert.alert("Em Breve", "A funcionalidade de upgrade será adicionada em breve.")} color="#DAA520" />
-                  </View>
-              )}
+            <Text style={styles.label}>Nome</Text>
+            <TextInput style={styles.input} placeholder="Seu Nome" placeholderTextColor="#ccc" value={profile.nome} onChangeText={(text) => handleChange('nome', text)} />
 
-              <View style={{ width: '100%', marginTop: 20 }}>
-                <Button title="Salvar Alterações" onPress={handleUpdate} color="#1cb0f6" disabled={uploading} />
+            <Text style={styles.label}>Altura (cm)</Text>
+            <TextInput style={styles.input} placeholder="Ex: 175" placeholderTextColor="#ccc" keyboardType="numeric" value={profile.altura ? String(profile.altura) : ''} onChangeText={(text) => handleChange('altura', text)} />
+
+            <Text style={styles.label}>Peso (kg)</Text>
+            <TextInput style={styles.input} placeholder="Adicionar novo registro de peso" placeholderTextColor="#ccc" keyboardType="numeric" value={profile.novoPeso ? String(profile.novoPeso) : ''} onChangeText={(text) => handleChange('novoPeso', text)} />
+
+            <Text style={styles.label}>Gênero</Text>
+            <View style={styles.optionContainer}>
+              {(['Masculino', 'Feminino', 'Outro'] as const).map(g => (
+                <TouchableOpacity key={g} style={[styles.optionButton, profile.genero === g && styles.optionSelected]} onPress={() => handleChange('genero', g)}>
+                  <Text style={styles.optionText}>{g}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Nível na Academia</Text>
+            <View style={styles.optionContainerVertical}>
+              {(['Iniciante', 'Intermediário', 'Avançado'] as const).map(n => (
+                <TouchableOpacity key={n} style={[styles.optionButton, profile.nivel === n && styles.optionSelected]} onPress={() => handleChange('nivel', n)}>
+                  <Text style={styles.optionText}>{n}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Meta de Treinos Semanal (para Sequência)</Text>
+            <View style={styles.optionContainer}>
+              {[2, 3, 4, 5, 6, 7].map(d => (
+                <TouchableOpacity key={d} style={[styles.streakGoalButton, (profile.streakGoal || 2) === d && styles.optionSelected]} onPress={() => handleChange('streakGoal', d)}>
+                  <Text style={styles.optionText}>{d}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.label}>Data de Nascimento</Text>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.input}>
+              <Text style={{ color: profile.dataNascimento ? '#fff' : '#ccc' }}>
+                {profile.dataNascimento ? formatDate(profile.dataNascimento) : "Selecione a Data"}
+              </Text>
+            </TouchableOpacity>
+
+            {showDatePicker && (
+              <DateTimePicker testID="dateTimePicker" value={toDate(profile.dataNascimento) || new Date()} mode="date" display="default" onChange={handleDateChange} maximumDate={new Date()} themeVariant="dark" textColor="white" style={{ backgroundColor: '#141414' }} />
+            )}
+
+            <Text style={styles.label}>Plano</Text>
+            {profile.isPro ? (
+              <View style={styles.proPlanContainer}><Text style={styles.proPlanText}>Você é um membro PRO! ✨</Text></View>
+            ) : (
+              <View style={styles.freePlanContainer}>
+                <Text style={styles.freePlanText}>Você está no plano Gratuito.</Text>
+                <Button title="Upgrade para o PRO" onPress={() => Alert.alert("Em Breve", "A funcionalidade de upgrade será adicionada em breve.")} color="#DAA520" />
               </View>
-              
-              <View style={{ marginTop: 40, width: '100%' }}>
-                <Button title="Sair" onPress={handleSignOut} color="#f44336" />
-              </View>
+            )}
+
+            <View style={{ width: '100%', marginTop: 20 }}>
+              <Button title="Salvar Alterações" onPress={handleUpdate} color="#1cb0f6" disabled={uploading} />
+            </View>
+
+            <View style={{ marginTop: 40, width: '100%' }}>
+              <Button title="Sair" onPress={handleSignOut} color="#f44336" />
+            </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -632,65 +585,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 
-  // Calendar Styles
-  calendarContainer: {
-    width: '100%',
-    backgroundColor: '#ffffff13',
-    borderRadius: 10,
-    padding: 15,
-    marginTop: 10,
-    borderWidth: 1,
-    borderColor: '#ffffff52',
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  calendarMonth: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  weekDaysContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 10,
-  },
-  weekDayText: {
-    color: '#ccc',
-    fontWeight: 'bold',
-    width: '14.28%',
-    textAlign: 'center',
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  dayCell: {
-    width: '14.28%',
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  dayRing: {
-    width: '85%',
-    height: '85%',
-    borderRadius: 50,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  defaultDayRing: {
-    borderColor: '#555',
-  },
-  loggedDayRing: {
-    borderColor: '#DAA520',
-  },
-  dayText: {
-    color: '#fff',
-  },
+  // Calendar styles removed as they are now in ActivityCalendar component
 
   freePlanContainer: {
     width: '100%',

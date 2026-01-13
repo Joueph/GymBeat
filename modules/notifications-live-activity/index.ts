@@ -33,7 +33,8 @@ export async function updateActivity(
   totalSets: number,
   weight: string,
   reps: string,
-  dropsetCount: number
+  dropsetCount: number,
+  isFinished: boolean
 ): Promise<void> {
   if (Platform.OS !== 'ios') {
     return;
@@ -46,7 +47,8 @@ export async function updateActivity(
     totalSets,
     weight,
     reps,
-    dropsetCount
+    dropsetCount,
+    isFinished
   );
 }
 

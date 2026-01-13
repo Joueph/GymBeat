@@ -83,20 +83,36 @@ struct GymBeatWidgetLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     // Area central expandida
-                    VStack {
-                        Text(context.state.exerciseName)
-                            .font(.headline)
-                        
-                        if !isTimerActive {
-                             HStack(spacing: 20) {
-                                Text("Carga: \(context.state.weight)")
-                                Text("Reps: \(context.state.reps)")
-                             }.font(.subheadline).foregroundColor(.gray)
+                     if context.state.isFinished == true {
+                        VStack {
+                            Text("Tempo de descanso finalizado")
+                                .font(.headline)
+                                .foregroundColor(gymBeatBlue)
+                                .multilineTextAlignment(.center)
+                            
+                             Text(context.state.exerciseName)
+                                .font(.subheadline)
+                                .foregroundColor(.white)
+                        }
+                    } else {
+                        VStack {
+                            Text(context.state.exerciseName)
+                                .font(.headline)
+                            
+                            if !isTimerActive {
+                                 HStack(spacing: 20) {
+                                    Text("Carga: \(context.state.weight)")
+                                    Text("Reps: \(context.state.reps)")
+                                 }.font(.subheadline).foregroundColor(.gray)
+                            }
                         }
                     }
                 }
             } compactLeading: {
-                if isTimerActive {
+                if context.state.isFinished == true {
+                     Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(gymBeatBlue)
+                } else if isTimerActive {
                     Text(timerInterval: Date()...Date(timeIntervalSince1970: context.state.deadline / 1000), countsDown: true)
                         .monospacedDigit()
                         .frame(width: 40)
@@ -109,7 +125,10 @@ struct GymBeatWidgetLiveActivity: Widget {
                 Image(systemName: isTimerActive ? "timer" : "dumbbell.fill")
                     .foregroundColor(gymBeatBlue) // R2
             } minimal: {
-                if isTimerActive {
+                if context.state.isFinished == true {
+                     Image(systemName: "checkmark")
+                        .foregroundColor(gymBeatBlue)
+                } else if isTimerActive {
                     Text(timerInterval: Date()...Date(timeIntervalSince1970: context.state.deadline / 1000), countsDown: true)
                         .monospacedDigit()
                         .font(.system(size: 10)) // Fonte pequena para caber

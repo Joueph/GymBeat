@@ -1,6 +1,7 @@
 import * as Haptics from 'expo-haptics';
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
+import BackgroundTimer from 'react-native-background-timer';
 import * as NotificationsLiveActivity from '../modules/notifications-live-activity';
 import { cancelNotification, scheduleNotification } from '../services/notificationService';
 
@@ -46,6 +47,7 @@ const TimerContext = createContext<TimerContextProps>({
 export const useTimer = () => useContext(TimerContext);
 
 export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    console.log("TimerProvider loaded - Bundle Updated");
     const [startTime, setStartTime] = useState<number | null>(null);
     const [duration, setDuration] = useState(0);
     const [type, setType] = useState<TimerType>('none');
@@ -58,7 +60,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Manage interval for reactive UI updates
     useEffect(() => {
         if (startTime && timerState === 'running') {
-            intervalRef.current = setInterval(() => {
+            intervalRef.current = BackgroundTimer.setInterval(() => {
                 const now = Date.now();
                 const elapsed = Math.floor((now - startTime) / 1000);
                 setElapsedTime(elapsed);
@@ -68,17 +70,17 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 }
             }, 500); // Check every 0.5s for smoothness
         } else {
-            if (intervalRef.current) clearInterval(intervalRef.current);
+            if (intervalRef.current) BackgroundTimer.clearInterval(intervalRef.current);
         }
 
         return () => {
-            if (intervalRef.current) clearInterval(intervalRef.current);
+            if (intervalRef.current) BackgroundTimer.clearInterval(intervalRef.current);
         };
     }, [startTime, duration, timerState]);
 
     const startTimer = async (newDuration: number, newType: TimerType, newMetadata?: TimerMetadata) => {
         // 1. Clear existing
-        if (intervalRef.current) clearInterval(intervalRef.current);
+        if (intervalRef.current) BackgroundTimer.clearInterval(intervalRef.current);
         cancelNotification('rest-timer');
 
         // 2. Set State
@@ -115,7 +117,8 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         newMetadata.totalSets || 0,
                         newMetadata.weight || "-",
                         newMetadata.reps || "-",
-                        newMetadata.dropsetCount || 0
+                        newMetadata.dropsetCount || 0,
+                        false // isFinished
                     );
                 } else {
                     await NotificationsLiveActivity.startActivity(
@@ -135,7 +138,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
 
     const stopTimer = async () => {
-        if (intervalRef.current) clearInterval(intervalRef.current);
+        if (intervalRef.current) BackgroundTimer.clearInterval(intervalRef.current);
         setStartTime(null);
         setDuration(0);
         setType('none');
@@ -165,7 +168,7 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const handleTimerFinished = async () => {
         setTimerState('finished');
-        if (intervalRef.current) clearInterval(intervalRef.current);
+        if (intervalRef.current) BackgroundTimer.clearInterval(intervalRef.current);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
         // Keep state as 'finished' so UI can show "00:00" or "Ready" until user dismisses or starts new
@@ -173,10 +176,25 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Decision: Let it sit at 0 until user interacts, or maybe clear after 5s?
         // For persistent overlay, likely want to show "Next Set: ... "
 
-        if (Platform.OS === 'ios') {
+        if (Platform.OS === 'ios' && metadata) {
             // Update Live Activity to show static "Ready" state
-            // This needs function access to update activity without ending it immediately if desired
-            // Or just end it.
+            try {
+                const activities = await NotificationsLiveActivity.listActivities();
+                if (activities.length > 0) {
+                    // Update with isFinished = true
+                    await NotificationsLiveActivity.updateActivity(
+                        activities[0],
+                        Date.now(), // timestamp irrelevant for finished? or maybe keep it same
+                        metadata.exerciseName || "Treino",
+                        (metadata.setIndex || 0) + 1,
+                        metadata.totalSets || 0,
+                        metadata.weight || "-",
+                        metadata.reps || "-",
+                        metadata.dropsetCount || 0,
+                        true // isFinished
+                    );
+                }
+            } catch (e) { console.log('Error updating finished activity', e); }
         }
     };
 

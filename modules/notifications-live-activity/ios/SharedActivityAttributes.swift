@@ -12,8 +12,9 @@ public struct GymBeatWidgetAttributes: ActivityAttributes {
         public var weight: String
         public var reps: String
         public var dropsetCount: Int
+        public var isFinished: Bool
         
-        public init(deadline: Double, exerciseName: String, currentSet: Int, totalSets: Int, weight: String, reps: String, dropsetCount: Int) {
+        public init(deadline: Double, exerciseName: String, currentSet: Int, totalSets: Int, weight: String, reps: String, dropsetCount: Int, isFinished: Bool = false) {
             // This initializer is not strictly necessary since the struct has memberwise initializers by default,
             // but it can be kept for explicit clarity.
             self.deadline = deadline
@@ -23,6 +24,7 @@ public struct GymBeatWidgetAttributes: ActivityAttributes {
             self.weight = weight
             self.reps = reps
             self.dropsetCount = dropsetCount
+            self.isFinished = isFinished
         }
     }
 }

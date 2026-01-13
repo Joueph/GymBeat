@@ -18,7 +18,8 @@ public class NotificationsLiveActivityModule: Module {
             totalSets: totalSets,
             weight: weight,
             reps: reps,
-            dropsetCount: dropsetCount
+            dropsetCount: dropsetCount,
+            isFinished: false
         )
         
         do {
@@ -37,8 +38,9 @@ public class NotificationsLiveActivityModule: Module {
     }
 
     // Função para atualizar a atividade existente
-    AsyncFunction("updateActivity") { (activityId: String, timestamp: Double, exerciseName: String, currentSet: Int, totalSets: Int, weight: String, reps: String, dropsetCount: Int) in
-        if #available(iOS 16.1, *) {
+    // Função para atualizar a atividade existente
+    AsyncFunction("updateActivity") { (activityId: String, timestamp: Double, exerciseName: String, currentSet: Int, totalSets: Int, weight: String, reps: String, dropsetCount: Int, isFinished: Bool) in
+        if #available(iOS 16.2, *) {
             Task {
                 for activity in Activity<GymBeatWidgetAttributes>.activities {
                     if activity.id == activityId {
@@ -49,7 +51,43 @@ public class NotificationsLiveActivityModule: Module {
                             totalSets: totalSets,
                             weight: weight,
                             reps: reps,
-                            dropsetCount: dropsetCount
+                            dropsetCount: dropsetCount,
+                            isFinished: isFinished
+                        )
+                        
+                        var alertConfig: AlertConfiguration? = nil
+                        if isFinished {
+                            alertConfig = AlertConfiguration(
+                                title: "Tempo de descanso finalizado",
+                                body: "Bom treino!",
+                                sound: .default
+                            )
+                        }
+                        
+                        await activity.update(
+                            ActivityContent(
+                                state: updatedContentState,
+                                staleDate: nil,
+                                relevanceScore: isFinished ? 100 : 50
+                            ),
+                            alertConfiguration: alertConfig
+                        )
+                    }
+                }
+            }
+        } else if #available(iOS 16.1, *) {
+             Task {
+                for activity in Activity<GymBeatWidgetAttributes>.activities {
+                    if activity.id == activityId {
+                        let updatedContentState = GymBeatWidgetAttributes.ContentState(
+                            deadline: timestamp,
+                            exerciseName: exerciseName,
+                            currentSet: currentSet,
+                            totalSets: totalSets,
+                            weight: weight,
+                            reps: reps,
+                            dropsetCount: dropsetCount,
+                            isFinished: isFinished
                         )
                         
                         await activity.update(using: updatedContentState)

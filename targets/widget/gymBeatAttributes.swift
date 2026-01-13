@@ -11,5 +11,6 @@ struct GymBeatWidgetAttributes: ActivityAttributes {
         var weight: String
         var reps: String
         var dropsetCount: Int
+        var isFinished: Bool?
     }
 }

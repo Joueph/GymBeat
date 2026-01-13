@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { View } from 'react-native';
 import { MenuProvider } from 'react-native-popup-menu';
 import { KeyboardDismissButton } from '../components/KeyboardDismissButton';
+import { TimerProvider } from '../contexts/TimerContext'; // Added
 import { syncExercicios } from '../services/exercicioService';
 import { processQueue } from '../services/synchronizationService';
 import { AuthProvider, useAuth } from './authprovider'; // Verifique o caminho
@@ -141,10 +142,12 @@ export default function RootLayout() {
   return (
     <NetworkProvider>
       <AuthProvider>
-        <View style={{ flex: 1 }}>
-          <MainNavigation />
-          <KeyboardDismissButton />
-        </View>
+        <TimerProvider>
+          <View style={{ flex: 1 }}>
+            <MainNavigation />
+            <KeyboardDismissButton />
+          </View>
+        </TimerProvider>
       </AuthProvider>
     </NetworkProvider>
   );

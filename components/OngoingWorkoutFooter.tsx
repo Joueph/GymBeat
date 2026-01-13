@@ -1,12 +1,14 @@
 import { useAuth } from '@/app/authprovider';
+import { useTimer } from '@/contexts/TimerContext'; // Added
 import { Log } from '@/models/log';
 import { getCachedActiveWorkoutLog } from '@/services/offlineCacheService';
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Animated, { SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { WorkoutScreenPreference } from '../app/(treino)/modals/specifics/WorkoutScreenPreference';
+import { CircularProgress } from './CircularProgress'; // Added
 
 const toDate = (date: any): Date | null => {
     if (!date) return null;
@@ -30,6 +32,9 @@ const formatElapsedTime = (startTime: Date | null): string => {
 export const OngoingWorkoutFooter = () => {
     const { user } = useAuth();
     const router = useRouter();
+    // Consuming TimerContext for persistent overlay logic - Moved to top level
+    const { startTime: timerStart, duration: timerDuration, type: timerType, elapsedTime: timerElapsed, timerState } = useTimer();
+
     const [activeLog, setActiveLog] = useState<Log | null>(null);
     const [elapsedTime, setElapsedTime] = useState('00:00');
     const [isPreferenceModalVisible, setPreferenceModalVisible] = useState(false);
@@ -92,27 +97,78 @@ export const OngoingWorkoutFooter = () => {
         handleNavigation(); // Re-trigger navigation after preference is set
     };
 
+    const isTimerActive = timerState === 'running' || timerState === 'finished'; // Or just checking timerStart
+
     if (!activeLog || !activeLog.treino) {
         return null;
     }
 
+    // Determine what to show on the right button
+    const renderRightButton = () => {
+        if (isTimerActive && timerStart) {
+            // Calculate progress for the ring
+            // We can rely on timerElapsedTime from context which updates periodically
+            // Or calculate locally for smoother animation, but Context handles logic.
+            const progress = Math.min(1, timerElapsed / timerDuration);
+
+            // If finished, maybe show 100% or a checkmark?
+            // For now, consistent ring.
+
+            return (
+                <View style={styles.timerContainer}>
+                    <CircularProgress
+                        progress={progress}
+                        size={46}
+                        strokeWidth={4}
+                        color={timerType === 'rest' ? '#3B82F6' : '#10B981'} // Blue for rest, Green for exercise?
+                        backgroundColor="#333"
+                        duration={timerDuration} // Let it self-animate for smoothness if context update is laggy
+                    />
+                    <View style={styles.timerIconOverlay}>
+                        {timerType === 'rest' ? (
+                            <FontAwesome name="hourglass" size={14} color="#fff" />
+                        ) : (
+                            <FontAwesome5 name="running" size={14} color="#fff" />
+                        )}
+                    </View>
+                </View>
+            );
+        }
+
+        return (
+            <TouchableOpacity style={styles.playButton} onPress={handleNavigation}>
+                <FontAwesome name="play" size={16} color="#fff" />
+            </TouchableOpacity>
+        );
+    };
+
     return (
         <>
             <Animated.View style={styles.container} entering={SlideInDown.duration(500)} exiting={SlideOutDown.duration(500)}>
-                <View style={styles.infoContainer}>
-                    <Text style={styles.workoutName} numberOfLines={1}>{activeLog.treino.nome}</Text>
-                    <Text style={styles.workoutDetails}>
-                        {activeLog.treino.exercicios?.length || 0} exercícios • {elapsedTime}
+                <TouchableOpacity style={styles.infoContainer} onPress={handleNavigation}>
+                    <Text style={styles.workoutName} numberOfLines={1}>
+                        {activeLog.treino.nome}
                     </Text>
-                </View>
-                <TouchableOpacity style={styles.playButton} onPress={handleNavigation}>
-                    <FontAwesome name="play" size={16} color="#fff" />
+                    <Text style={styles.workoutDetails}>
+                        {isTimerActive ? (
+                            <Text style={{ color: timerType === 'rest' ? '#3B82F6' : '#10B981', fontWeight: 'bold' }}>
+                                {timerType === 'rest' ? 'Descanso' : 'Exercício'}: {Math.max(0, timerDuration - timerElapsed)}s
+                            </Text>
+                        ) : (
+                            `${activeLog.treino.exercicios?.length || 0} exercícios • ${elapsedTime}`
+                        )}
+                    </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={handleNavigation}>
+                    {renderRightButton()}
                 </TouchableOpacity>
             </Animated.View>
             <WorkoutScreenPreference
                 isVisible={isPreferenceModalVisible}
                 onClose={() => setPreferenceModalVisible(false)}
                 onSelectPreference={handlePreferenceSelected}
+                currentPreference={user?.workoutScreenType}
             />
         </>
     );
@@ -159,4 +215,14 @@ const styles = StyleSheet.create({
         fontSize: 13,
         marginTop: 2,
     },
+    timerContainer: {
+        width: 46,
+        height: 46,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 12,
+    },
+    timerIconOverlay: {
+        position: 'absolute',
+    }
 });

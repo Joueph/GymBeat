@@ -9,6 +9,7 @@ import { ActivityIndicator, Alert, Button, Image, Modal, Platform, ScrollView, S
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "./authprovider";
 
+import { uploadImageAndGetURL } from '@/services/storageService';
 import { ActivityCalendar } from '../components/ActivityCalendar';
 import { Usuario } from "../models/usuario";
 import { getLogsByUsuarioId } from "../services/logService";

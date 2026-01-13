@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
+import { FriendDetailsModal } from '../../components/amigos/FriendDetailsModal';
+import { FriendData } from '../../components/amigos/FriendListItem';
 import { FriendRequestsModal } from '../../components/amigos/FriendRequestsModal';
 import { FriendsHorizontalWidget } from '../../components/amigos/FriendsHorizontalWidget';
 import { PerfilCard } from '../../components/amigos/PerfilCard';
@@ -25,6 +27,8 @@ export default function AmigosScreen() {
     inputs,
     actions
   } = useAmigosData();
+
+  const [selectedFriend, setSelectedFriend] = React.useState<FriendData | null>(null);
 
   if (!isOnline) {
     return (
@@ -54,6 +58,7 @@ export default function AmigosScreen() {
         <SocialHeader
           onNotificationsPress={() => modals.notifications.setVisible(true)}
           onAddFriendPress={() => actions.handleShareCode()}
+          pendingNotificationCount={requests.length}
         />
 
         <PerfilCard
@@ -66,6 +71,7 @@ export default function AmigosScreen() {
         <FriendsHorizontalWidget
           friends={friends}
           onAddFriendPress={() => actions.handleShareCode()}
+          onFriendPress={setSelectedFriend}
         />
 
         <PostFeedWidget />
@@ -116,6 +122,16 @@ export default function AmigosScreen() {
         requests={requests}
         onAccept={actions.handleAcceptRequest}
         onReject={actions.handleRejectRequest}
+      />
+
+      <FriendDetailsModal
+        visible={!!selectedFriend}
+        friend={selectedFriend}
+        onClose={() => setSelectedFriend(null)}
+        onRemoveFriend={(id) => {
+          actions.removeFriend(id);
+          setSelectedFriend(null);
+        }}
       />
     </>
   );

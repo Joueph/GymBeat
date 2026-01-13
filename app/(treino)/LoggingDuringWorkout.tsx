@@ -12,27 +12,33 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert, AppState, AppStateStatus, FlatList,
+  Alert,
+  AppState,
+  AppStateStatus,
+  FlatList,
   Image,
   KeyboardAvoidingView,
-  LayoutAnimation, Platform,
+  LayoutAnimation,
+  PanResponder,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   UIManager,
   View
-} from 'react-native'; // Adicionado Platform
+} from 'react-native';
 import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler'; // Adicionado ScrollView
 import { MenuProvider } from 'react-native-popup-menu';
-import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import * as NotificationsLiveActivity from '../../modules/notifications-live-activity'; // Adjust path if needed
 // addLog removed
 import { MachineChooserDrawer } from '@/components/MachineChooserDrawer';
+import { useTimer } from '@/contexts/TimerContext'; // Added import
 import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
 import { getLastLogForMachine } from '@/services/machineService';
 import { ExerciseMenuAction, ExerciseOptionsMenu } from '../../components/menus/ExerciseOptionsMenu';
@@ -42,11 +48,12 @@ import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { ExerciseDetailModal } from './modals/ExerciseDetailModal';
-import { ExerciseNotesModal } from './modals/ExerciseNotesModal';
+import { ExerciseNotesModal } from './modals/ExerciseNotesModal'; // Added import
 import { ExerciseReorderModal } from './modals/ExerciseReorderModal';
-import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
-import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 import { WorkoutOverviewModal } from './modals/modalOverview';
+import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
+import { SelectExerciseModal } from './modals/SelectExerciseModal'; // Added import
+import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -106,6 +113,7 @@ const LoggedExerciseCard = ({
   onOpenMachineDrawer,
   onReorder,
   onOpenNotes,
+  onSubstitute,
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -125,6 +133,7 @@ const LoggedExerciseCard = ({
   onOpenMachineDrawer: () => void;
   onReorder: () => void;
   onOpenNotes: () => void;
+  onSubstitute: () => void;
 }) => {
   const [isDetailModalVisible, setDetailModalVisible] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
@@ -445,6 +454,8 @@ const LoggedExerciseCard = ({
                   setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible);
                 } else if (action === 'reorder') {
                   onReorder();
+                } else if (action === 'replace') {
+                  onSubstitute();
                 }
               }}
             />
@@ -608,36 +619,148 @@ const LoggedExerciseCard = ({
 export default function LoggingDuringWorkoutScreen() {
   const router = useRouter();
   const { treinoId, fichaId, logId } = useLocalSearchParams<{ treinoId?: string; fichaId?: string, logId?: string }>();
+  const { user } = useAuth();
+  const { finishWorkout, cancelWorkout, isSaving: isFinishing } = useWorkoutOperations();
+
+  // Core State
   const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
+  const [workoutName, setWorkoutName] = useState('');
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const [currentActivityId, setCurrentActivityId] = useState<string | null>(null); // Moved up
   const [isModalVisible, setModalVisible] = useState(false);
   const [isReorderModalVisible, setReorderModalVisible] = useState(false);
   const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
-  const { finishWorkout, isSaving: isFinishing } = useWorkoutOperations();
-  const [workoutName, setWorkoutName] = useState('');
+
+  // Additional State (Preserved)
   const [isNameEdited, setIsNameEdited] = useState(false);
   const [isOverviewModalVisible, setOverviewModalVisible] = useState(false);
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  const [elapsedTime, setElapsedTime] = useState(0); // in seconds
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [totalLoad, setTotalLoad] = useState(0);
-  const [userWeight, setUserWeight] = useState(70); // default fallback
-  const { user } = useAuth();
+  const [userWeight, setUserWeight] = useState(70);
+
+  // Inactivity State
+  const [inactivitySettings, setInactivitySettings] = useState({
+    nudgeEnabled: true,
+    nudgeTime: 15,
+    autoFinishEnabled: true,
+    autoFinishTime: 60,
+    autoCancelEnabled: true,
+    autoCancelTime: 90
+  });
+  const lastInteraction = React.useRef(Date.now());
+  const hasNudged = React.useRef(false);
+
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () => {
+        lastInteraction.current = Date.now();
+        hasNudged.current = false;
+        return false;
+      },
+    })
+  ).current;
+
+  // Fetch Inactivity Settings
+  useEffect(() => {
+    if (user) {
+      getUserProfile(user.id).then(profile => {
+        if (profile && profile.settings?.inactivity) {
+          setInactivitySettings(profile.settings.inactivity);
+        }
+      });
+    }
+  }, [user]);
+
+  // Inactivity Monitor Logic
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!Platform.OS || Platform.OS === 'web') return;
+
+      const now = Date.now();
+      const inactiveDurationMins = (now - lastInteraction.current) / 1000 / 60;
+
+      const anySetDone = loggedExercises.some(ex => ex.series.some(s => s.concluido));
+      // allSetsDone logic: simply check if no set is incomplete
+      const allSetsDone = loggedExercises.length > 0 && loggedExercises.every(ex => ex.series.every(s => s.concluido));
+
+      // 1. Nudge
+      if (inactivitySettings.nudgeEnabled && inactiveDurationMins >= inactivitySettings.nudgeTime && !hasNudged.current) {
+        hasNudged.current = true;
+        if (!allSetsDone && anySetDone) {
+          Alert.alert("Inatividade", "Você está há algum tempo sem mexer no app. Não esqueça de contar suas séries!");
+        } else if (allSetsDone) {
+          Alert.alert("Treino Concluído?", "Já acabou o treino? Finalize o treino aqui no app!");
+        } else {
+          // Started but nothing done?
+          Alert.alert("Vai treinar?", "O app está aberto mas você ainda não marcou nada.");
+        }
+      }
+
+      // 2. Auto Finish
+      if (inactivitySettings.autoFinishEnabled && inactiveDurationMins >= inactivitySettings.autoFinishTime && anySetDone) {
+        Alert.alert("Inatividade", "Seu treino foi contado como finalizado devido à inatividade.");
+        handleFinishWorkout();
+        clearInterval(interval);
+      }
+
+      // 3. Auto Cancel
+      if (inactivitySettings.autoCancelEnabled && inactiveDurationMins >= inactivitySettings.autoCancelTime && !anySetDone) {
+        Alert.alert("Inatividade", "Seu treino foi cancelado devido à inatividade.");
+        handleCancelWorkout(true);
+        clearInterval(interval);
+      }
+
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [inactivitySettings, loggedExercises, user, startTime, workoutName, currentActivityId]);
+
+  // Reset timer on AppState change
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        lastInteraction.current = Date.now();
+        hasNudged.current = false;
+      }
+    });
+    return () => subscription.remove();
+  }, []);
   const [activeLogId, setActiveLogId] = useState<string | null>(null);
   const [userLogs, setUserLogs] = useState<Log[]>([]);
   const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
-  // Estados para o timer de descanso
-  const [isResting, setIsResting] = useState(false);
-  const [restCountdown, setRestCountdown] = useState(0);
-  const [maxRestTime, setMaxRestTime] = useState(0);
-  // Novos estados para o timer do exercício
-  const [isDoingExercise, setIsDoingExercise] = useState(false);
-  const [exerciseCountdown, setExerciseCountdown] = useState(0);
-  const [maxExerciseTime, setMaxExerciseTime] = useState(0);
-  const [restStartTime, setRestStartTime] = useState<number | null>(null);
-  const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
+
+  // CORE TIMER INTEGRATION
+  const {
+    startTimer: ctxStartTimer,
+    stopTimer: ctxStopTimer,
+    skipTimer: ctxSkipTimer,
+    timerState,
+    elapsedTime: timerElapsed,
+    duration: timerDuration,
+    type: timerType
+  } = useTimer();
+
+  // Derived state for UI compatibility
+  const isResting = timerState === 'running' && timerType === 'rest';
+  const isDoingExercise = timerState === 'running' && timerType === 'exercise';
+
+  // UI needs countdowns
+  // Context gives "elapsed", so remaining = duration - elapsed
+  const restCountdown = isResting ? Math.max(0, timerDuration - timerElapsed) : 0;
+  const exerciseCountdown = isDoingExercise ? Math.max(0, timerDuration - timerElapsed) : 0;
+
+  // UI Progress
+  const currentTimerProgress = timerDuration > 0 ? timerElapsed / timerDuration : 0;
+  // Sync SharedValue for animation (if needed for bar)
+  useEffect(() => {
+    progress.value = withTiming(Math.min(1, currentTimerProgress), { duration: 300 });
+  }, [currentTimerProgress]);
+
+
   const [setBeingTimed, setSetBeingTimed] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const progress = useSharedValue(0);
-  const [currentActivityId, setCurrentActivityId] = useState<string | null>(null);
+
   const scrollY = useSharedValue(0); // Restaurado
   // Estado para armazenar o ID do dono do treino original
   const [workoutOwnerId, setWorkoutOwnerId] = useState<string | null>(null);
@@ -647,6 +770,41 @@ export default function LoggingDuringWorkoutScreen() {
   const [exerciseForMachine, setExerciseForMachine] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
   const [isNotesModalVisible, setIsNotesModalVisible] = useState(false);
   const [exerciseForNotes, setExerciseForNotes] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+
+  // Substitute Logic
+  const [isSubstituteModalVisible, setSubstituteModalVisible] = useState(false);
+  const [exerciseForSubstitution, setExerciseForSubstitution] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+
+  const handleOpenSubstitute = (index: number) => {
+    setExerciseForSubstitution({ index, exercise: loggedExercises[index] });
+    setSubstituteModalVisible(true);
+  };
+
+  const handleConfirmSubstitute = (newModel: ExercicioModelo) => {
+    if (!exerciseForSubstitution) return;
+    const { index, exercise } = exerciseForSubstitution;
+
+    const updatedExercise: LoggedExercise = {
+      ...exercise,
+      modeloId: newModel.id,
+      modelo: newModel,
+      // Reset machine info
+      series: exercise.series,
+      notes: exercise.notes,
+      restTime: exercise.restTime
+    };
+
+    // Explicitly remove machine info to avoid 'undefined' issues
+    delete updatedExercise.machineId;
+    delete updatedExercise.machineName;
+
+    const newLogged = [...loggedExercises];
+    newLogged[index] = updatedExercise;
+    setLoggedExercises(newLogged);
+
+    setSubstituteModalVisible(false);
+    setExerciseForSubstitution(null);
+  }
 
   const handleMachineSelect = async (machineId: string | undefined, machineName: string | undefined, shouldClose: boolean = true) => {
     if (!exerciseForMachine) return;
@@ -706,29 +864,6 @@ export default function LoggingDuringWorkoutScreen() {
       if (current.match(/inactive|background/) && nextAppState === 'active') {
         // App voltou para o primeiro plano
         cancelNotification('rest-timer'); // Cancela a notificação de descanso
-      } else if (nextAppState.match(/inactive|background/)) {
-        // App está indo para o background ou inativo
-        // Se não há timer ativo e há exercícios logados, iniciar Live Activity estática
-        if (!isResting && !isDoingExercise && loggedExercises.length > 0 && !currentActivityId && Platform.OS === 'ios') {
-          console.log('[AppState] App indo para o background, iniciando Live Activity estática.');
-          const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-          if (currentExercise) {
-            const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-            const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
-            const nextSet = currentExercise.series[setIndex];
-
-            await manageLiveActivity(
-              false, // isRest = false (static state)
-              0,     // duration = 0
-              currentExercise.modelo.nome,
-              setIndex,
-              currentExercise.series.length,
-              `${nextSet.peso}kg`,
-              `${nextSet.repeticoes}`,
-              0
-            );
-          }
-        }
       }
     });
 
@@ -923,103 +1058,46 @@ export default function LoggingDuringWorkoutScreen() {
     }
   }, [loggedExercises, userWeight]);
 
-  // Efeito para salvar o estado no cache
-  useEffect(() => {
+  // Function to save state immediately
+  const saveCurrentWorkoutState = useCallback(async () => {
     if (!activeLogId || !user || !startTime) return;
 
-    const saveWorkout = async () => {
-      const dummyTreino: Treino = {
-        id: 'free-workout',
-        usuarioId: user.id,
-        nome: workoutName,
-        diasSemana: [],
-        intervalo: { min: 1, seg: 0 }, // Default interval
-        exercicios: loggedExercises,
-        ordem: 0,
-        descricao: ''
-      };
-
-      const log: Log = {
-        id: activeLogId,
-        usuarioId: user.id,
-        treino: dummyTreino,
-        exercicios: loggedExercises,
-        horarioInicio: startTime,
-        status: 'em_andamento',
-        cargaAcumulada: totalLoad,
-        nomeTreino: workoutName,
-        exerciciosFeitos: loggedExercises.filter(ex => ex.series.some(s => s.concluido)),
-        observacoes: undefined, // Propriedade 'observacoes' adicionada
-      };
-
-      await cacheActiveWorkoutLog(log); // CORRIGIDO: Função agora importada
+    const dummyTreino: Treino = {
+      id: 'free-workout',
+      usuarioId: user.id,
+      nome: workoutName,
+      diasSemana: [],
+      intervalo: { min: 1, seg: 0 },
+      exercicios: loggedExercises,
+      ordem: 0,
+      descricao: ''
     };
 
-    const debounceSave = setTimeout(saveWorkout, 1000);
-    return () => clearTimeout(debounceSave);
+    const log: Log = {
+      id: activeLogId,
+      usuarioId: user.id,
+      treino: dummyTreino,
+      exercicios: loggedExercises,
+      horarioInicio: startTime,
+      status: 'em_andamento',
+      cargaAcumulada: totalLoad,
+      nomeTreino: workoutName,
+      exerciciosFeitos: loggedExercises.filter(ex => ex.series.some(s => s.concluido)),
+      observacoes: undefined,
+    };
 
-  }, [loggedExercises, workoutName, startTime, totalLoad, activeLogId, user]);
+    await cacheActiveWorkoutLog(log);
+  }, [activeLogId, user, startTime, workoutName, loggedExercises, totalLoad]);
+
+  // Efeito para salvar o estado no cache
+  useEffect(() => {
+    const debounceSave = setTimeout(saveCurrentWorkoutState, 1000);
+    return () => clearTimeout(debounceSave);
+  }, [saveCurrentWorkoutState]);
 
 
   // R1: Função unificada para gerenciar a Live Activity (Singleton)
-  const manageLiveActivity = async (
-    isRest: boolean,
-    durationOrTimestamp: number,
-    exerciseName: string,
-    setIndex: number,
-    totalSets: number,
-    weight: string,
-    reps: string,
-    dropsetCount: number
-  ) => {
-    if (Platform.OS !== 'ios') return;
 
-    // R3: Critério de tempo. Se for descanso, timestamp é futuro. Se for exercício, é 0 (ou passado).
-    const timestamp = isRest ? Date.now() + (durationOrTimestamp * 1000) : 0;
-
-    try {
-      // Check if we have a locally tracked ID
-      let activeId = currentActivityId;
-
-      // Double check with native side if we don't have one locally, just in case
-      if (!activeId) {
-        const activities = await NotificationsLiveActivity.listActivities();
-        if (activities.length > 0) {
-          activeId = activities[0];
-          setCurrentActivityId(activeId);
-        }
-      }
-
-      if (activeId) {
-        // ATUALIZA a existente (R1)
-        console.log('[LiveActivity] 🔄 Atualizando atividade existente:', activeId);
-        await NotificationsLiveActivity.updateActivity(
-          activeId,
-          timestamp,
-          exerciseName,
-          setIndex + 1,
-          totalSets,
-          weight,
-          reps,
-          dropsetCount
-        );
-      } else {
-        console.log('[LiveActivity] ▶️ Attempting to start new activity');
-        const id = await NotificationsLiveActivity.startActivity(
-          timestamp,
-          exerciseName,
-          setIndex + 1,
-          totalSets,
-          weight,
-          reps,
-          dropsetCount
-        );
-        setCurrentActivityId(id);
-      }
-    } catch (e) {
-      console.warn("Falha ao gerenciar Live Activity", e);
-    }
-  };
 
   const startTimer = async (
     duration: number,
@@ -1027,238 +1105,77 @@ export default function LoggingDuringWorkoutScreen() {
     timedSetInfo?: { exerciseIndex: number; setIndex: number },
     completedSetInfo?: { exerciseIndex: number; setIndex: number }
   ) => {
-    // Cancela qualquer timer que esteja rodando
-    cancelAnimation(progress);
-    setIsResting(false);
-    setIsDoingExercise(false);
+    // Prepare Metadata for Context
+    let metadata: any = {};
 
-    // Define o estado correto e o tempo máximo para o timer
-    if (isExerciseTimer) {
-      setMaxExerciseTime(duration);
-      setIsDoingExercise(true);
-      setExerciseStartTime(Date.now()); // Inicia o contador do exercício
-    } else {
-      setMaxRestTime(duration);
-      setIsResting(true);
-      setRestStartTime(Date.now()); // Inicia o contador de descanso
-    }
+    if (timedSetInfo) {
+      const ex = loggedExercises[timedSetInfo.exerciseIndex];
+      const s = ex.series[timedSetInfo.setIndex];
+      metadata = {
+        exerciseIndex: timedSetInfo.exerciseIndex,
+        setIndex: timedSetInfo.setIndex,
+        exerciseName: ex.modelo.nome,
+        weight: `${s.peso}kg`,
+        reps: `${s.repeticoes}`,
+        totalSets: ex.series.length
+      };
+      setSetBeingTimed(timedSetInfo);
+    } else if (completedSetInfo) {
+      const ex = loggedExercises[completedSetInfo.exerciseIndex];
+      const nextSetIndex = completedSetInfo.setIndex + 1;
+      const totalSets = ex.series.length;
 
-    // Iniciando live activity no IOS
-    // --- LIVE ACTIVITY LOGIC (R1 & R3) ---
-    if (Platform.OS === 'ios') {
-      let exerciseName = "Treino Livre";
-      let totalSets = 4;
-      let weightText = "-";
-      let repsText = "-";
-      let dropsCount = 0;
-      let setIndexForActivity = 0;
-
-      // Determinar dados para mostrar (lógica unificada)
-      if (timedSetInfo) {
-        // Timer de exercício específico (cronometrando a execução da série)
-        const exercise = loggedExercises[timedSetInfo.exerciseIndex];
-        exerciseName = exercise.modelo.nome;
-        setIndexForActivity = timedSetInfo.setIndex;
-        totalSets = exercise.series.length;
-        // Pegar dados da série
-        const set = exercise.series[timedSetInfo.setIndex];
-        weightText = `${set.peso}kg`;
-        repsText = `${set.repeticoes}`;
+      // Check if there is a next set
+      if (nextSetIndex < totalSets) {
+        const nextSet = ex.series[nextSetIndex];
+        metadata = {
+          exerciseName: "Descanso",
+          setIndex: nextSetIndex, // Context adds 1, so if next is index 1 (Set 2), context displays Set 2. 
+          // Wait, if I pass index 1, context displays 2. Correct.
+          // But context assumes setIndex matches "current active set". 
+          // For rest, "current active" is "upcoming set".
+          totalSets: totalSets,
+          weight: `${nextSet.peso}kg`,
+          reps: `${nextSet.repeticoes}`,
+          nextExerciseName: ex.modelo.nome
+        };
       } else {
-        // Timer de descanso (ou transição entre séries)
-        let targetExerciseIndex = -1;
-        let targetSetIndex = -1;
-
-        if (completedSetInfo) {
-          // Priority: Calculate next set based on what was just completed (avoids stale state)
-          const ex = loggedExercises[completedSetInfo.exerciseIndex];
-          const nextSetIdx = completedSetInfo.setIndex + 1;
-
-          if (ex && nextSetIdx < ex.series.length) {
-            // Next set in SAME exercise
-            targetExerciseIndex = completedSetInfo.exerciseIndex;
-            targetSetIndex = nextSetIdx;
-          } else {
-            // Exercise finished, find next exercise with remaining sets
-            const nextExIdx = loggedExercises.findIndex((e, i) => i > completedSetInfo.exerciseIndex && !e.series.every(s => s.concluido));
-            if (nextExIdx !== -1) {
-              targetExerciseIndex = nextExIdx;
-              targetSetIndex = loggedExercises[nextExIdx].series.findIndex(s => !s.concluido);
-              if (targetSetIndex === -1) targetSetIndex = 0;
-            } else {
-              // Fallback: stay on last exercise if everything is done
-              targetExerciseIndex = completedSetInfo.exerciseIndex;
-              targetSetIndex = completedSetInfo.setIndex;
-            }
-          }
-        } else {
-          // Fallback: Use current state to find first incomplete set
-          const idx = loggedExercises.findIndex(ex => !ex.series.every(s => s.concluido));
-          if (idx !== -1) {
-            targetExerciseIndex = idx;
-            targetSetIndex = loggedExercises[idx].series.findIndex(s => !s.concluido);
-          } else if (loggedExercises.length > 0) {
-            targetExerciseIndex = 0;
-            targetSetIndex = 0;
-          }
-        }
-
-        if (targetExerciseIndex !== -1 && targetSetIndex !== -1 && loggedExercises[targetExerciseIndex]) {
-          const currentExercise = loggedExercises[targetExerciseIndex];
-          exerciseName = currentExercise.modelo.nome;
-          totalSets = currentExercise.series.length;
-          setIndexForActivity = targetSetIndex;
-
-          const nextSet = currentExercise.series[targetSetIndex];
-          if (nextSet) {
-            weightText = `${nextSet.peso}kg`;
-            repsText = `${nextSet.repeticoes}`;
-            dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length;
-          }
-        }
+        // No next set in this exercise. Maybe next exercise?
+        // For now, just show "Descanso" or "Finished"
+        metadata = {
+          exerciseName: "Descanso",
+          totalSets: totalSets,
+          setIndex: completedSetInfo.setIndex // Keep previous set index? Or null?
+        };
       }
-
-      // Se for timer de exercício OU descanso, queremos mostrar o relógio
-      await manageLiveActivity(
-        true,
-        duration,
-        exerciseName,
-        setIndexForActivity,
-        totalSets,
-        weightText,
-        repsText,
-        dropsCount
-      );
-    }
-  };
-  // Efeito unificado para ambos os timers
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined;
-
-    if (isResting || isDoingExercise) {
-      // Lógica para restaurar o progresso da barra ao voltar para a tela
-      const startTime = isResting ? restStartTime : exerciseStartTime;
-      const maxTime = isResting ? maxRestTime : maxExerciseTime;
-
-      if (startTime && maxTime > 0) {
-        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-        const remainingSeconds = Math.max(0, maxTime - elapsedSeconds);
-        const elapsedPercentage = Math.min(1, elapsedSeconds / maxTime);
-
-        // Inicia a animação do ponto em que parou
-        progress.value = elapsedPercentage;
-        progress.value = withTiming(1, { duration: remainingSeconds * 1000, easing: Easing.linear });
-      }
-
-      interval = setInterval(() => {
-        if (isDoingExercise) {
-          if (!exerciseStartTime) return;
-          const elapsedSeconds = Math.floor((Date.now() - exerciseStartTime) / 1000);
-          const remainingTime = Math.max(0, maxExerciseTime - elapsedSeconds); // Corrigido para usar maxExerciseTime
-          setExerciseCountdown(remainingTime);
-
-          if (remainingTime <= 0) {
-            setIsDoingExercise(false);
-            setExerciseStartTime(null);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-            if (setBeingTimed) {
-              const { exerciseIndex, setIndex } = setBeingTimed;
-              const updatedExercises = [...loggedExercises];
-              const exercise = updatedExercises[exerciseIndex];
-              (exercise.series as SerieEdit[])[setIndex].concluido = true;
-              setLoggedExercises(updatedExercises);
-              startTimer(exercise.restTime || 60, false);
-            }
-          } else if (remainingTime <= 3) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }
-        } else { // isResting
-          if (!restStartTime) return;
-          const elapsedSeconds = Math.floor((Date.now() - restStartTime) / 1000);
-          const remainingTime = Math.max(0, maxRestTime - elapsedSeconds);
-          setRestCountdown(remainingTime);
-
-          // Se o tempo acabou, NÃO encerra, apenas atualiza para estado estático (info do próximo exercício)
-          if (remainingTime <= 0 && currentActivityId && Platform.OS === 'ios') {
-            // Encontra o exercício atual para mostrar info estática da próxima série
-            // O timer acabou de acabar (Descanso), então provavelmente vamos fazer a série que estava pendente.
-            // setIndexForActivity acima pegava o 'nextSetIndex'.
-            const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-            if (currentExercise) {
-              const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-              const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
-              const nextSet = currentExercise.series[setIndex];
-
-              manageLiveActivity(
-                false, // isRest = false -> static
-                0,
-                currentExercise.modelo.nome,
-                setIndex,
-                currentExercise.series.length,
-                `${nextSet.peso}kg`,
-                `${nextSet.repeticoes}`,
-                0
-              );
-            }
-          }
-          if (remainingTime <= 0) {
-            setIsResting(false);
-            setRestStartTime(null);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          } else if (remainingTime <= 3) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }
-        }
-      }, 1000);
-    } else {
-      // Garante que tudo seja resetado quando nenhum timer estiver ativo
-      cancelAnimation(progress);
-      progress.value = 0;
-      setRestStartTime(null);
-      setExerciseStartTime(null);
-      setRestCountdown(0);
-      setExerciseCountdown(0);
       setSetBeingTimed(null);
     }
 
-    return () => {
-      if (interval) {
-        clearInterval(interval);
+    ctxStartTimer(duration, isExerciseTimer ? 'exercise' : 'rest', metadata);
+  };
+  // Efeito unificado para ambos os timers
+  // Timer Finished Logic Listener
+  useEffect(() => {
+    if (timerState === 'finished') {
+      // If it was an exercise timer, mark set as complete
+      if (timerType === 'exercise' && setBeingTimed) {
+        const { exerciseIndex, setIndex } = setBeingTimed;
+        const updatedExercises = [...loggedExercises];
+        const exercise = updatedExercises[exerciseIndex];
+        if (exercise && exercise.series[setIndex]) {
+          (exercise.series as SerieEdit[])[setIndex].concluido = true;
+          setLoggedExercises(updatedExercises);
+          // Auto start rest?
+          startTimer(exercise.restTime || 60, false);
+        }
+        setSetBeingTimed(null);
       }
-    };
-  }, [isResting, isDoingExercise]);
+    }
+  }, [timerState, timerType]);
 
 
   const handleSkipRest = async () => {
-    // Cancela a notificação de descanso agendada
-    cancelNotification('rest-timer');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsResting(false);
-    setRestStartTime(null); // Ensure rest start time is cleared
-    setIsDoingExercise(false);
-
-    // R4: Atualiza a Live Activity para estado "Sem Timer" (info estática) em vez de matar a atividade
-    if (currentActivityId && Platform.OS === 'ios') {
-      // Encontra o exercício atual para mostrar info estática da próxima série
-      const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-      if (currentExercise) {
-        const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-        const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
-        const nextSet = currentExercise.series[setIndex];
-
-        await manageLiveActivity(
-          false, // isRest = false (Timestamp será 0/passado -> Layout muda para info estática)
-          0,     // Duração 0
-          currentExercise.modelo.nome,
-          setIndex,
-          currentExercise.series.length,
-          `${nextSet.peso}kg`,
-          `${nextSet.repeticoes}`,
-          0
-        );
-      }
-    }
+    ctxSkipTimer();
   };
 
   const handleUpdateExerciseSeries = (exerciseIndex: number, newSeries: SerieEdit[]) => {
@@ -1279,11 +1196,28 @@ export default function LoggingDuringWorkoutScreen() {
     };
   }, []);
 
-  const handleBack = () => {
+  const handleBack = async () => {
+    await saveCurrentWorkoutState(); // Force save before leaving
     router.back();
   };
 
-  const handleCancelWorkout = () => {
+  const handleCancelWorkout = (force: boolean = false) => {
+    const performCancel = async () => {
+      await cacheActiveWorkoutLog(null); // Limpa o cache
+      cancelNotification('rest-timer');
+      if (currentActivityId && Platform.OS === 'ios') {
+        await NotificationsLiveActivity.endActivity(currentActivityId);
+        setCurrentActivityId(null);
+      }
+      ctxStopTimer(); // Stop timer on cancel
+      router.back();
+    };
+
+    if (force) {
+      performCancel();
+      return;
+    }
+
     Alert.alert(
       "Cancelar Treino?",
       "Seu progresso neste treino livre será perdido. Deseja continuar?",
@@ -1292,16 +1226,7 @@ export default function LoggingDuringWorkoutScreen() {
         {
           text: "Cancelar Treino",
           style: "destructive",
-          onPress: async () => {
-            await cacheActiveWorkoutLog(null); // Limpa o cache
-            cancelNotification('rest-timer');
-            // End Live Activity when workout is cancelled
-            if (currentActivityId && Platform.OS === 'ios') {
-              await NotificationsLiveActivity.endActivity(currentActivityId);
-              setCurrentActivityId(null);
-            }
-            router.back(); // Volta para a tela anterior
-          },
+          onPress: performCancel
         },
       ]
     );
@@ -1317,6 +1242,7 @@ export default function LoggingDuringWorkoutScreen() {
         return;
       }
 
+      ctxStopTimer(); // Stop timer on finish
       await finishWorkout({
         user,
         workoutName,
@@ -1458,7 +1384,7 @@ export default function LoggingDuringWorkoutScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <MenuProvider>
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} {...panResponder.panHandlers}>
           {/* Cabeçalho Customizado (agora fixo) */}
           <View style={styles.customHeader}>
             <View style={styles.headerLeftGroup}>
@@ -1570,6 +1496,7 @@ export default function LoggingDuringWorkoutScreen() {
                         setExerciseForNotes({ index, exercise: item });
                         setIsNotesModalVisible(true);
                       }}
+                      onSubstitute={() => handleOpenSubstitute(index)}
                     />
                   );
                 }}
@@ -1598,7 +1525,7 @@ export default function LoggingDuringWorkoutScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
-                      onPress={handleCancelWorkout}
+                      onPress={() => handleCancelWorkout()}
                     >
                       <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
                     </TouchableOpacity>
@@ -1680,6 +1607,18 @@ export default function LoggingDuringWorkoutScreen() {
               onClose={() => setReorderModalVisible(false)}
               exercises={loggedExercises}
               onSave={(newOrder) => setLoggedExercises(newOrder as LoggedExercise[])}
+            />
+
+            <SelectExerciseModal
+              visible={isSubstituteModalVisible}
+              onClose={() => {
+                setSubstituteModalVisible(false);
+                setExerciseForSubstitution(null);
+              }}
+              onSelect={handleConfirmSubstitute}
+              excludeIds={loggedExercises.map(e => e.modeloId)}
+              initialGroup={exerciseForSubstitution?.exercise.modelo.grupoMuscular}
+              sortByWordCount={true}
             />
 
           </KeyboardAvoidingView>

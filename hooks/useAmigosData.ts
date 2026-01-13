@@ -244,6 +244,7 @@ export function useAmigosData() {
             handleShareCode,
             handleAcceptRequest,
             handleRejectRequest,
+            removeFriend: handleRejectRequest, // Reusing logic as it removes the bidirectional link
             deletePost,
             likePost,
             unlikePost

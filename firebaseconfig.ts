@@ -22,8 +22,10 @@ export const auth = initializeAuth(app, {
 });
 
 // Inicializa Firestore com persistência
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache } from 'firebase/firestore';
 
-export const db = getFirestore(app);
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache(),
+});
 
 export const storage = getStorage(app);

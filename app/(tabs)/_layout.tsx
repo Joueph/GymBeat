@@ -1,7 +1,8 @@
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View } from 'react-native';
+import { useAuth } from '../../app/authprovider';
 import { HapticTab } from '../../components/haptic-tab';
 import { OfflineIndicator } from '../../components/OfflineIndicator';
 
@@ -16,6 +17,13 @@ function TabBarIcon(props: {
 }
 
 export default function TabLayout() {
+  const { user } = useAuth();
+
+  const pendingRequestsCount = useMemo(() => {
+    if (!user?.amizades) return 0;
+    return Object.values(user.amizades).filter(status => status === false).length;
+  }, [user?.amizades]);
+
   return (
     <View style={{ flex: 1 }}>
       <OfflineIndicator />
@@ -29,7 +37,7 @@ export default function TabLayout() {
             elevation: 0,
           },
           headerTintColor: '#fff',
-          tabBarStyle: { backgroundColor: '#1A1D23', borderTopColor: '#1F2937',paddingVertical:15, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0},
+          tabBarStyle: { backgroundColor: '#1A1D23', borderTopColor: '#1F2937', paddingVertical: 15, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0 },
           tabBarActiveTintColor: '#fff',
           tabBarButton: HapticTab,
         }}
@@ -55,7 +63,24 @@ export default function TabLayout() {
           options={{
             title: "Social",
             headerShown: false,
-            tabBarIcon: ({ color }) => <TabBarIcon name="users" color={color} size={20}  />,
+            tabBarIcon: ({ color }) => (
+              <View>
+                <TabBarIcon name="users" color={color} size={20} />
+                {pendingRequestsCount > 0 && (
+                  <View style={{
+                    position: 'absolute',
+                    right: -6,
+                    top: -4,
+                    backgroundColor: '#EF4444',
+                    borderRadius: 6,
+                    width: 10,
+                    height: 10,
+                    borderWidth: 1,
+                    borderColor: '#1A1D23',
+                  }} />
+                )}
+              </View>
+            ),
           }}
         />
       </Tabs>

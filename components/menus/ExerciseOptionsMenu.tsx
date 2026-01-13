@@ -60,6 +60,8 @@ export const ExerciseOptionsMenu = ({ onSelect, showAdvanced = false }: Exercise
                     onSelect={() => onSelect('changeMachine')}
                 />
 
+
+
                 <MenuOptionItem
                     text="Tempo de Descanso"
                     icon="clock"
@@ -81,6 +83,12 @@ export const ExerciseOptionsMenu = ({ onSelect, showAdvanced = false }: Exercise
                 )}
 
                 <View style={styles.divider} />
+
+                <MenuOptionItem
+                    text="Substituir Exercício"
+                    icon="exchange-alt"
+                    onSelect={() => onSelect('replace')}
+                />
 
                 <MenuOptionItem
                     text="Reordenar"

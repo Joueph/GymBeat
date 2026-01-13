@@ -160,9 +160,26 @@ export function useWorkoutOperations() {
         }
     };
 
+    const cancelWorkout = async (currentActivityId?: string | null) => {
+        setIsSaving(true);
+        try {
+            if (currentActivityId && Platform.OS === 'ios') {
+                await NotificationsLiveActivity.endActivity(currentActivityId);
+            }
+            await cacheActiveWorkoutLog(null);
+            router.back();
+        } catch (error) {
+            console.error('[cancelWorkout] Erro ao cancelar o treino:', error);
+            Alert.alert('Erro', 'Não foi possível cancelar o treino.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     return {
         saveTreino,
         finishWorkout,
+        cancelWorkout,
         isSaving
     };
 }

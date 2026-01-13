@@ -28,13 +28,13 @@ import { createPost } from '@/services/postService';
 import { getTreinosByIds } from '@/services/treinoService';
 import { widgetService } from '@/services/widgetService';
 import { Image } from 'expo-image';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
-import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle } from 'react-native-svg';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '../../components/exercicios/ExpandableExerciseItem';
+import { PostCarousel } from '../../components/treino/PostCarousel';
 import { getCachedUserLogs } from '../../services/offlineCacheService';
-
 const StepIndicator = ({ currentStep, totalSteps }: { currentStep: number, totalSteps: number }) => (
   <View style={styles.stepIndicatorContainer}>
     {Array.from({ length: totalSteps }).map((_, index) => (
@@ -345,6 +345,20 @@ export default function TreinoCompletoScreen() {
     router.replace('/(tabs)/treinoHoje');
   };
 
+  const processImage = async (uri: string) => {
+    try {
+      const manipResult = await manipulateAsync(
+        uri,
+        [{ resize: { width: 1080 } }],
+        { compress: 0.8, format: SaveFormat.JPEG }
+      );
+      return manipResult.uri;
+    } catch (error) {
+      console.error('Error processing image:', error);
+      return uri; // Fallback to original if processing fails
+    }
+  };
+
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
@@ -360,7 +374,8 @@ export default function TreinoCompletoScreen() {
     });
 
     if (!result.canceled) {
-      setPostImage(result.assets[0].uri);
+      const processedUri = await processImage(result.assets[0].uri);
+      setPostImage(processedUri);
     }
   };
 
@@ -378,7 +393,8 @@ export default function TreinoCompletoScreen() {
     });
 
     if (!result.canceled) {
-      setPostImage(result.assets[0].uri);
+      const processedUri = await processImage(result.assets[0].uri);
+      setPostImage(processedUri);
     }
   };
 
@@ -536,119 +552,25 @@ export default function TreinoCompletoScreen() {
     </View>
   );
 
-  const DefaultPostCard = ({ muscles, count, time }: { muscles: string[], count: number, time: string }) => (
-    <View style={[styles.postPreviewCard, styles.defaultCard]}>
-      <View style={styles.cardHeader}>
-        <Image source={require('../../assets/images/icon.png')} style={{ width: 40, height: 40, borderRadius: 8 }} contentFit="contain" />
-      </View>
-      <View style={styles.cardBody}>
-        <Text style={styles.cardTitle}>TREINO CONCLUÍDO</Text>
-        <View style={styles.cardStatsGrid}>
-          <View style={styles.cardStatBox}>
-            <Text style={styles.cardStatValue}>{time}</Text>
-            <Text style={styles.cardStatLabel}>Tempo</Text>
-          </View>
-          <View style={styles.cardStatBox}>
-            <Text style={styles.cardStatValue}>{count}</Text>
-            <Text style={styles.cardStatLabel}>Exercícios</Text>
-          </View>
-        </View>
-        <Text style={styles.cardMuscles}>{muscles.join(' • ')}</Text>
-      </View>
-      <View style={styles.cardFooter}>
-        <Text style={styles.watermark}>@gymbeatapp</Text>
-      </View>
-    </View>
-  );
+
 
   const StepPost = () => {
     const uniqueMuscles = Array.from(new Set(log?.exercicios.map(e => e.modelo.grupoMuscular).filter(Boolean)));
     const exercisesCount = log?.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido)).length || 0;
 
-    // Data source for carousel
-    const data = [{ key: 'default' }];
-    if (postImage) data.push({ key: 'image' });
-
-    const renderItem = ({ item }: { item: any }) => {
-      if (item.key === 'default') {
-        return (
-          <View style={{ width: CARD_WIDTH, paddingHorizontal: 5 }}>
-            <DefaultPostCard muscles={uniqueMuscles} count={exercisesCount} time={formatDuration(duration)} />
-          </View>
-        );
-      }
-      return (
-        <View style={{ width: CARD_WIDTH, paddingHorizontal: 5 }}>
-          <View style={styles.postPreviewCard}>
-            <Image source={{ uri: postImage! }} style={styles.postImageBackground} contentFit="cover" />
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.8)']}
-              style={styles.postOverlay}
-            >
-              <View>
-                <Text style={styles.postTitle}>TREINO CONCLUÍDO</Text>
-                <View style={styles.postStatsRow}>
-                  <View style={styles.postStatItem}>
-                    <FontAwesome name="clock-o" size={14} color="#3B82F6" />
-                    <Text style={styles.postStatText}>{formatDuration(duration)}</Text>
-                  </View>
-                  <View style={styles.postStatItem}>
-                    <FontAwesome name="trophy" size={14} color="#3B82F6" />
-                    <Text style={styles.postStatText}>{exercisesCount} Exercícios</Text>
-                  </View>
-                </View>
-                <Text style={styles.postMusclesText}>{uniqueMuscles.join(' • ')}</Text>
-              </View>
-            </LinearGradient>
-          </View>
-        </View>
-      );
-    };
-
-    const handleScroll = (event: any) => {
-      const slideSize = event.nativeEvent.layoutMeasurement.width;
-      const index = event.nativeEvent.contentOffset.x / slideSize;
-      const roundIndex = Math.round(index);
-      setActiveCardIndex(roundIndex);
-    };
-
-    // Scroll to new image when added
-    useEffect(() => {
-      if (postImage && flatListRef.current) {
-        // small timeout to allow layout update
-        setTimeout(() => {
-          flatListRef.current?.scrollToIndex({ index: 1, animated: true });
-          setActiveCardIndex(1);
-        }, 100);
-      }
-    }, [postImage]);
-
     return (
       <View style={styles.stepContainer}>
         <Text style={styles.statsSectionTitle}>Compartilhe com a comunidade</Text>
 
-        <ViewStepShotWrapper>
-          <FlatList
-            ref={flatListRef}
-            data={data}
-            renderItem={renderItem}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            keyExtractor={item => item.key}
-            onMomentumScrollEnd={handleScroll}
-            style={{ width: CARD_WIDTH, alignSelf: 'center' }}
-          />
-        </ViewStepShotWrapper>
-
-        {/* Dots */}
-        {data.length > 1 && (
-          <View style={styles.paginationDots}>
-            {data.map((_, i) => (
-              <View key={i} style={[styles.dot, i === activeCardIndex && styles.activeDot]} />
-            ))}
-          </View>
-        )}
+        <PostCarousel
+          postImage={postImage}
+          muscles={uniqueMuscles}
+          exercisesCount={exercisesCount}
+          duration={formatDuration(duration)}
+          trainingName={log?.treino?.nome || 'Treino'}
+          viewShotRef={viewShotRef}
+          onIndexChange={setActiveCardIndex}
+        />
 
         <View style={styles.postActionsContainer}>
           <View style={styles.mediaButtonsRow}>
@@ -674,11 +596,12 @@ export default function TreinoCompletoScreen() {
     );
   };
 
-  const ViewStepShotWrapper = ({ children }: { children: React.ReactNode }) => (
-    <ViewShot ref={viewShotRef} options={{ format: "jpg", quality: 0.9 }}>
-      {children}
-    </ViewShot>
-  );
+
+
+
+
+
+
 
   const StepShare = () => (
     <View style={styles.stepContainer}>
@@ -999,50 +922,6 @@ const styles = StyleSheet.create({
   stepDotActive: {
     backgroundColor: '#3B82F6',
   },
-  // Estilos de exerciseItem removidos (agora estão no componente)
-  postPreviewCard: {
-    width: '100%',
-    aspectRatio: 4 / 5,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#1A1D23',
-    marginBottom: 20,
-    position: 'relative',
-  },
-  postImageBackground: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  postOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    padding: 20,
-  },
-  postTitle: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
-    textTransform: 'uppercase',
-  },
-  postStatsRow: {
-    flexDirection: 'row',
-    gap: 15,
-    marginBottom: 8,
-  },
-  postStatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  postStatText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  postMusclesText: {
-    color: '#ccc',
-    fontSize: 14,
-  },
   postActionsContainer: {
     gap: 12,
   },
@@ -1092,81 +971,6 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.7,
   },
-  // Social Post Feature Styles
-  defaultCard: {
-    backgroundColor: '#0B0D10', // App Background Color
-    justifyContent: 'space-between',
-    padding: 20,
-    alignItems: 'center',
-  },
-  cardHeader: {
-    marginTop: 20,
-    alignItems: 'center',
-  },
-  cardBody: {
-    alignItems: 'center',
-    width: '100%',
-  },
-  cardTitle: {
-    color: '#fff',
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textTransform: 'uppercase',
-  },
-  cardStatsGrid: {
-    flexDirection: 'row',
-    gap: 20,
-    marginBottom: 20,
-  },
-  cardStatBox: {
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: '#1A1D23',
-    minWidth: 80,
-  },
-  cardStatValue: {
-    color: '#3B82F6',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  cardStatLabel: {
-    color: '#888',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  cardMuscles: {
-    color: '#ccc',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  cardFooter: {
-    marginBottom: 10,
-  },
-  watermark: {
-    color: '#fff',
-    opacity: 0.2,
-    fontSize: 14,
-    fontWeight: 'bold',
-  },
-  paginationDots: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 15,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#444',
-  },
-  activeDot: {
-    backgroundColor: '#3B82F6',
-    width: 20,
-  },
   sharePreviewContainer: {
     width: '100%',
     aspectRatio: 4 / 5,
@@ -1184,5 +988,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
 });
+
+
 
 

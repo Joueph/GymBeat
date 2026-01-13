@@ -15,7 +15,11 @@ import {
 
 type FilterType = 'all' | 'friends' | 'mine';
 
-export const PostFeedWidget = () => {
+interface PostFeedWidgetProps {
+    targetUserId?: string;
+}
+
+export const PostFeedWidget = ({ targetUserId }: PostFeedWidgetProps) => {
     const { user, friendIds, actions } = useAmigosData();
     const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState(true);
@@ -31,9 +35,14 @@ export const PostFeedWidget = () => {
             // If filter is friends, we fetch 'all' (or optimized query) and filter.
             // Service supports 'mine' and 'all'. Let's handle 'friends' here or update service.
             // Plan: "MVP friends: fetch recent and filter client-side". Service query for 'friends' returns all for now.
-            const fetchedPosts = await getRecentPosts(filter, user?.id);
 
-            if (filter === 'friends') {
+            // Override filter if targetUserId is present
+            const effectiveFilter = targetUserId ? 'mine' : filter;
+            const effectiveUserId = targetUserId || user?.id;
+
+            const fetchedPosts = await getRecentPosts(effectiveFilter, effectiveUserId);
+
+            if (!targetUserId && filter === 'friends') {
                 const friendsPosts = fetchedPosts.filter(p => friendIds?.includes(p.usuarioId));
                 setPosts(friendsPosts);
             } else {
@@ -51,7 +60,7 @@ export const PostFeedWidget = () => {
         if (user) {
             fetchPosts();
         }
-    }, [filter, user]);
+    }, [filter, user, targetUserId]); // Add targetUserId to deps
 
     const handlePostDelete = async (postId: string) => {
         try {
@@ -105,20 +114,22 @@ export const PostFeedWidget = () => {
 
     const renderHeader = () => (
         <View style={styles.header}>
-            <Text style={styles.title}>Feed</Text>
-            <Menu>
-                <MenuTrigger style={styles.filterTrigger}>
-                    <Text style={styles.filterText}>
-                        {filter === 'all' ? 'Todos' : filter === 'friends' ? 'Amigos' : 'Meus Posts'}
-                    </Text>
-                    <FontAwesome name="chevron-down" size={12} color="#888" />
-                </MenuTrigger>
-                <MenuOptions customStyles={{ optionsContainer: styles.menuOptions }}>
-                    <MenuOption onSelect={() => setFilter('all')} text="Todos" customStyles={{ optionText: { color: '#fff' } }} />
-                    <MenuOption onSelect={() => setFilter('friends')} text="Amigos" customStyles={{ optionText: { color: '#fff' } }} />
-                    <MenuOption onSelect={() => setFilter('mine')} text="Meus Posts" customStyles={{ optionText: { color: '#fff' } }} />
-                </MenuOptions>
-            </Menu>
+            <Text style={styles.title}>{targetUserId ? 'Posts Recentes' : 'Feed'}</Text>
+            {!targetUserId && (
+                <Menu>
+                    <MenuTrigger style={styles.filterTrigger}>
+                        <Text style={styles.filterText}>
+                            {filter === 'all' ? 'Todos' : filter === 'friends' ? 'Amigos' : 'Meus Posts'}
+                        </Text>
+                        <FontAwesome name="chevron-down" size={12} color="#888" />
+                    </MenuTrigger>
+                    <MenuOptions customStyles={{ optionsContainer: styles.menuOptions }}>
+                        <MenuOption onSelect={() => setFilter('all')} text="Todos" customStyles={{ optionText: { color: '#fff' } }} />
+                        <MenuOption onSelect={() => setFilter('friends')} text="Amigos" customStyles={{ optionText: { color: '#fff' } }} />
+                        <MenuOption onSelect={() => setFilter('mine')} text="Meus Posts" customStyles={{ optionText: { color: '#fff' } }} />
+                    </MenuOptions>
+                </Menu>
+            )}
         </View>
     );
 

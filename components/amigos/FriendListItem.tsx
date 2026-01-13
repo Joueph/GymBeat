@@ -162,7 +162,7 @@ export const FriendListItem = memo(({ item }: { item: FriendData }) => {
 const styles = StyleSheet.create({
     card: {
         marginVertical: 8,
-        marginHorizontal: 16,
+
         backgroundColor: '#1A1D23',
         borderRadius: 12,
         borderWidth: 1,

@@ -25,7 +25,7 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ userProfile, weeklyMet
     if (!userProfile) return null;
 
     const renderCard = (item: { key: string; visible: boolean; fullWidth: boolean }) => {
-        const widthStyle: any = item.fullWidth ? { width: '100%' } : { width: '48%' };
+        const widthStyle: any = item.fullWidth ? { width: '100%' } : { width: '48.9%' };
 
         switch (item.key) {
             case 'weight':
@@ -106,5 +106,5 @@ const styles = StyleSheet.create({
     sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#EAEAEA', opacity: 0.7, },
     editButton: { flexDirection: 'row', alignItems: 'center', padding: 4 },
     editButtonText: { color: '#888', fontSize: 14, fontWeight: '500' },
-    metricsContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
+    metricsContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8, },
 });

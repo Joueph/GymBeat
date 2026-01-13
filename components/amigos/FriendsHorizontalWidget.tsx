@@ -9,11 +9,12 @@ import { FriendData } from './FriendListItem';
 interface FriendsHorizontalWidgetProps {
     friends: FriendData[];
     onAddFriendPress?: () => void;
+    onFriendPress?: (friend: FriendData) => void;
 }
 
 const CARD_SIZE = 100; // 1:1 Aspect Ratio
 
-export const FriendsHorizontalWidget = ({ friends, onAddFriendPress }: FriendsHorizontalWidgetProps) => {
+export const FriendsHorizontalWidget = ({ friends, onAddFriendPress, onFriendPress }: FriendsHorizontalWidgetProps) => {
     const router = useRouter();
 
     return (
@@ -37,7 +38,7 @@ export const FriendsHorizontalWidget = ({ friends, onAddFriendPress }: FriendsHo
 
                     const friend = item as FriendData;
                     return (
-                        <TouchableOpacity style={styles.card} onPress={() => {/* Navigate to friend profile? */ }}>
+                        <TouchableOpacity style={styles.card} onPress={() => onFriendPress?.(friend)}>
                             <Image
                                 source={friend.photoURL ? { uri: friend.photoURL } : require('../../assets/images/icon.png')}
                                 style={styles.image}

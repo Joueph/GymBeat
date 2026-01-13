@@ -4,8 +4,7 @@ import { Ficha } from './ficha';
 export type UserRole = 'usuario' | 'administrador' | 'personal';
 
 export interface Usuario {
-  peso(peso: any): unknown;
-  uid(uid: any): unknown;
+  peso?: number;
   settings: any;
   id: string;
   email: string;
@@ -17,7 +16,7 @@ export interface Usuario {
   genero?: 'Masculino' | 'Feminino' | 'Outro';
   nivel?: 'Iniciante' | 'Intermediário' | 'Avançado';
   fichas?: Ficha[];
-// --- ADICIONE ESTES CAMPOS ---
+  // --- ADICIONE ESTES CAMPOS ---
   defaultRestTime?: { min: number; seg: number }; // Tempo de descanso padrão em minutos e segundos
   objetivoPrincipal?: string | null;
   localTreino?: string | null;
@@ -33,4 +32,8 @@ export interface Usuario {
   streakGoal?: number; // Meta de treinos por semana para a sequência (streak)
   weeksStreakGoal?: number; // Meta de semanas seguidas de treino
   workoutScreenType?: 'simplified' | 'complete'; // New field for workout screen type
+  homeScreenConfig?: {
+    layout: { key: string; visible: boolean }[];
+    metrics?: { key: string; visible: boolean; fullWidth: boolean }[];
+  };
 }

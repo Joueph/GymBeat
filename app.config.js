@@ -2,22 +2,19 @@ export default {
   expo: {
     name: "GymBeat",
     slug: "GymBeat",
-    version: "0.2.0",
+    version: "0.2.3",
     orientation: "portrait",
-    icon: "./assets/  images/icon.png",
+    icon: "./assets/icons/ios/ios-dark.png",
     scheme: "gymbeat",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     ios: {
       supportsTablet: false,
-      icon: {
-        dark: "./assets/icons/ios/ios-dark.png",
-        light: "./assets/icons/ios/ios-light.png",
-        tinted: "./assets/icons/ios/ios-tinted.png",
-      },
+      icon: "./assets/icons/ios/ios-tinted.png",
       bundleIdentifier: "br.com.gymbeat",
       appleTeamId: "M4M9UUR2NT",
       buildNumber: "35",
+      associatedDomains: ["applinks:gymbeat.com.br"],
       infoPlist: {
         ITSAppUsesNonExemptEncryption: false,
         NSSupportsLiveActivities: true,
@@ -32,6 +29,21 @@ export default {
         backgroundColor: "#000000",
         foregroundImage: "./assets/icons/adaptive-icon.png",
       },
+      associatedDomains: ["applinks:gymbeat.com.br"],
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "gymbeat.com.br",
+              pathPrefix: "/invite"
+            }
+          ],
+          category: ["BROWSABLE", "DEFAULT"],
+        },
+      ],
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: "br.com.gymbeat",
@@ -85,6 +97,13 @@ export default {
         },
       ],
       "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permita o acesso à galeria para postar a foto do seu treino.",
+          "cameraPermission": "Permita o acesso à câmera para tirar uma foto do seu treino."
+        }
+      ],
       "./plugins/with-rnfb-nonmodular-fix.js",
     ],
     experiments: {

@@ -3,9 +3,14 @@ import { FontAwesome } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'; // Adicionado ThemedText
 import * as StoreReview from 'expo-store-review';
 // import { VideoView as Video, useVideoPlayer } from 'expo-video'; // Removido
+import * as Sharing from 'expo-sharing';
 import { doc, getDoc } from 'firebase/firestore';
-import React, { memo, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'; // Adicionado Svg, Circle
+import React, { memo, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, FlatList, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native'; // Adicionado Svg, Circle
+import ViewShot, { captureRef } from "react-native-view-shot";
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_WIDTH = SCREEN_WIDTH - 30; // 15 padding each side
 // import { BarChart, LineChart } from 'react-native-chart-kit'; // Removido
 import { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,13 +24,17 @@ import { useAuth } from '../authprovider';
 // --- Imports dos novos componentes ---
 import { Ficha } from '@/models/ficha';
 import { Treino } from '@/models/treino';
+import { createPost } from '@/services/postService';
 import { getTreinosByIds } from '@/services/treinoService';
 import { widgetService } from '@/services/widgetService';
+import { Image } from 'expo-image';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import * as ImagePicker from 'expo-image-picker';
 import Svg, { Circle } from 'react-native-svg';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '../../components/exercicios/ExpandableExerciseItem';
+import { PostCarousel } from '../../components/treino/PostCarousel';
 import { getCachedUserLogs } from '../../services/offlineCacheService';
-
 const StepIndicator = ({ currentStep, totalSteps }: { currentStep: number, totalSteps: number }) => (
   <View style={styles.stepIndicatorContainer}>
     {Array.from({ length: totalSteps }).map((_, index) => (
@@ -138,6 +147,15 @@ export default function TreinoCompletoScreen() {
   const [currentVolume, setCurrentVolume] = useState(0);
   const [allUserLogs, setAllUserLogs] = useState<Log[]>([]);
   const [userWeight, setUserWeight] = useState(70); // Fallback
+
+  // Post Feature State
+  const [postImage, setPostImage] = useState<string | null>(null);
+  const [posting, setPosting] = useState(false);
+  const [sharedImageUri, setSharedImageUri] = useState<string | null>(null);
+  const [activeCardIndex, setActiveCardIndex] = useState(0);
+
+  const viewShotRef = useRef<ViewShot>(null);
+  const flatListRef = useRef<FlatList>(null);
 
   // Animação para o gráfico de barras
   const chartHeight = useSharedValue(0);
@@ -327,6 +345,106 @@ export default function TreinoCompletoScreen() {
     router.replace('/(tabs)/treinoHoje');
   };
 
+  const processImage = async (uri: string) => {
+    try {
+      const manipResult = await manipulateAsync(
+        uri,
+        [{ resize: { width: 1080 } }],
+        { compress: 0.8, format: SaveFormat.JPEG }
+      );
+      return manipResult.uri;
+    } catch (error) {
+      console.error('Error processing image:', error);
+      return uri; // Fallback to original if processing fails
+    }
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Desculpe', 'Precisamos de permissão para acessar a galeria.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 5],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      const processedUri = await processImage(result.assets[0].uri);
+      setPostImage(processedUri);
+    }
+  };
+
+  const takePhoto = async () => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Desculpe', 'Precisamos de permissão para acessar a câmera.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 5],
+      quality: 0.8,
+    });
+
+    if (!result.canceled) {
+      const processedUri = await processImage(result.assets[0].uri);
+      setPostImage(processedUri);
+    }
+  };
+
+  const handlePost = async () => {
+    if (!log || !user) return;
+    setPosting(true);
+    try {
+      // 1. Capture the current card view
+      const uri = await captureRef(viewShotRef, {
+        format: "jpg",
+        quality: 0.9,
+      });
+      setSharedImageUri(uri);
+
+      const uniqueMuscles = Array.from(new Set(log.exercicios.map(e => e.modelo.grupoMuscular).filter(Boolean)));
+
+      const stats = {
+        duration: duration,
+        exercisesCount: log.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido)).length,
+        volume: currentVolume,
+        muscles: uniqueMuscles,
+      };
+
+      // Ensure we associate the correct image if the user selected the Image Card (index 1)
+      const imageToUpload = activeCardIndex === 1 ? postImage : undefined;
+
+      await createPost({
+        usuarioId: user.id,
+        logId: log.id,
+        stats: stats,
+        descricao: '',
+      }, imageToUpload || undefined);
+
+      // No Alert, just move to next step
+      setStep(s => s + 1);
+
+    } catch (error) {
+      Alert.alert('Erro', 'Falha ao publicar o post.');
+      console.error(error);
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const handleShare = async () => {
+    if (sharedImageUri && await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(sharedImageUri);
+    }
+  };
+
   if (loading) {
     // ... (código existente de loading)
     return <View style={styles.centered}><ActivityIndicator size="large" color="#fff" /></View>;
@@ -434,11 +552,84 @@ export default function TreinoCompletoScreen() {
     </View>
   );
 
+
+
+  const StepPost = () => {
+    const uniqueMuscles = Array.from(new Set(log?.exercicios.map(e => e.modelo.grupoMuscular).filter(Boolean)));
+    const exercisesCount = log?.exercicios.filter(ex => (ex.series as SerieComStatus[]).some(s => s.concluido)).length || 0;
+
+    return (
+      <View style={styles.stepContainer}>
+        <Text style={styles.statsSectionTitle}>Compartilhe com a comunidade</Text>
+
+        <PostCarousel
+          postImage={postImage}
+          muscles={uniqueMuscles}
+          exercisesCount={exercisesCount}
+          duration={formatDuration(duration)}
+          trainingName={log?.treino?.nome || 'Treino'}
+          viewShotRef={viewShotRef}
+          onIndexChange={setActiveCardIndex}
+        />
+
+        <View style={styles.postActionsContainer}>
+          <View style={styles.mediaButtonsRow}>
+            <TouchableOpacity style={styles.mediaButton} onPress={takePhoto}>
+              <FontAwesome name="camera" size={20} color="#fff" />
+              <Text style={styles.mediaButtonText}>Câmera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.mediaButton} onPress={pickImage}>
+              <FontAwesome name="image" size={20} color="#fff" />
+              <Text style={styles.mediaButtonText}>Galeria</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.actionButton, styles.postButton, posting && styles.disabledButton]}
+            onPress={handlePost}
+            disabled={posting}
+          >
+            {posting ? <ActivityIndicator color="#fff" /> : <Text style={styles.actionButtonText}>Postar</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+
+
+
+
+
+
+
+  const StepShare = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.statsSectionTitle}>Post Publicado!</Text>
+      <View style={styles.sharePreviewContainer}>
+        {sharedImageUri && (
+          <Image source={{ uri: sharedImageUri }} style={styles.sharePreviewImage} contentFit="contain" />
+        )}
+      </View>
+      <TouchableOpacity style={[styles.actionButton, styles.postButton, { marginBottom: 15 }]} onPress={handleShare}>
+        <Text style={styles.actionButtonText}>Compartilhar</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.skipButton} onPress={handleCloseAndReview}>
+        <Text style={styles.skipButtonText}>Fechar</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   const steps = [
     <StepProgress key="progress" />,
     <StepPerformance key="performance" />,
     <StepExerciseSummary key="summary" />,
+    <StepPost key="post" />,
+    <StepShare key="share" />,
   ];
+
+  const isPostStep = step === steps.length - 2; // Before Share
+  const isShareStep = step === steps.length - 1;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -446,30 +637,40 @@ export default function TreinoCompletoScreen() {
       <View style={styles.completeModalHeader}>
         <Text style={styles.completeModalTitle}>Mandou Bem!</Text>
         <Text style={styles.completeModalSubtitle}>Você completou o treino de hoje!</Text>
-        <StepIndicator currentStep={step} totalSteps={steps.length} />
+        {!isShareStep && <StepIndicator currentStep={step} totalSteps={steps.length - 1} />}
       </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 80 }} // Space for the button
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
         {steps[step]}
       </ScrollView>
-      <View style={styles.navigationButtonsContainer}>
-        {step > 0 && (
-          <TouchableOpacity style={[styles.navButton, styles.prevButton]} onPress={() => setStep(s => s - 1)}>
-            <Text style={styles.navButtonText}>Voltar</Text>
-          </TouchableOpacity>
-        )}
-        {step < steps.length - 1 ? (
-          <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={() => setStep(s => s + 1)}>
-            <Text style={styles.navButtonText}>Próximo</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={handleCloseAndReview}>
-            <Text style={styles.navButtonText}>Fechar</Text>
-          </TouchableOpacity>
-        )}
-      </View>
+      {!isShareStep && (
+        <View style={styles.navigationButtonsContainer}>
+          {step > 0 && !isPostStep && (
+            <TouchableOpacity style={[styles.navButton, styles.prevButton]} onPress={() => setStep(s => s - 1)}>
+              <Text style={styles.navButtonText}>Voltar</Text>
+            </TouchableOpacity>
+          )}
+          {!isPostStep && (
+            step < steps.length - 2 ? (
+              <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={() => setStep(s => s + 1)}>
+                <Text style={styles.navButtonText}>Próximo</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={[styles.navButton, styles.nextButton]} onPress={() => setStep(s => s + 1)}>
+                <Text style={styles.navButtonText}>Próximo</Text>
+              </TouchableOpacity>
+            )
+          )}
+          {/* Custom handling for Skip in Post Step is inside the component */}
+          {isPostStep && (
+            <TouchableOpacity style={styles.skipButton} onPress={handleCloseAndReview}>
+              <Text style={styles.skipButtonText}>Pular e Fechar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -721,5 +922,73 @@ const styles = StyleSheet.create({
   stepDotActive: {
     backgroundColor: '#3B82F6',
   },
-  // Estilos de exerciseItem removidos (agora estão no componente)
+  postActionsContainer: {
+    gap: 12,
+  },
+  mediaButtonsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 8,
+  },
+  mediaButton: {
+    flex: 1,
+    backgroundColor: '#1A1D23',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  mediaButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  actionButton: {
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  postButton: {
+    backgroundColor: '#3B82F6',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  skipButton: {
+    alignItems: 'center',
+    padding: 10,
+  },
+  skipButtonText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
+  sharePreviewContainer: {
+    width: '100%',
+    aspectRatio: 4 / 5,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    marginBottom: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#fff',
+  },
+  sharePreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
 });
+
+
+
+

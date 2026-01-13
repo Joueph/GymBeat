@@ -12,35 +12,48 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert, AppState, AppStateStatus, FlatList,
+  Alert,
+  AppState,
+  AppStateStatus,
+  FlatList,
   Image,
   KeyboardAvoidingView,
-  LayoutAnimation, Platform,
+  LayoutAnimation,
+  PanResponder,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   UIManager,
   View
-} from 'react-native'; // Adicionado Platform
+} from 'react-native';
 import {
   GestureHandlerRootView,
 } from 'react-native-gesture-handler'; // Adicionado ScrollView
 import { MenuProvider } from 'react-native-popup-menu';
-import Animated, { cancelAnimation, Easing, FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import * as NotificationsLiveActivity from '../../modules/notifications-live-activity'; // Adjust path if needed
-import { addLog } from '../../services/logService';
+// addLog removed
+import { MachineChooserDrawer } from '@/components/MachineChooserDrawer';
+import { useTimer } from '@/contexts/TimerContext'; // Added import
+import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
+import { getLastLogForMachine } from '@/services/machineService';
+import { ExerciseMenuAction, ExerciseOptionsMenu } from '../../components/menus/ExerciseOptionsMenu';
 import { cancelNotification } from '../../services/notificationService';
 import { cacheActiveWorkoutLog, getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
-import { addTreino, getTreinoById, updateTreino } from '../../services/treinoService';
+import { getTreinoById } from '../../services/treinoService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
 import { ExerciseDetailModal } from './modals/ExerciseDetailModal';
-import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
-import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
+import { ExerciseNotesModal } from './modals/ExerciseNotesModal'; // Added import
+import { ExerciseReorderModal } from './modals/ExerciseReorderModal';
 import { WorkoutOverviewModal } from './modals/modalOverview';
+import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
+import { SelectExerciseModal } from './modals/SelectExerciseModal'; // Added import
+import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -56,6 +69,8 @@ interface SerieEdit extends Serie {
 export interface LoggedExercise extends Exercicio { // Adicionei restTime aqui
   notes: string;
   restTime: number;
+  machineName?: string; // For display
+
 
   // Futuramente, podemos adicionar mais propriedades específicas de log
 }
@@ -68,7 +83,21 @@ const toDate = (date: any): Date | null => {
   return isNaN(d.getTime()) ? null : d;
 };
 
+const cascadeUpdate = (series: SerieEdit[], index: number, field: keyof SerieEdit, oldValue: any): SerieEdit[] => {
+  const newSeries = [...series];
+  const newValue = newSeries[index][field];
 
+  for (let i = index + 1; i < newSeries.length; i++) {
+    // Look for values that match the *old* value of the changed set
+    // Using loose equality (==) for safety with number/string mix
+    if (newSeries[i][field] == oldValue) {
+      newSeries[i] = { ...newSeries[i], [field]: newValue };
+    } else {
+      break;
+    }
+  }
+  return newSeries;
+};
 
 const LoggedExerciseCard = ({
   item,
@@ -78,8 +107,13 @@ const LoggedExerciseCard = ({
   onNotesChange,
   userWeight,
   onPesoBarraChange,
-  startRestTimer, // This prop is passed but its type needs to be updated
+  startRestTimer,
   onMenuStateChange,
+  exerciseIndex,
+  onOpenMachineDrawer,
+  onReorder,
+  onOpenNotes,
+  onSubstitute,
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -87,17 +121,25 @@ const LoggedExerciseCard = ({
   onRestTimeChange: (newRestTime: number) => void;
   onNotesChange: (notes: string) => void;
   userWeight: number;
-  onPesoBarraChange: (newPesoBarra: number) => void; // New prop
-  startRestTimer: (duration: number, isExercise: boolean, timedSetInfo?: { exerciseIndex: number, setIndex: number }) => void;
+  onPesoBarraChange: (newPesoBarra: number) => void;
+  startRestTimer: (
+    duration: number,
+    isExercise: boolean,
+    timedSetInfo?: { exerciseIndex: number, setIndex: number },
+    completedSetInfo?: { exerciseIndex: number, setIndex: number }
+  ) => void;
   onMenuStateChange: (isOpen: boolean) => void;
+  exerciseIndex: number;
+  onOpenMachineDrawer: () => void;
+  onReorder: () => void;
+  onOpenNotes: () => void;
+  onSubstitute: () => void;
 }) => {
   const [isDetailModalVisible, setDetailModalVisible] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
   const [editingSetIndex, setEditingSetIndex] = useState<number | null>(null);
-  const [exerciseNotes, setExerciseNotes] = useState(item.notes || '');
   const [isExerciseTimeDrawerVisible, setIsExerciseTimeDrawerVisible] = useState(false);
   const [isRestTimePickerVisible, setIsRestTimePickerVisible] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(true);
   const [isAdvancedOptionsVisible, setIsAdvancedOptionsVisible] = useState(false);
 
   const [series, setSeries] = useState<SerieEdit[]>(
@@ -110,11 +152,24 @@ const LoggedExerciseCard = ({
     }))
   );
 
+  // Track the weight value on focus to enable cascade logic
+  const focusedWeightRef = React.useRef<number | null>(null);
+
+  // Sync state with props when machine changes or external updates occur
+  useEffect(() => {
+    setSeries(item.series.map((s, i) => ({
+      ...s,
+      id: s.id || `set-${Date.now()}-${i}`,
+      type: s.type || 'normal',
+      concluido: s.concluido || false,
+      isWarmup: s.isWarmup || false,
+    })));
+  }, [item.series, item]);
+
   useEffect(() => {
     const allSetsCompleted = series.length > 0 && series.every(s => s.concluido);
     if (allSetsCompleted) {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setIsExpanded(false);
     }
   }, [series]);
 
@@ -171,14 +226,20 @@ const LoggedExerciseCard = ({
 
   const handleRepetitionsSave = (newReps: string) => {
     if (editingSetIndex === null) return;
-    const newSets = [...series];
+    let newSets = [...series];
+
+    const oldValue = newSets[editingSetIndex].repeticoes;
     newSets[editingSetIndex].repeticoes = newReps;
+
+    // Cascade
+    newSets = cascadeUpdate(newSets, editingSetIndex, 'repeticoes', oldValue);
+
     handleSeriesUpdate(newSets);
     setIsRepDrawerVisible(false);
     setEditingSetIndex(null);
   };
 
-  const handleToggleComplete = (index: number, exerciseIndex: number) => {
+  const handleToggleComplete = (index: number) => {
     const newSeries = [...series];
     const set = newSeries[index];
     const isCompleting = !set.concluido;
@@ -200,7 +261,14 @@ const LoggedExerciseCard = ({
           }
         } else {
           if (!nextSet || nextSet.type !== 'dropset') {
-            startRestTimer(item.restTime || 60, false);
+            // Pass completedSetInfo so startTimer knows we just finished this set
+            // even if parent state is stale
+            startRestTimer(
+              item.restTime || 60,
+              false,
+              undefined,
+              { exerciseIndex, setIndex: index }
+            );
           }
         }
       }
@@ -255,7 +323,7 @@ const LoggedExerciseCard = ({
               <FontAwesome5 name="fire" size={16} color="#FFA500" />
             </View>
           ) : (
-            <View style={[styles.seriesNumberContainer, setItem.concluido && styles.seriesNumberCompleted]}>
+            <View style={[styles.seriesNumberContainer]}>
               <Text style={styles.seriesNumberText}>
                 {series.slice(0, itemIndex + 1).filter(s => s.type !== 'dropset').length}
               </Text>
@@ -264,7 +332,11 @@ const LoggedExerciseCard = ({
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>{setItem.isTimeBased ? 'Tempo (s)' : 'Reps'}</Text>
             <TouchableOpacity
-              style={[styles.repButton, setItem.isTimeBased && styles.timeBasedButton]}
+              style={[
+                styles.repButton,
+                setItem.isTimeBased && styles.timeBasedButton,
+                (itemIndex > 0 && series[itemIndex - 1].repeticoes == setItem.repeticoes) && { opacity: 0.7 }
+              ]}
               onPress={() => {
                 if (setItem.isTimeBased) {
                   setEditingSetIndex(itemIndex);
@@ -295,20 +367,39 @@ const LoggedExerciseCard = ({
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Peso (kg)</Text>
               <TextInput
-                style={styles.setInput}
+                style={[
+                  styles.setInput,
+                  (itemIndex > 0 && series[itemIndex - 1].peso == setItem.peso) && { opacity: 0.7 }
+                ]}
                 placeholder="kg"
                 placeholderTextColor="#888"
                 keyboardType="decimal-pad"
                 editable={!setItem.isTimeBased}
                 value={String(setItem.peso || '')}
+                onFocus={() => {
+                  focusedWeightRef.current = typeof setItem.peso === 'number' ? setItem.peso : parseFloat(String(setItem.peso));
+                }}
                 onChangeText={(text) => {
                   const newSets = [...series];
                   newSets[itemIndex].peso = text as any;
+                  // Don't update state here if validation is strictly numerical, 
+                  // but we want to allow typing "1." so string is fine primarily.
+                  // However, cascade only on end editing.
+                  setSeries(newSets);
+                  // Note: calling onSeriesChange here might trigger upstream updates which is fine but inefficient if done per char?
+                  // Keeping original behavior: 
                   handleSeriesUpdate(newSets);
                 }}
                 onEndEditing={(e) => {
-                  const newSets = [...series];
-                  newSets[itemIndex].peso = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
+                  let newSets = [...series];
+                  const val = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
+                  newSets[itemIndex] = { ...newSets[itemIndex], peso: val };
+
+                  // Apply cascade
+                  if (focusedWeightRef.current !== null) {
+                    newSets = cascadeUpdate(newSets, itemIndex, 'peso', focusedWeightRef.current);
+                  }
+
                   handleSeriesUpdate(newSets);
                 }}
               />
@@ -316,7 +407,7 @@ const LoggedExerciseCard = ({
           )}
           <TouchableOpacity
             style={styles.checkboxContainer}
-            onPress={() => handleToggleComplete(itemIndex, 0)} // TODO: Pass correct exerciseIndex
+            onPress={() => handleToggleComplete(itemIndex)}
           >
             <FontAwesome name={setItem.concluido ? 'check-square' : 'square-o'} size={24} color={setItem.concluido ? '#3B82F6' : '#aaa'} />
           </TouchableOpacity>
@@ -346,190 +437,139 @@ const LoggedExerciseCard = ({
               <Text style={styles.muscleGroup}>{item.modelo.grupoMuscular}</Text>
             </View>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setIsExpanded(!isExpanded);
-          }}><FontAwesome name={isExpanded ? "chevron-up" : "chevron-down"} size={20} color="#fff" /></TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <ExerciseOptionsMenu
+              showAdvanced={true}
+              onSelect={(action: ExerciseMenuAction) => {
+                if (action === 'delete') {
+                  onRemove();
+                } else if (action === 'changeMachine') {
+                  onOpenMachineDrawer();
+                } else if (action === 'editRestTime') {
+                  setIsRestTimePickerVisible(true);
+                } else if (action === 'addNote') {
+                  onOpenNotes();
+                } else if (action === 'advanced') {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible);
+                } else if (action === 'reorder') {
+                  onReorder();
+                } else if (action === 'replace') {
+                  onSubstitute();
+                }
+              }}
+            />
+          </View>
         </View>
 
-        {isExpanded ? (
-          <>
-            <View style={styles.notesContainer}>
-              <FontAwesome name="pencil" size={12} color="#fff" />
-              <TextInput
-                style={styles.notesInput}
-                placeholder="Anotações do exercício"
-                placeholderTextColor="#888"
-                value={exerciseNotes}
-                onChangeText={setExerciseNotes}
-                onBlur={() => onNotesChange(exerciseNotes)}
-              />
-            </View>
+        <>
+          <View>
+            {series.map((s, index) => renderSetItem({ item: s, getIndex: () => index }))}
+          </View>
 
-            <View>
-              {series.map((s, index) => renderSetItem({ item: s, getIndex: () => index }))}
-            </View>
+          <TouchableOpacity
+            style={styles.addSetButton}
+            onPress={() => {
+              const lastNormalSet = series.slice().reverse().find(s => s.type !== 'dropset');
+              const newSet = {
+                id: `set-${Date.now()}`,
+                repeticoes: lastNormalSet?.repeticoes || '10',
+                peso: lastNormalSet?.peso || 10,
+                type: 'normal' as const,
+                isTimeBased: lastNormalSet?.isTimeBased || false,
+                concluido: false,
+              };
+              handleSeriesUpdate([...series, newSet]);
+            }}
+          >
+            <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.addSetButton}
-              onPress={() => {
-                const lastNormalSet = series.slice().reverse().find(s => s.type !== 'dropset');
-                const newSet = {
-                  id: `set-${Date.now()}`,
-                  repeticoes: lastNormalSet?.repeticoes || '10',
-                  peso: lastNormalSet?.peso || 10,
-                  type: 'normal' as const,
-                  isTimeBased: lastNormalSet?.isTimeBased || false,
-                  concluido: false,
-                };
-                handleSeriesUpdate([...series, newSet]);
-              }}
-            >
-              <Text style={styles.addSetButtonText}>+ Adicionar Série</Text>
-            </TouchableOpacity>
-
-            <View style={styles.exerciseActionsRow}>
-              <View style={styles.exerciseActionsLeft}>
-                <TouchableOpacity style={styles.restTimerCard} onPress={() => setIsRestTimePickerVisible(true)}>
-                  <FontAwesome name="clock-o" size={18} color="#fff" />
-                  <Text style={styles.restTimerText}>{formatRestTime(item.restTime || 60)}</Text>
-                </TouchableOpacity>
-                <View style={styles.seriesCounterContainer}>
-                  <FontAwesome5 name="layer-group" size={16} color="#aaa" />
-                  <Text style={styles.seriesCounterText}>
-                    {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
-                  </Text>
+          {isAdvancedOptionsVisible && (
+            <View style={styles.advancedOptionsContainer}>
+              {item.modelo.caracteristicas?.usaBarra && (
+                <View style={styles.barbellWeightCard}>
+                  <Text style={styles.barbellWeightLabel}>Peso da Barra</Text>
+                  <TextInput
+                    style={styles.barbellWeightInput}
+                    value={String(item.pesoBarra || 0)}
+                    onChangeText={(text) => {
+                      const newPeso = parseFloat(text.replace(',', '.')) || 0;
+                      onPesoBarraChange(newPeso);
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder="kg"
+                    placeholderTextColor="#888"
+                  />
                 </View>
-              </View>
-              <TouchableOpacity
-                onPress={() => setIsAdvancedOptionsVisible(!isAdvancedOptionsVisible)}
-                style={styles.avancadoButton}
-              >
-                <Text style={styles.avancadoButtonText}>Avançado</Text>
-                <FontAwesome name={isAdvancedOptionsVisible ? "chevron-up" : "chevron-down"} size={14} color="#fff" />
-              </TouchableOpacity>
-            </View>
-
-            {isAdvancedOptionsVisible && (
-              <View style={styles.advancedOptionsContainer}>
-                {item.modelo.caracteristicas?.usaBarra && (
-                  <View style={styles.barbellWeightCard}>
-                    <Text style={styles.barbellWeightLabel}>Peso da Barra</Text>
-                    <TextInput
-                      style={styles.barbellWeightInput}
-                      value={String(item.pesoBarra || 0)}
-                      onChangeText={(text) => {
-                        const newPeso = parseFloat(text.replace(',', '.')) || 0;
-                        onPesoBarraChange(newPeso);
-                      }}
-                      keyboardType="decimal-pad"
-                      placeholder="kg"
-                      placeholderTextColor="#888"
-                    />
-                  </View>
-                )}
-                {item.modelo.caracteristicas?.isPesoBilateral &&
-                  !item.modelo.caracteristicas?.usaBarra &&
-                  series.length > 0 && (
-                    <View style={styles.bilateralInfoCard}>
-                      <View style={styles.dumbbellIconContainer}>
-                        <View style={styles.dumbbellWithWeight}>
-                          <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
-                          <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                        </View>
-                        <View style={styles.dumbbellWithWeight}>
-                          <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
-                          <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                        </View>
+              )}
+              {item.modelo.caracteristicas?.isPesoBilateral &&
+                !item.modelo.caracteristicas?.usaBarra &&
+                series.length > 0 && (
+                  <View style={styles.bilateralInfoCard}>
+                    <View style={styles.dumbbellIconContainer}>
+                      <View style={styles.dumbbellWithWeight}>
+                        <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
+                        <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                      </View>
+                      <View style={styles.dumbbellWithWeight}>
+                        <FontAwesome5 name="dumbbell" size={24} color="#ccc" style={{ transform: [{ rotate: '-45deg' }] }} />
+                        <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
                       </View>
                     </View>
-                  )}
-                {item.modelo.caracteristicas?.usaBarra && series.length > 0 && (
-                  <View style={styles.bilateralInfoCard}>
-                    <View style={styles.barbellIconContainer}>
-                      <Image
-                        source={require('../../assets/images/Exercicios/ilustracaoBarra.png')}
-                        style={styles.barbellImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <View style={styles.barbellWeightDistribution}>
-                      <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                      <Text style={styles.barbellCenterWeightText}>{item.pesoBarra || 0} kg</Text>
-                      <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
-                    </View>
                   </View>
                 )}
-                {/* Detalhes do Cálculo de Volume */}
-                {isAdvancedOptionsVisible && (<View style={styles.volumeDetailsContainer}>
-                  <Text style={styles.volumeDetailsTitle}>Cálculo de Volume</Text>
-                  {series.filter(s => s.concluido).length > 0 ? (
-                    series.map((serie, index) => {
-                      if (!serie.concluido) return null;
+              {item.modelo.caracteristicas?.usaBarra && series.length > 0 && (
+                <View style={styles.bilateralInfoCard}>
+                  <View style={styles.barbellIconContainer}>
+                    <Image
+                      source={require('../../assets/images/Exercicios/ilustracaoBarra.png')}
+                      style={styles.barbellImage}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <View style={styles.barbellWeightDistribution}>
+                    <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                    <Text style={styles.barbellCenterWeightText}>{item.pesoBarra || 0} kg</Text>
+                    <Text style={styles.dumbbellWeightText}>{series[0].peso || 0} kg</Text>
+                  </View>
+                </View>
+              )}
+              {/* Detalhes do Cálculo de Volume */}
+              {isAdvancedOptionsVisible && (<View style={styles.volumeDetailsContainer}>
+                <Text style={styles.volumeDetailsTitle}>Cálculo de Volume</Text>
+                {series.filter(s => s.concluido).length > 0 ? (
+                  series.map((serie, index) => {
+                    if (!serie.concluido) return null;
 
-                      const { calculationString } = calculateLoadForSerie(serie, item, userWeight);
-                      const normalSeriesCount = series.slice(0, index + 1).filter(s => s.type === 'normal').length;
+                    const { calculationString } = calculateLoadForSerie(serie, item, userWeight);
+                    const normalSeriesCount = series.slice(0, index + 1).filter(s => s.type === 'normal').length;
 
-                      return (
-                        <View
-                          key={serie.id}
-                          style={[
-                            styles.volumeDetailRow,
-                            serie.type === 'dropset' && styles.volumeDetailRowDropset,
-                          ]}
-                        >
-                          <Text style={styles.volumeDetailLabel}>
-                            {serie.type === 'dropset' ? 'Dropset:' : `Série ${normalSeriesCount}:`}
-                          </Text>
-                          <Text style={styles.volumeDetailCalculation}>{calculationString}</Text>
-                        </View>
-                      );
-                    })
-                  ) : (
-                    <Text style={styles.volumeDetailEmptyText}>
-                      Complete uma série para ver o cálculo do volume.
-                    </Text>
-                  )}
-                </View>)}
-              </View>
-            )}
-          </>
-        ) : (
-          <View style={styles.collapsedInfoContainer}>
-            <View style={styles.collapsedLeft}>
-              <View style={styles.seriesCounterContainer}>
-                <FontAwesome5 name="layer-group" size={16} color="#aaa" />
-                <Text style={styles.seriesCounterText}>
-                  {series.filter(s => s.concluido && s.type === 'normal').length}/{series.filter(s => s.type === 'normal').length}
-                </Text>
-              </View>
-              <View style={styles.seriesCounterContainer}>
-                <FontAwesome5 name="weight-hanging" size={16} color="#aaa" />
-                <Text style={styles.seriesCounterText}>{Math.round(exerciseVolume)} kg</Text>
-              </View>
+                    return (
+                      <View
+                        key={serie.id}
+                        style={[
+                          styles.volumeDetailRow,
+                          serie.type === 'dropset' && styles.volumeDetailRowDropset,
+                        ]}
+                      >
+                        <Text style={styles.volumeDetailLabel}>
+                          {serie.type === 'dropset' ? 'Dropset:' : `Série ${normalSeriesCount}:`}
+                        </Text>
+                        <Text style={styles.volumeDetailCalculation}>{calculationString}</Text>
+                      </View>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.volumeDetailEmptyText}>
+                    Complete uma série para ver o cálculo do volume.
+                  </Text>
+                )}
+              </View>)}
             </View>
-            <View style={styles.collapsedRight}>
-              <TouchableOpacity onPress={() => {
-                LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                setIsExpanded(true);
-              }} style={[styles.avancadoButton, { backgroundColor: '#2A2E37' }]}>
-                <Text style={styles.avancadoButtonText}>
-                  {(() => {
-                    const completedSets = series.filter(s => s.concluido).length;
-                    const totalSets = series.length;
-                    if (totalSets > 0 && completedSets === totalSets) {
-                      return 'Finalizado';
-                    }
-                    if (completedSets > 0) {
-                      return 'Em andamento';
-                    }
-                    return 'Pendente';
-                  })()}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+          )}
+        </>
+
 
         <RestTimeDrawer
           visible={isRestTimePickerVisible}
@@ -554,8 +594,13 @@ const LoggedExerciseCard = ({
           onClose={() => setIsExerciseTimeDrawerVisible(false)}
           onSave={(newDuration: number) => {
             if (editingSetIndex !== null) {
-              const newSets = [...series];
+              let newSets = [...series];
+              const oldValue = newSets[editingSetIndex].repeticoes;
               newSets[editingSetIndex].repeticoes = String(newDuration);
+
+              // Cascade for time-based sets logic (if we treat time as 'reps' here)
+              newSets = cascadeUpdate(newSets, editingSetIndex, 'repeticoes', oldValue);
+
               handleSeriesUpdate(newSets);
             }
           }}
@@ -574,38 +619,240 @@ const LoggedExerciseCard = ({
 export default function LoggingDuringWorkoutScreen() {
   const router = useRouter();
   const { treinoId, fichaId, logId } = useLocalSearchParams<{ treinoId?: string; fichaId?: string, logId?: string }>();
+  const { user } = useAuth();
+  const { finishWorkout, cancelWorkout, isSaving: isFinishing } = useWorkoutOperations();
+
+  // Core State
   const [loggedExercises, setLoggedExercises] = useState<LoggedExercise[]>([]);
-  const [isModalVisible, setModalVisible] = useState(false);
-  const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
-  const [isFinishing, setIsFinishing] = useState(false);
   const [workoutName, setWorkoutName] = useState('');
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const [currentActivityId, setCurrentActivityId] = useState<string | null>(null); // Moved up
+  const [isModalVisible, setModalVisible] = useState(false);
+  const [isReorderModalVisible, setReorderModalVisible] = useState(false);
+  const [isSettingsModalVisible, setSettingsModalVisible] = useState(false);
+
+  // Additional State (Preserved)
   const [isNameEdited, setIsNameEdited] = useState(false);
   const [isOverviewModalVisible, setOverviewModalVisible] = useState(false);
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  const [elapsedTime, setElapsedTime] = useState(0); // in seconds
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [totalLoad, setTotalLoad] = useState(0);
-  const [userWeight, setUserWeight] = useState(70); // default fallback
-  const { user } = useAuth();
+  const [userWeight, setUserWeight] = useState(70);
+
+  // Inactivity State
+  const [inactivitySettings, setInactivitySettings] = useState({
+    nudgeEnabled: true,
+    nudgeTime: 15,
+    autoFinishEnabled: true,
+    autoFinishTime: 60,
+    autoCancelEnabled: true,
+    autoCancelTime: 90
+  });
+  const lastInteraction = React.useRef(Date.now());
+  const hasNudged = React.useRef(false);
+
+  const panResponder = React.useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: () => {
+        lastInteraction.current = Date.now();
+        hasNudged.current = false;
+        return false;
+      },
+    })
+  ).current;
+
+  // Fetch Inactivity Settings
+  useEffect(() => {
+    if (user) {
+      getUserProfile(user.id).then(profile => {
+        if (profile && profile.settings?.inactivity) {
+          setInactivitySettings(profile.settings.inactivity);
+        }
+      });
+    }
+  }, [user]);
+
+  // Inactivity Monitor Logic
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!Platform.OS || Platform.OS === 'web') return;
+
+      const now = Date.now();
+      const inactiveDurationMins = (now - lastInteraction.current) / 1000 / 60;
+
+      const anySetDone = loggedExercises.some(ex => ex.series.some(s => s.concluido));
+      // allSetsDone logic: simply check if no set is incomplete
+      const allSetsDone = loggedExercises.length > 0 && loggedExercises.every(ex => ex.series.every(s => s.concluido));
+
+      // 1. Nudge
+      if (inactivitySettings.nudgeEnabled && inactiveDurationMins >= inactivitySettings.nudgeTime && !hasNudged.current) {
+        hasNudged.current = true;
+        if (!allSetsDone && anySetDone) {
+          Alert.alert("Inatividade", "Você está há algum tempo sem mexer no app. Não esqueça de contar suas séries!");
+        } else if (allSetsDone) {
+          Alert.alert("Treino Concluído?", "Já acabou o treino? Finalize o treino aqui no app!");
+        } else {
+          // Started but nothing done?
+          Alert.alert("Vai treinar?", "O app está aberto mas você ainda não marcou nada.");
+        }
+      }
+
+      // 2. Auto Finish
+      if (inactivitySettings.autoFinishEnabled && inactiveDurationMins >= inactivitySettings.autoFinishTime && anySetDone) {
+        Alert.alert("Inatividade", "Seu treino foi contado como finalizado devido à inatividade.");
+        handleFinishWorkout();
+        clearInterval(interval);
+      }
+
+      // 3. Auto Cancel
+      if (inactivitySettings.autoCancelEnabled && inactiveDurationMins >= inactivitySettings.autoCancelTime && !anySetDone) {
+        Alert.alert("Inatividade", "Seu treino foi cancelado devido à inatividade.");
+        handleCancelWorkout(true);
+        clearInterval(interval);
+      }
+
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [inactivitySettings, loggedExercises, user, startTime, workoutName, currentActivityId]);
+
+  // Reset timer on AppState change
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        lastInteraction.current = Date.now();
+        hasNudged.current = false;
+      }
+    });
+    return () => subscription.remove();
+  }, []);
   const [activeLogId, setActiveLogId] = useState<string | null>(null);
   const [userLogs, setUserLogs] = useState<Log[]>([]);
   const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
-  // Estados para o timer de descanso
-  const [isResting, setIsResting] = useState(false);
-  const [restCountdown, setRestCountdown] = useState(0);
-  const [maxRestTime, setMaxRestTime] = useState(0);
-  // Novos estados para o timer do exercício
-  const [isDoingExercise, setIsDoingExercise] = useState(false);
-  const [exerciseCountdown, setExerciseCountdown] = useState(0);
-  const [maxExerciseTime, setMaxExerciseTime] = useState(0);
-  const [restStartTime, setRestStartTime] = useState<number | null>(null);
-  const [exerciseStartTime, setExerciseStartTime] = useState<number | null>(null);
+
+  // CORE TIMER INTEGRATION
+  const {
+    startTimer: ctxStartTimer,
+    stopTimer: ctxStopTimer,
+    skipTimer: ctxSkipTimer,
+    timerState,
+    elapsedTime: timerElapsed,
+    duration: timerDuration,
+    type: timerType
+  } = useTimer();
+
+  // Derived state for UI compatibility
+  const isResting = timerState === 'running' && timerType === 'rest';
+  const isDoingExercise = timerState === 'running' && timerType === 'exercise';
+
+  // UI needs countdowns
+  // Context gives "elapsed", so remaining = duration - elapsed
+  const restCountdown = isResting ? Math.max(0, timerDuration - timerElapsed) : 0;
+  const exerciseCountdown = isDoingExercise ? Math.max(0, timerDuration - timerElapsed) : 0;
+
+  // UI Progress
+  const currentTimerProgress = timerDuration > 0 ? timerElapsed / timerDuration : 0;
+  // Sync SharedValue for animation (if needed for bar)
+  useEffect(() => {
+    progress.value = withTiming(Math.min(1, currentTimerProgress), { duration: 300 });
+  }, [currentTimerProgress]);
+
+
   const [setBeingTimed, setSetBeingTimed] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
   const progress = useSharedValue(0);
-  const [currentActivityId, setCurrentActivityId] = useState<string | null>(null);
+
   const scrollY = useSharedValue(0); // Restaurado
   // Estado para armazenar o ID do dono do treino original
   const [workoutOwnerId, setWorkoutOwnerId] = useState<string | null>(null);
+
+  // Machine Drawer State
+  const [isMachineDrawerVisible, setIsMachineDrawerVisible] = useState(false);
+  const [exerciseForMachine, setExerciseForMachine] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+  const [isNotesModalVisible, setIsNotesModalVisible] = useState(false);
+  const [exerciseForNotes, setExerciseForNotes] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+
+  // Substitute Logic
+  const [isSubstituteModalVisible, setSubstituteModalVisible] = useState(false);
+  const [exerciseForSubstitution, setExerciseForSubstitution] = useState<{ index: number, exercise: LoggedExercise } | null>(null);
+
+  const handleOpenSubstitute = (index: number) => {
+    setExerciseForSubstitution({ index, exercise: loggedExercises[index] });
+    setSubstituteModalVisible(true);
+  };
+
+  const handleConfirmSubstitute = (newModel: ExercicioModelo) => {
+    if (!exerciseForSubstitution) return;
+    const { index, exercise } = exerciseForSubstitution;
+
+    const updatedExercise: LoggedExercise = {
+      ...exercise,
+      modeloId: newModel.id,
+      modelo: newModel,
+      // Reset machine info
+      series: exercise.series,
+      notes: exercise.notes,
+      restTime: exercise.restTime
+    };
+
+    // Explicitly remove machine info to avoid 'undefined' issues
+    delete updatedExercise.machineId;
+    delete updatedExercise.machineName;
+
+    const newLogged = [...loggedExercises];
+    newLogged[index] = updatedExercise;
+    setLoggedExercises(newLogged);
+
+    setSubstituteModalVisible(false);
+    setExerciseForSubstitution(null);
+  }
+
+  const handleMachineSelect = async (machineId: string | undefined, machineName: string | undefined, shouldClose: boolean = true) => {
+    if (!exerciseForMachine) return;
+
+    const { index, exercise } = exerciseForMachine;
+    const newExercises = [...loggedExercises];
+
+    // Update machine info
+    const updatedExercise = {
+      ...exercise,
+      machineId: machineId,
+      machineName: machineName
+    };
+
+    // If a machine is selected, try to fetch last log stats
+    if (machineId && user) {
+      try {
+        const lastLog = await getLastLogForMachine(exercise.modeloId, machineId, user.id);
+        if (lastLog && lastLog.exercicios) {
+          const prevEx = lastLog.exercicios.find(e => e.modeloId === exercise.modeloId && e.machineId === machineId);
+          if (prevEx && prevEx.series && prevEx.series.length > 0) {
+            updatedExercise.series = updatedExercise.series.map((s, i) => {
+              const prevSet = prevEx.series[i];
+              if (prevSet) {
+                return {
+                  ...s,
+                  repeticoes: prevSet.repeticoes,
+                  peso: prevSet.peso,
+                };
+              }
+              return s;
+            });
+          }
+        }
+      } catch (e) {
+        console.log("Error fetching machine history:", e);
+      }
+    }
+
+    (updatedExercise as any).machineName = machineName;
+
+    newExercises[index] = updatedExercise;
+    setLoggedExercises(newExercises);
+    if (shouldClose) {
+      setIsMachineDrawerVisible(false);
+      setExerciseForMachine(null);
+    }
+  }
 
   const appState = React.useRef(AppState.currentState);
 
@@ -617,33 +864,32 @@ export default function LoggingDuringWorkoutScreen() {
       if (current.match(/inactive|background/) && nextAppState === 'active') {
         // App voltou para o primeiro plano
         cancelNotification('rest-timer'); // Cancela a notificação de descanso
-      } else if (nextAppState.match(/inactive|background/)) {
-        // App está indo para o background ou inativo
-        // Se não há timer ativo e há exercícios logados, iniciar Live Activity estática
-        if (!isResting && !isDoingExercise && loggedExercises.length > 0 && !currentActivityId && Platform.OS === 'ios') {
-          console.log('[AppState] App indo para o background, iniciando Live Activity estática.');
-          const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-          if (currentExercise) {
-            const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-            const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
-            const nextSet = currentExercise.series[setIndex];
-
-            await manageLiveActivity(
-              false, // isRest = false (static state)
-              0,     // duration = 0
-              currentExercise.modelo.nome,
-              setIndex,
-              currentExercise.series.length,
-              `${nextSet.peso}kg`,
-              `${nextSet.repeticoes}`,
-              0
-            );
-          }
-        }
       }
     });
 
     return () => subscription.remove();
+  }, []); // Remove dependencies to ensure this runs only once on mount
+
+  // Effect to check for existing live activity on mount
+  useEffect(() => {
+    if (Platform.OS === 'ios') {
+      NotificationsLiveActivity.listActivities().then(async activities => {
+        if (activities && activities.length > 0) {
+          console.log('[LiveActivity] Found existing activities:', activities);
+          // Use the first one
+          const activeId = activities[0];
+          setCurrentActivityId(activeId);
+
+          // Kill others if any
+          if (activities.length > 1) {
+            console.log('[LiveActivity] Killing duplicates...');
+            for (let i = 1; i < activities.length; i++) {
+              await NotificationsLiveActivity.endActivity(activities[i]);
+            }
+          }
+        }
+      }).catch(e => console.log('Error checking activities:', e));
+    }
   }, []);
 
   const formatDuration = (seconds: number) => {
@@ -673,10 +919,12 @@ export default function LoggingDuringWorkoutScreen() {
       lastUpdate: Date.now()
     };
 
-    await NotificationsLiveActivity.setWidgetData(
-      "widget_today_workout",
-      JSON.stringify(widgetData)
-    );
+    if (Platform.OS === 'ios') {
+      await NotificationsLiveActivity.setWidgetData(
+        "widget_today_workout",
+        JSON.stringify(widgetData)
+      );
+    }
   }, [workoutName, loggedExercises, elapsedTime]);
 
   // Atualiza o widget periodicamente ou quando houver mudanças relevantes
@@ -692,28 +940,27 @@ export default function LoggingDuringWorkoutScreen() {
     const loadWorkout = async () => {
       if (!user) return;
 
-      // **NOVA LÓGICA**: Prioriza carregar um log ativo do cache se um logId for passado
-      if (logId) {
-        try {
-          const cachedLog = await getCachedActiveWorkoutLog(); // CORRIGIDO: Função agora importada
-          if (cachedLog && cachedLog.id === logId) {
-            setLoggedExercises(cachedLog.exercicios || []);
-            setWorkoutName(String(cachedLog.nomeTreino || 'Treino'));
-            setStartTime(toDate(cachedLog.horarioInicio));
-            setTotalLoad(cachedLog.cargaAcumulada || 0);
-            setActiveLogId(cachedLog.id);
-            setWorkoutOwnerId(cachedLog.treino.usuarioId); // Salva o dono do treino
-            // A busca de peso do usuário ocorrerá no final da função
-          }
-        } catch (error) {
-          console.error("Erro ao carregar log do cache com logId:", error);
-          // Se falhar, a lógica abaixo tentará carregar o treino do zero
-        }
-      }
+      const cachedLog = await getCachedActiveWorkoutLog();
 
-      // Se um treinoId for passado, carrega um treino estruturado
-      else if (treinoId) {
-        // CACHE-FIRST Strategy: Tenta carregar do cache primeiro para instant start
+      const isMatchingLogId = logId && cachedLog?.id === logId;
+      const isMatchingTreinoId = treinoId && cachedLog?.treino?.id === treinoId;
+      const isResumeFreeWorkout = !treinoId && !logId && cachedLog;
+
+      if (cachedLog && (isMatchingLogId || isMatchingTreinoId || isResumeFreeWorkout)) {
+        console.log('[LoggingDuringWorkout] Resuming from cache:', cachedLog.id);
+        setLoggedExercises(cachedLog.exercicios || []);
+        setWorkoutName(String(cachedLog.nomeTreino || 'Treino'));
+        setStartTime(toDate(cachedLog.horarioInicio));
+        setTotalLoad(cachedLog.cargaAcumulada || 0);
+        setActiveLogId(cachedLog.id);
+        setWorkoutOwnerId(cachedLog.treino?.usuarioId || user.id);
+      } else if (logId) {
+        // Fallback or specific log load attempt if not cached (unlikely for active but possible)
+        console.log('[LoggingDuringWorkout] Log ID present but not in immediate active cache. Loading fresh/error.');
+        // Current logic was empty here assuming cache hit. Could add remote fetch if needed, 
+        // but context implies we are fixing the reset.
+      } else if (treinoId) {
+        // CACHE-FIRST Strategy for TEMPLATE: Tenta carregar do cache primeiro para instant start
         let fetchedTreino = await getCachedTreinoById(treinoId); // Usa a função de cache importada
 
         if (fetchedTreino) {
@@ -722,10 +969,6 @@ export default function LoggingDuringWorkoutScreen() {
           getTreinoById(treinoId).then(fresh => {
             if (fresh) {
               console.log('[LoggingDuringWorkout] Template updated from network (deferred).');
-              // Aqui poderíamos atualizar o estado se quisermos, mas para um treino que ACABOU de começar,
-              // talvez mudar os exercícios no meio seja confuso. Vamos manter o do cache.
-              // Apenas atualizamos o cache para a próxima vez.
-              // getTreinoById já atualiza o cache interno.
             }
           }).catch(e => console.log('Silent refresh failed', e));
 
@@ -747,36 +990,13 @@ export default function LoggingDuringWorkoutScreen() {
           setWorkoutOwnerId(fetchedTreino.usuarioId); // Salva o dono do treino
         }
       } else {
-        // Lógica existente para treino livre (cache ou novo)
-        try {
-          const cachedLog = await getCachedActiveWorkoutLog(); // CORRIGIDO: Função agora importada
-          if (cachedLog && cachedLog.id.startsWith('free-workout-')) {
-            // Carrega do cache
-            setLoggedExercises(cachedLog.exercicios || []);
-            setWorkoutName(String(cachedLog.nomeTreino || ''));
-            setStartTime(new Date(cachedLog.horarioInicio));
-            setTotalLoad(cachedLog.cargaAcumulada || 0);
-            setActiveLogId(cachedLog.id);
-            setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
-          } else {
-            // Inicia um novo treino livre
-            const newLogId = `free-workout-${Date.now()}`;
-            setActiveLogId(newLogId);
-            setStartTime(new Date());
-            setLoggedExercises([]);
-            setWorkoutName('Treino Livre');
-            setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
-          }
-        } catch (error) {
-          console.error("Failed to load workout from cache", error);
-          // Inicia um novo treino em caso de erro
-          const newLogId = `free-workout-${Date.now()}`;
-          setActiveLogId(newLogId);
-          setStartTime(new Date());
-          setLoggedExercises([]);
-          setWorkoutName('Treino Livre');
-          setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
-        }
+        // Inicia um novo treino livre
+        const newLogId = `free-workout-${Date.now()}`;
+        setActiveLogId(newLogId);
+        setStartTime(new Date());
+        setLoggedExercises([]);
+        setWorkoutName('Treino Livre');
+        setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
       }
 
       // Busca o peso do usuário independentemente do cache
@@ -838,280 +1058,124 @@ export default function LoggingDuringWorkoutScreen() {
     }
   }, [loggedExercises, userWeight]);
 
-  // Efeito para salvar o estado no cache
-  useEffect(() => {
+  // Function to save state immediately
+  const saveCurrentWorkoutState = useCallback(async () => {
     if (!activeLogId || !user || !startTime) return;
 
-    const saveWorkout = async () => {
-      const dummyTreino: Treino = {
-        id: 'free-workout',
-        usuarioId: user.id,
-        nome: workoutName,
-        diasSemana: [],
-        intervalo: { min: 1, seg: 0 }, // Default interval
-        exercicios: loggedExercises,
-        ordem: 0,
-        descricao: ''
-      };
-
-      const log: Log = {
-        id: activeLogId,
-        usuarioId: user.id,
-        treino: dummyTreino,
-        exercicios: loggedExercises,
-        horarioInicio: startTime,
-        status: 'em_andamento',
-        cargaAcumulada: totalLoad,
-        nomeTreino: workoutName,
-        exerciciosFeitos: loggedExercises.filter(ex => ex.series.some(s => s.concluido)),
-        observacoes: undefined, // Propriedade 'observacoes' adicionada
-      };
-
-      await cacheActiveWorkoutLog(log); // CORRIGIDO: Função agora importada
+    const dummyTreino: Treino = {
+      id: 'free-workout',
+      usuarioId: user.id,
+      nome: workoutName,
+      diasSemana: [],
+      intervalo: { min: 1, seg: 0 },
+      exercicios: loggedExercises,
+      ordem: 0,
+      descricao: ''
     };
 
-    const debounceSave = setTimeout(saveWorkout, 1000);
-    return () => clearTimeout(debounceSave);
+    const log: Log = {
+      id: activeLogId,
+      usuarioId: user.id,
+      treino: dummyTreino,
+      exercicios: loggedExercises,
+      horarioInicio: startTime,
+      status: 'em_andamento',
+      cargaAcumulada: totalLoad,
+      nomeTreino: workoutName,
+      exerciciosFeitos: loggedExercises.filter(ex => ex.series.some(s => s.concluido)),
+      observacoes: undefined,
+    };
 
-  }, [loggedExercises, workoutName, startTime, totalLoad, activeLogId, user]);
+    await cacheActiveWorkoutLog(log);
+  }, [activeLogId, user, startTime, workoutName, loggedExercises, totalLoad]);
+
+  // Efeito para salvar o estado no cache
+  useEffect(() => {
+    const debounceSave = setTimeout(saveCurrentWorkoutState, 1000);
+    return () => clearTimeout(debounceSave);
+  }, [saveCurrentWorkoutState]);
 
 
   // R1: Função unificada para gerenciar a Live Activity (Singleton)
-  const manageLiveActivity = async (
-    isRest: boolean,
-    durationOrTimestamp: number,
-    exerciseName: string,
-    setIndex: number,
-    totalSets: number,
-    weight: string,
-    reps: string,
-    dropsetCount: number
-  ) => {
-    if (Platform.OS !== 'ios') return;
 
-    // R3: Critério de tempo. Se for descanso, timestamp é futuro. Se for exercício, é 0 (ou passado).
-    const timestamp = isRest ? Date.now() + (durationOrTimestamp * 1000) : 0;
-
-    try {
-      if (currentActivityId) {
-        // ATUALIZA a existente (R1)
-        console.log('[LiveActivity] 🔄 Atualizando atividade existente:', currentActivityId);
-        await NotificationsLiveActivity.updateActivity(
-          currentActivityId,
-          timestamp,
-          exerciseName,
-          setIndex + 1,
-          totalSets,
-          weight,
-          reps,
-          dropsetCount
-        );
-      } else {
-        console.log('[LiveActivity] ▶️ Attempting to start new activity with state (timestamp:', timestamp, 'exerciseName:', exerciseName, 'set:', setIndex + 1, '/', totalSets, 'weight:', weight, 'reps:', reps, 'dropsetCount:', dropsetCount, ')');
-        console.log('[LiveActivity] ▶️ Iniciando nova atividade');
-        const id = await NotificationsLiveActivity.startActivity(
-          timestamp,
-          exerciseName,
-          setIndex + 1,
-          totalSets,
-          weight,
-          reps,
-          dropsetCount
-        );
-        setCurrentActivityId(id);
-      }
-    } catch (e) {
-      console.warn("Falha ao gerenciar Live Activity", e);
-    }
-  };
 
   const startTimer = async (
     duration: number,
     isExerciseTimer: boolean,
-    timedSetInfo?: { exerciseIndex: number; setIndex: number }
+    timedSetInfo?: { exerciseIndex: number; setIndex: number },
+    completedSetInfo?: { exerciseIndex: number; setIndex: number }
   ) => {
-    // Cancela qualquer timer que esteja rodando
-    cancelAnimation(progress);
-    setIsResting(false);
-    setIsDoingExercise(false);
+    // Prepare Metadata for Context
+    let metadata: any = {};
 
-    // Define o estado correto e o tempo máximo para o timer
-    if (isExerciseTimer) {
-      setMaxExerciseTime(duration);
-      setIsDoingExercise(true);
-      setExerciseStartTime(Date.now()); // Inicia o contador do exercício
-    } else {
-      setMaxRestTime(duration);
-      setIsResting(true);
-      setRestStartTime(Date.now()); // Inicia o contador de descanso
-    }
+    if (timedSetInfo) {
+      const ex = loggedExercises[timedSetInfo.exerciseIndex];
+      const s = ex.series[timedSetInfo.setIndex];
+      metadata = {
+        exerciseIndex: timedSetInfo.exerciseIndex,
+        setIndex: timedSetInfo.setIndex,
+        exerciseName: ex.modelo.nome,
+        weight: `${s.peso}kg`,
+        reps: `${s.repeticoes}`,
+        totalSets: ex.series.length
+      };
+      setSetBeingTimed(timedSetInfo);
+    } else if (completedSetInfo) {
+      const ex = loggedExercises[completedSetInfo.exerciseIndex];
+      const nextSetIndex = completedSetInfo.setIndex + 1;
+      const totalSets = ex.series.length;
 
-    // Iniciando live activity no IOS
-    // --- LIVE ACTIVITY LOGIC ---
-    // --- LIVE ACTIVITY LOGIC (R1 & R3) ---
-    if (Platform.OS === 'ios') {
-      let exerciseName = "Treino Livre";
-      let totalSets = 4;
-      let weightText = "-";
-      let repsText = "-";
-      let dropsCount = 0;
-      let setIndexForActivity = 0;
-
-      // Determinar dados para mostrar (lógica unificada)
-      if (timedSetInfo) {
-        // Timer de exercício específico (cronometrando a execução da série)
-        const exercise = loggedExercises[timedSetInfo.exerciseIndex];
-        exerciseName = exercise.modelo.nome;
-        setIndexForActivity = timedSetInfo.setIndex;
-        totalSets = exercise.series.length;
-        // Pegar dados da série
-        const set = exercise.series[timedSetInfo.setIndex];
-        weightText = `${set.peso}kg`;
-        repsText = `${set.repeticoes}`;
+      // Check if there is a next set
+      if (nextSetIndex < totalSets) {
+        const nextSet = ex.series[nextSetIndex];
+        metadata = {
+          exerciseName: "Descanso",
+          setIndex: nextSetIndex, // Context adds 1, so if next is index 1 (Set 2), context displays Set 2. 
+          // Wait, if I pass index 1, context displays 2. Correct.
+          // But context assumes setIndex matches "current active set". 
+          // For rest, "current active" is "upcoming set".
+          totalSets: totalSets,
+          weight: `${nextSet.peso}kg`,
+          reps: `${nextSet.repeticoes}`,
+          nextExerciseName: ex.modelo.nome
+        };
+      } else {
+        // No next set in this exercise. Maybe next exercise?
+        // For now, just show "Descanso" or "Finished"
+        metadata = {
+          exerciseName: "Descanso",
+          totalSets: totalSets,
+          setIndex: completedSetInfo.setIndex // Keep previous set index? Or null?
+        };
       }
-      else {
-        // Timer de descanso (ou transição entre séries)
-        // Busca o exercício ativo (não concluído)
-        const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-
-        if (currentExercise) {
-          exerciseName = currentExercise.modelo.nome;
-          totalSets = currentExercise.series.length;
-
-          // Tenta achar a próxima série a ser feita
-          const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-          setIndexForActivity = nextSetIndex !== -1 ? nextSetIndex : 0;
-
-          const nextSet = currentExercise.series[setIndexForActivity];
-          weightText = `${nextSet.peso}kg`;
-          repsText = `${nextSet.repeticoes}`;
-          dropsCount = currentExercise.series.filter(s => s.type === 'dropset').length;
-        }
-      }
-
-      // Se for timer de exercício OU descanso, queremos mostrar o relógio (isRest=true no helper ativa o calculo de timestamp futuro)
-      await manageLiveActivity(
-        true,
-        duration,
-        exerciseName,
-        setIndexForActivity,
-        totalSets,
-        weightText,
-        repsText,
-        dropsCount
-      );
-    }
-  }
-  // Efeito unificado para ambos os timers
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | undefined;
-
-    if (isResting || isDoingExercise) {
-      // Lógica para restaurar o progresso da barra ao voltar para a tela
-      const startTime = isResting ? restStartTime : exerciseStartTime;
-      const maxTime = isResting ? maxRestTime : maxExerciseTime;
-
-      if (startTime && maxTime > 0) {
-        const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
-        const remainingSeconds = Math.max(0, maxTime - elapsedSeconds);
-        const elapsedPercentage = Math.min(1, elapsedSeconds / maxTime);
-
-        // Inicia a animação do ponto em que parou
-        progress.value = elapsedPercentage;
-        progress.value = withTiming(1, { duration: remainingSeconds * 1000, easing: Easing.linear });
-      }
-
-      interval = setInterval(() => {
-        if (isDoingExercise) {
-          if (!exerciseStartTime) return;
-          const elapsedSeconds = Math.floor((Date.now() - exerciseStartTime) / 1000);
-          const remainingTime = Math.max(0, maxExerciseTime - elapsedSeconds); // Corrigido para usar maxExerciseTime
-          setExerciseCountdown(remainingTime);
-
-          if (remainingTime <= 0) {
-            setIsDoingExercise(false);
-            setExerciseStartTime(null);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-            if (setBeingTimed) {
-              const { exerciseIndex, setIndex } = setBeingTimed;
-              const updatedExercises = [...loggedExercises];
-              const exercise = updatedExercises[exerciseIndex];
-              (exercise.series as SerieEdit[])[setIndex].concluido = true;
-              setLoggedExercises(updatedExercises);
-              startTimer(exercise.restTime || 60, false);
-            }
-          } else if (remainingTime <= 3) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }
-        } else { // isResting
-          if (!restStartTime) return;
-          const elapsedSeconds = Math.floor((Date.now() - restStartTime) / 1000);
-          const remainingTime = Math.max(0, maxRestTime - elapsedSeconds);
-          setRestCountdown(remainingTime);
-
-          // Se o tempo acabou, encerra a Live Activity
-          if (remainingTime <= 0 && currentActivityId && Platform.OS === 'ios') {
-            NotificationsLiveActivity.endActivity(currentActivityId);
-            setCurrentActivityId(null);
-          }
-          if (remainingTime <= 0) {
-            setIsResting(false);
-            setRestStartTime(null);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          } else if (remainingTime <= 3) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }
-        }
-      }, 1000);
-    } else {
-      // Garante que tudo seja resetado quando nenhum timer estiver ativo
-      cancelAnimation(progress);
-      progress.value = 0;
-      setRestStartTime(null);
-      setExerciseStartTime(null);
-      setRestCountdown(0);
-      setExerciseCountdown(0);
       setSetBeingTimed(null);
     }
 
-    return () => {
-      if (interval) {
-        clearInterval(interval);
+    ctxStartTimer(duration, isExerciseTimer ? 'exercise' : 'rest', metadata);
+  };
+  // Efeito unificado para ambos os timers
+  // Timer Finished Logic Listener
+  useEffect(() => {
+    if (timerState === 'finished') {
+      // If it was an exercise timer, mark set as complete
+      if (timerType === 'exercise' && setBeingTimed) {
+        const { exerciseIndex, setIndex } = setBeingTimed;
+        const updatedExercises = [...loggedExercises];
+        const exercise = updatedExercises[exerciseIndex];
+        if (exercise && exercise.series[setIndex]) {
+          (exercise.series as SerieEdit[])[setIndex].concluido = true;
+          setLoggedExercises(updatedExercises);
+          // Auto start rest?
+          startTimer(exercise.restTime || 60, false);
+        }
+        setSetBeingTimed(null);
       }
-    };
-  }, [isResting, isDoingExercise]);
+    }
+  }, [timerState, timerType]);
 
 
   const handleSkipRest = async () => {
-    // Cancela a notificação de descanso agendada
-    cancelNotification('rest-timer');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsResting(false);
-    setRestStartTime(null); // Ensure rest start time is cleared
-    setIsDoingExercise(false);
-
-    // R4: Atualiza a Live Activity para estado "Sem Timer" (info estática) em vez de matar a atividade
-    if (currentActivityId && Platform.OS === 'ios') {
-      // Encontra o exercício atual para mostrar info estática da próxima série
-      const currentExercise = loggedExercises.find(ex => !ex.series.every(s => s.concluido)) || loggedExercises[0];
-      if (currentExercise) {
-        const nextSetIndex = currentExercise.series.findIndex(s => !s.concluido);
-        const setIndex = nextSetIndex !== -1 ? nextSetIndex : 0;
-        const nextSet = currentExercise.series[setIndex];
-
-        await manageLiveActivity(
-          false, // isRest = false (Timestamp será 0/passado -> Layout muda para info estática)
-          0,     // Duração 0
-          currentExercise.modelo.nome,
-          setIndex,
-          currentExercise.series.length,
-          `${nextSet.peso}kg`,
-          `${nextSet.repeticoes}`,
-          0
-        );
-      }
-    }
+    ctxSkipTimer();
   };
 
   const handleUpdateExerciseSeries = (exerciseIndex: number, newSeries: SerieEdit[]) => {
@@ -1132,11 +1196,28 @@ export default function LoggingDuringWorkoutScreen() {
     };
   }, []);
 
-  const handleBack = () => {
+  const handleBack = async () => {
+    await saveCurrentWorkoutState(); // Force save before leaving
     router.back();
   };
 
-  const handleCancelWorkout = () => {
+  const handleCancelWorkout = (force: boolean = false) => {
+    const performCancel = async () => {
+      await cacheActiveWorkoutLog(null); // Limpa o cache
+      cancelNotification('rest-timer');
+      if (currentActivityId && Platform.OS === 'ios') {
+        await NotificationsLiveActivity.endActivity(currentActivityId);
+        setCurrentActivityId(null);
+      }
+      ctxStopTimer(); // Stop timer on cancel
+      router.back();
+    };
+
+    if (force) {
+      performCancel();
+      return;
+    }
+
     Alert.alert(
       "Cancelar Treino?",
       "Seu progresso neste treino livre será perdido. Deseja continuar?",
@@ -1145,16 +1226,7 @@ export default function LoggingDuringWorkoutScreen() {
         {
           text: "Cancelar Treino",
           style: "destructive",
-          onPress: async () => {
-            await cacheActiveWorkoutLog(null); // Limpa o cache
-            cancelNotification('rest-timer');
-            // End Live Activity when workout is cancelled
-            if (currentActivityId && Platform.OS === 'ios') {
-              await NotificationsLiveActivity.endActivity(currentActivityId);
-              setCurrentActivityId(null);
-            }
-            router.back(); // Volta para a tela anterior
-          },
+          onPress: performCancel
         },
       ]
     );
@@ -1170,108 +1242,18 @@ export default function LoggingDuringWorkoutScreen() {
         return;
       }
 
-      setIsFinishing(true);
-      const finalEndTime = new Date();
-
-      // Adicionado log para depuração
-      console.log('[handleFinishWorkout] Iniciando finalização do treino.');
-      console.log('[handleFinishWorkout] treinoId:', treinoId, '| fichaId:', fichaId);
-
-      let finalTreinoId = treinoId;
-
-      // Se for um treino livre (sem treinoId), cria um novo documento de treino primeiro.
-      if (!finalTreinoId) {
-        console.log('[handleFinishWorkout] Detectado treino livre. Criando novo documento de treino...');
-        const novoTreinoData: Omit<Treino, 'id'> = {
-          nome: workoutName,
-          usuarioId: user.id,
-          exercicios: loggedExercises,
-          diasSemana: [],
-          fichaId: null, // Treinos livres não pertencem a uma ficha.
-          intervalo: { min: 1, seg: 0 }, // Intervalo padrão
-          ordem: 999,
-          descricao: ''
-        };
-        try {
-          finalTreinoId = await addTreino(novoTreinoData);
-          console.log('[handleFinishWorkout] Novo treino livre criado com ID:', finalTreinoId);
-        } catch (treinoError) {
-          console.error('[handleFinishWorkout] Erro ao criar documento do treino livre:', treinoError);
-          Alert.alert('Erro', 'Não foi possível criar o registro do treino antes de salvar o log.');
-          setIsFinishing(false);
-          return;
-        }
-      }
-
-      // **[MODIFICADO] Lógica para atualizar o treino existente**
-      // Se não criamos um novo treino (era um existente), verificamos se o usuário é o dono antes de atualizar.
-      if (finalTreinoId && treinoId && typeof treinoId === 'string') {
-        // CORREÇÃO: Verifica se o usuário é o dono do treino antes de tentar atualizar
-        if (workoutOwnerId === user.id) {
-          try {
-            console.log('[handleFinishWorkout] Atualizando o modelo do treino original com as alterações...');
-            await updateTreino(treinoId, {
-              exercicios: loggedExercises
-            });
-            console.log('[handleFinishWorkout] Modelo do treino atualizado com sucesso.');
-          } catch (error) {
-            console.error('[handleFinishWorkout] Erro ao atualizar o modelo do treino:', error);
-            // Não bloqueamos o fluxo, apenas logamos o erro, pois salvar o log é a prioridade.
-          }
-        } else {
-          console.log('[handleFinishWorkout] Usuário não é o dono do treino original. Pulasndo atualização do modelo.');
-        }
-      }
-
-      try {
-        const newLog: Partial<Log> = {
-          usuarioId: user.id,
-          treino: {
-            id: finalTreinoId,
-            // CORREÇÃO: Usar `null` em vez de 'null' como string.
-            // O `as any` é um truque para contornar o erro do TypeScript, permitindo que o valor `null`
-            // seja enviado para o Firebase, que é o que a função `addLog` espera para campos vazios.
-            fichaId: (fichaId || null) as any,
-            nome: workoutName,
-            usuarioId: user.id,
-            exercicios: loggedExercises,
-            diasSemana: [],
-            intervalo: { min: 0, seg: 0 },
-            ordem: 0,
-            descricao: ''
-          },
-          exercicios: loggedExercises,
-          horarioInicio: startTime,
-          horarioFim: finalEndTime,
-          status: 'concluido',
-          cargaAcumulada: totalLoad,
-          exerciciosFeitos: loggedExercises.filter(ex => ex.series.some(s => s.concluido)),
-          nomeTreino: workoutName,
-          observacoes: loggedExercises.map((ex) => ex.notes).filter(Boolean).join('; '),
-        };
-
-        // Adicionado log para inspecionar o objeto que será salvo
-        console.log('[handleFinishWorkout] Objeto do log pronto para ser salvo:', JSON.stringify(newLog, null, 2));
-
-        const newLogId = await addLog(newLog);
-
-        // End Live Activity when workout finishes
-        if (currentActivityId && Platform.OS === 'ios') {
-          await NotificationsLiveActivity.endActivity(currentActivityId);
-          setCurrentActivityId(null);
-        }
-
-        console.log('[handleFinishWorkout] Log salvo com sucesso. ID:', newLogId);
-
-        await cacheActiveWorkoutLog(null);
-
-        router.replace({ pathname: '/(treino)/treinoCompleto', params: { logId: newLogId } });
-
-      } catch (error) {
-        console.error('[handleFinishWorkout] Erro ao salvar o log do treino:', error);
-        Alert.alert('Erro', 'Não foi possível salvar o log do treino.');
-        setIsFinishing(false);
-      }
+      ctxStopTimer(); // Stop timer on finish
+      await finishWorkout({
+        user,
+        workoutName,
+        loggedExercises,
+        startTime,
+        treinoId: treinoId as string | undefined, // Type assertion as it comes from params
+        fichaId: fichaId as string | undefined,
+        workoutOwnerId,
+        totalLoad,
+        currentActivityId
+      });
     };
 
     if (allSetsCompleted) {
@@ -1337,6 +1319,23 @@ export default function LoggingDuringWorkoutScreen() {
     setLoggedExercises(prev => prev.filter((_, index) => index !== exerciseIndex));
   };
 
+  const handleNotesChange = (index: number, notes: string) => {
+    const newExercises = [...loggedExercises];
+    newExercises[index] = { ...newExercises[index], notes: notes };
+    setLoggedExercises(newExercises);
+  };
+
+  const handleRestTimeChange = (index: number, newRestTime: number) => {
+    setLoggedExercises(prevExercises => {
+      const updatedExercises = [...prevExercises];
+      updatedExercises[index] = {
+        ...updatedExercises[index],
+        restTime: newRestTime,
+      };
+      return updatedExercises;
+    });
+  };
+
   const handlePesoBarraChange = (exerciseIndex: number, newPesoBarra: number) => {
     setLoggedExercises(prevExercises => {
       const updatedExercises = [...prevExercises];
@@ -1385,7 +1384,7 @@ export default function LoggingDuringWorkoutScreen() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <MenuProvider>
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView style={styles.container} {...panResponder.panHandlers}>
           {/* Cabeçalho Customizado (agora fixo) */}
           <View style={styles.customHeader}>
             <View style={styles.headerLeftGroup}>
@@ -1463,6 +1462,7 @@ export default function LoggingDuringWorkoutScreen() {
                     <LoggedExerciseCard
                       item={item}
                       userWeight={userWeight}
+                      exerciseIndex={index} // Pass correct index
                       onSeriesChange={(newSeries) =>
                         handleUpdateExerciseSeries(index, newSeries)
                       }
@@ -1478,19 +1478,44 @@ export default function LoggingDuringWorkoutScreen() {
                         setLoggedExercises(updatedExercises);
                       }}
                       onPesoBarraChange={(newPesoBarra) => handlePesoBarraChange(index, newPesoBarra)}
-                      startRestTimer={(duration, isExercise, timedSetInfo) => startTimer(duration, isExercise, timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined)}
+                      startRestTimer={(duration, isExercise, timedSetInfo, completedSetInfo) =>
+                        startTimer(
+                          duration,
+                          isExercise,
+                          timedSetInfo ? { ...timedSetInfo, exerciseIndex: index } : undefined,
+                          completedSetInfo
+                        )
+                      }
                       onMenuStateChange={setIsMenuOpen}
+                      onOpenMachineDrawer={() => {
+                        setExerciseForMachine({ index, exercise: item });
+                        setIsMachineDrawerVisible(true);
+                      }}
+                      onReorder={() => setReorderModalVisible(true)}
+                      onOpenNotes={() => {
+                        setExerciseForNotes({ index, exercise: item });
+                        setIsNotesModalVisible(true);
+                      }}
+                      onSubstitute={() => handleOpenSubstitute(index)}
                     />
                   );
                 }}
                 ListFooterComponent={
                   <>
-                    <TouchableOpacity
-                      style={styles.addMoreButton}
-                      onPress={() => setModalVisible(true)}
-                    >
-                      <Text style={styles.addSetButtonText}>+ Adicionar Mais Exercícios</Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 15, marginTop: 10 }}>
+                      <TouchableOpacity
+                        style={[styles.addMoreButton, { flex: 1, margin: 0, marginTop: 0, marginHorizontal: 0 }]}
+                        onPress={() => setModalVisible(true)}
+                      >
+                        <Text style={styles.addSetButtonText}>+ Adicionar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.addMoreButton, { flex: 1, margin: 0, marginTop: 0, marginHorizontal: 0, backgroundColor: '#2A2E37', borderColor: '#333' }]}
+                        onPress={() => setReorderModalVisible(true)}
+                      >
+                        <Text style={styles.addSetButtonText}>Reordenar</Text>
+                      </TouchableOpacity>
+                    </View>
                     <TouchableOpacity
                       style={styles.settingsButton}
                       onPress={() => setSettingsModalVisible(true)}
@@ -1500,7 +1525,7 @@ export default function LoggingDuringWorkoutScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.cancelWorkoutButton]} // Removida a margem duplicada
-                      onPress={handleCancelWorkout}
+                      onPress={() => handleCancelWorkout()}
                     >
                       <Text style={styles.cancelWorkoutButtonText}>Cancelar treino</Text>
                     </TouchableOpacity>
@@ -1552,6 +1577,50 @@ export default function LoggingDuringWorkoutScreen() {
                 userWeight={userWeight}
                 onEditExercise={handleEditExerciseFromOverview} />
             )}
+
+            <MachineChooserDrawer
+              visible={isMachineDrawerVisible}
+              onClose={() => setIsMachineDrawerVisible(false)}
+              onSelectMachine={handleMachineSelect}
+              exerciseId={exerciseForMachine?.exercise.modeloId || ''}
+              currentMachineId={exerciseForMachine?.exercise.machineId}
+            />
+
+            <ExerciseNotesModal
+              visible={isNotesModalVisible}
+              onClose={() => {
+                setIsNotesModalVisible(false);
+                setExerciseForNotes(null);
+              }}
+              exerciseId={exerciseForNotes?.exercise.modeloId || ''}
+              exerciseName={exerciseForNotes?.exercise.modelo.nome || ''}
+              currentNote={exerciseForNotes?.exercise.notes || ''}
+              onSaveNote={(note) => {
+                if (exerciseForNotes) {
+                  handleNotesChange(exerciseForNotes.index, note);
+                }
+              }}
+            />
+
+            <ExerciseReorderModal
+              visible={isReorderModalVisible}
+              onClose={() => setReorderModalVisible(false)}
+              exercises={loggedExercises}
+              onSave={(newOrder) => setLoggedExercises(newOrder as LoggedExercise[])}
+            />
+
+            <SelectExerciseModal
+              visible={isSubstituteModalVisible}
+              onClose={() => {
+                setSubstituteModalVisible(false);
+                setExerciseForSubstitution(null);
+              }}
+              onSelect={handleConfirmSubstitute}
+              excludeIds={loggedExercises.map(e => e.modeloId)}
+              initialGroup={exerciseForSubstitution?.exercise.modelo.grupoMuscular}
+              sortByWordCount={true}
+            />
+
           </KeyboardAvoidingView>
         </SafeAreaView>
         {(isResting || isDoingExercise) && (
@@ -2139,5 +2208,23 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     zIndex: 1, // Garante que o overlay fique sobre o conteúdo mas abaixo do menu
+  },
+  machineMarker: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    backgroundColor: '#1c1c1e', // darker contrast
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  machineMarkerText: {
+    color: '#3B82F6',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

@@ -86,6 +86,12 @@ match /treinos/{treinoId} {
                     request.resource.data.fichaId == null);
 }
 
+match /machines/{machineId} {
+  allow read: if isOwner(resource.data.userId);
+  allow create: if isOwner(request.resource.data.userId);
+  allow update, delete: if isOwner(resource.data.userId);
+}
+
 // =================================================================
 // Regras para a Coleção de Logs
 // =================================================================
@@ -95,7 +101,7 @@ match /logs/{logId} {
   // 2. O usuário for amigo do dono do log.
   // 3. O log tiver um 'projetoId' e o usuário for participante desse projeto.
   allow read: if isOwner(resource.data.usuarioId) || (resource.data.projetoId != null && isProjectParticipant(resource.data.projetoId)) ||
-                 isOwnerOfAssociatedFicha(resource.data);
+                 isOwnerOfAssociatedFicha(resource.data) || isMutualFriend(resource.data.usuarioId);
 
   // Permite criar se o usuário for o dono dos dados enviados.
   allow create: if isOwner(request.resource.data.usuarioId);
@@ -158,6 +164,15 @@ match /feature_suggestions/{suggestionId} {
   allow update: if request.auth != null
                 && !(request.auth.uid in resource.data.votedBy)
                 && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes', 'votedBy']);
+}
+
+// =================================================================
+// Regras para a Coleção de Posts (posts)
+// =================================================================
+match /posts/{postId} {
+  allow read: if request.auth != null;
+  allow create: if isOwner(request.resource.data.usuarioId);
+  allow update, delete: if isOwner(resource.data.usuarioId);
 }
 }
 }

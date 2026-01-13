@@ -1,7 +1,6 @@
 import { ExercicioModelo } from '@/models/exercicio';
 import { getExerciciosModelos, getTodosGruposMusculares } from '@/services/exercicioService';
 import { FontAwesome } from '@expo/vector-icons';
-import { DocumentSnapshot } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { VideoListItem } from '../../../components/VideoListItem';
@@ -10,16 +9,19 @@ interface SelectExerciseModalProps {
   visible: boolean;
   onClose: () => void;
   onSelect: (exercicio: ExercicioModelo) => void;
+  excludeIds?: string[];
+  initialGroup?: string | null;
+  sortByWordCount?: boolean;
 }
 
 const EXERCICIOS_PAGE_SIZE = 20;
 
-export const SelectExerciseModal = ({ visible, onClose, onSelect }: SelectExerciseModalProps) => {
+export const SelectExerciseModal = ({ visible, onClose, onSelect, excludeIds = [], initialGroup = null, sortByWordCount = false }: SelectExerciseModalProps) => {
   const [exerciciosModelos, setExerciciosModelos] = useState<ExercicioModelo[]>([]);
-  const [lastVisibleDoc, setLastVisibleDoc] = useState<DocumentSnapshot | null>(null);
+  const [lastVisibleDoc, setLastVisibleDoc] = useState<number | null>(null);
   const [loadingMoreExercicios, setLoadingMoreExercicios] = useState(false);
   const [allExerciciosLoaded, setAllExerciciosLoaded] = useState(false);
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(initialGroup);
   const [currentSearchInput, setCurrentSearchInput] = useState('');
   const [activeSearchTerm, setActiveSearchTerm] = useState('');
   const [allMuscleGroups, setAllMuscleGroups] = useState<string[]>([]);
@@ -29,6 +31,7 @@ export const SelectExerciseModal = ({ visible, onClose, onSelect }: SelectExerci
       setExerciciosModelos([]);
       setLastVisibleDoc(null);
       setAllExerciciosLoaded(false);
+      setSelectedGroup(initialGroup);
       loadMoreExercicios(true); // Pass true to reset
 
       // Carrega todos os grupos musculares uma vez quando o modal se torna visível
@@ -55,6 +58,9 @@ export const SelectExerciseModal = ({ visible, onClose, onSelect }: SelectExerci
       if (newExercicios && newExercicios.length > 0) {
         setExerciciosModelos(prev => isNewSearch ? newExercicios : [...prev, ...newExercicios]);
         setLastVisibleDoc(newLastVisibleDoc);
+        if (newLastVisibleDoc === null) {
+          setAllExerciciosLoaded(true);
+        }
       } else {
         if (isNewSearch) setExerciciosModelos([]);
         setAllExerciciosLoaded(true);
@@ -69,11 +75,23 @@ export const SelectExerciseModal = ({ visible, onClose, onSelect }: SelectExerci
   const handleClose = () => {
     setCurrentSearchInput('');
     setActiveSearchTerm('');
-    setSelectedGroup(null);
+    setSelectedGroup(initialGroup);
     onClose();
   };
 
-  const filteredExercicios = exerciciosModelos; // A filtragem agora é feita na query
+  let filteredExercicios = exerciciosModelos;
+
+  if (excludeIds.length > 0) {
+    filteredExercicios = filteredExercicios.filter(ex => !excludeIds.includes(ex.id));
+  }
+
+  if (sortByWordCount) {
+    filteredExercicios = [...filteredExercicios].sort((a, b) => {
+      const countA = a.nome.split(' ').length;
+      const countB = b.nome.split(' ').length;
+      return countA - countB;
+    });
+  }
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose} presentationStyle="pageSheet">

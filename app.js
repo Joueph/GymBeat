@@ -10,7 +10,11 @@ export default {
     newArchEnabled: true,
     ios: {
       supportsTablet: false,
-      icon: "./assets/images/icon.png",
+      icon: {
+        dark: "./assets/icons/ios-dark.png",
+        light: "./assets/icons/ios-light.png",
+        tinted: "./assets/icons/ios-tinted.png",
+      },
       bundleIdentifier: "br.com.gymbeat",
       buildNumber: "1",
       infoPlist: {

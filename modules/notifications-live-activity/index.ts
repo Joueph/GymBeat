@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import NotificationsLiveActivityModule from './src/NotificationsLiveActivityModule';
 
 export async function startActivity(
@@ -9,6 +10,9 @@ export async function startActivity(
   reps: string,
   dropsetCount: number
 ): Promise<string> {
+  if (Platform.OS !== 'ios') {
+    return "";
+  }
   return await NotificationsLiveActivityModule.startActivity(
     timestamp,
     exerciseName,
@@ -31,6 +35,9 @@ export async function updateActivity(
   reps: string,
   dropsetCount: number
 ): Promise<void> {
+  if (Platform.OS !== 'ios') {
+    return;
+  }
   return await NotificationsLiveActivityModule.updateActivity(
     activityId,
     timestamp,
@@ -44,13 +51,29 @@ export async function updateActivity(
 }
 
 export async function endActivity(activityId: string): Promise<void> {
+  if (Platform.OS !== 'ios') {
+    return;
+  }
   return await NotificationsLiveActivityModule.endActivity(activityId);
 }
 
+export async function listActivities(): Promise<string[]> {
+  if (Platform.OS !== 'ios') {
+    return [];
+  }
+  return await NotificationsLiveActivityModule.listActivities();
+}
+
 export function reloadWidgetTimelines() {
+  if (Platform.OS !== 'ios') {
+    return;
+  }
   return NotificationsLiveActivityModule.reloadAllTimelines();
 }
 
 export function setWidgetData(key: string, jsonValue: string) {
+  if (Platform.OS !== 'ios') {
+    return;
+  }
   return NotificationsLiveActivityModule.setWidgetData(key, jsonValue);
 }

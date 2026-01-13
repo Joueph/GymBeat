@@ -12,12 +12,14 @@ interface AuthContextType {
   user: Usuario | null;
   initialized: boolean;
   isOffline: boolean;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   initialized: false,
   isOffline: false,
+  logout: async () => { },
 });
 
 export function useAuth() {
@@ -29,6 +31,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(false);
   const { isOnline } = useNetwork();
 
+  const logout = async () => {
+    try {
+      await clearUserSessionCache();
+      await auth.signOut();
+      setUser(null);
+    } catch (e) {
+      console.error('[Auth] Logout error:', e);
+    }
+  };
+
   useEffect(() => {
     let firestoreUnsubscribe: Unsubscribe | null = null;
 
@@ -38,14 +50,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!currentUser) {
-        // Se não há usuário logado, tenta recuperar dados em cache
-        if (!isOnline) {
+        // Se não há usuário logado (firebase auth vazio),
+        // NÃO limpamos o cache automaticamente para proteger sessões offline robustas.
+        // Apenas verificamos se o usuário explicitamente pediu logout (já tratado em 'logout')
+        // OU se estamos num estado onde o cache deve ser restaurado.
+
+        // Tentamos recuperar dados em cache caso existam, pois pode ser um inicio offline
+        try {
           const cachedUser = await getCachedUserSession();
-          setUser(cachedUser);
-          console.log('[Auth] Restaurado usuário do cache (offline)');
-        } else {
+          if (cachedUser) {
+            console.log('[Auth] Restaurado usuário do cache (offline ou auth não inicializado)');
+            setUser(cachedUser);
+          } else {
+            // Se não tem cache, realmente não tem usuário.
+            setUser(null);
+          }
+        } catch (e) {
+          console.error('[Auth] Erro ao tentar recuperar cache na inicialização:', e);
           setUser(null);
-          await clearUserSessionCache();
         }
         setInitialized(true);
         return;
@@ -57,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userDocRef,
         async (docSnap) => {
           setInitialized(true);
-          
+
           if (docSnap.exists()) {
             const userData = docSnap.data() as Omit<Usuario, 'id'>;
             const combinedUser: Usuario = {
@@ -86,10 +108,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               hasTrainedToday: userData.hasTrainedToday,
               streakGoal: userData.streakGoal,
               weeksStreakGoal: userData.weeksStreakGoal,
+
               workoutScreenType: userData.workoutScreenType,
-              uid: function (uid: any): unknown {
-                throw new Error('Function not implemented.');
-              }
             };
             setUser(combinedUser);
             // Salva em cache para acesso offline
@@ -98,18 +118,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(null);
           }
         },
-        (error) => {
+        async (error) => {
           console.error("Erro no ouvinte do Firestore (authprovider):", error);
-          // Se há erro, tenta usar dados em cache
-          if (!isOnline) {
-            getCachedUserSession().then(cachedUser => {
+          // Se há erro (offline ou permissão), tenta usar dados em cache
+          // NÃO checamos isOnline aqui, pois o erro no Firestore já indica problema de acesso
+          try {
+            const cachedUser = await getCachedUserSession();
+            if (cachedUser && cachedUser.id === currentUser.uid) {
               setUser(cachedUser);
-              console.log('[Auth] Usando usuário em cache devido a erro de conexão');
-            });
-          } else {
+              console.log('[Auth] Usando usuário em cache devido a erro de conexão/firestore');
+            } else {
+              console.warn('[Auth] Erro no Firestore e cache vazio ou incompatível.');
+              setUser(null);
+            }
+          } catch (e) {
+            console.error('[Auth] Erro ao recuperar cache:', e);
             setUser(null);
+          } finally {
+            setInitialized(true);
           }
-          setInitialized(true);
         }
       );
     });
@@ -122,10 +149,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [isOnline]);
 
+  // NOVO: Persistência redundante. Sempre que o usuário muda (e existe), atualizamos o cache.
+  // Isso garante que se o login ocorrer e o snapshot não disparar o salvamento por algum motivo,
+  // ou se houver qualquer atualização de estado, o cache esteja sincronizado.
+  useEffect(() => {
+    if (user) {
+      cacheUserSession(user).catch(err => console.error('[Auth] Erro ao salvar sessão redundante:', err));
+    }
+  }, [user]);
+
   const value = {
     user,
     initialized,
     isOffline: !isOnline,
+    logout,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

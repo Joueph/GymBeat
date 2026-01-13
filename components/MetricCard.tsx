@@ -16,11 +16,13 @@ export const MetricCard: React.FC<MetricCardProps> = ({ metricName, metricValue,
     <View style={styles.card}>
       <View style={styles.header}>
         <Text style={styles.metricName}>{metricName}</Text>
-        {isEditable && (
-          <TouchableOpacity onPress={onEdit} style={styles.editButton}>
-            <FontAwesome name="pencil" size={14} color="#888" />
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          onPress={isEditable ? onEdit : undefined}
+          style={[styles.editButton, !isEditable && { opacity: 0 }]}
+          disabled={!isEditable}
+        >
+          <FontAwesome name="pencil" size={14} color="#888" />
+        </TouchableOpacity>
       </View>
       <Text style={styles.metricValue}>{metricValue}</Text>
       {historyData && historyData.length > 1 ? (
@@ -41,9 +43,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 0.5,
     borderColor: '#2A2E37',
-    width: '48%', // Para caber dois cards por linha com um espaço
+    width: '100%',
     overflow: 'hidden', // Garante que o gráfico não vaze
-    marginBottom: 8, // Adicionado para o espaçamento vertical
   },
   header: {
     flexDirection: 'row',

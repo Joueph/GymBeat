@@ -1,5 +1,6 @@
 import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as Network from 'expo-network';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -131,7 +132,14 @@ export default function MeusTreinosScreen() {
     });
 
     const treinosAvulsos = treinos.filter((treino: Treino) => !treino.fichaId);
-    fichaFolders.sort((a, b) => a.nome.localeCompare(b.nome));
+    fichaFolders.sort((a, b) => {
+      // 1. Ficha ativa sempre primeiro
+      if (fichaAtiva && a.id === fichaAtiva.id) return -1;
+      if (fichaAtiva && b.id === fichaAtiva.id) return 1;
+
+      // 2. Ordem alfabética para as outras
+      return a.nome.localeCompare(b.nome);
+    });
     const pastaAvulsa: Folder = { id: 'unassigned', type: 'unassigned', nome: 'Meus Treinos', treinos: treinosAvulsos };
     const allFolders = [...fichaFolders, pastaAvulsa];
 
@@ -155,8 +163,6 @@ export default function MeusTreinosScreen() {
     switch (action) {
       case 'set-active':
         try {
-          // Importa o módulo de rede para verificar a conexão
-          const Network = await import('expo-network');
           const networkState = await Network.getNetworkStateAsync();
           const isOffline = !networkState.isConnected;
 
@@ -165,11 +171,32 @@ export default function MeusTreinosScreen() {
             return;
           }
 
-          const fichaAtualizada = await setFichaAtiva(user.id, folderId);
-          if (fichaAtualizada) {
-            setActiveFicha(fichaAtualizada);
-          }
-          Alert.alert("Sucesso", `"${ficha.nome}" é agora sua ficha principal.`);
+          const isCurrentlyActive = activeFicha?.id === folderId;
+          // If it's already active, we pass null to deactivate it (remove as principal)
+          // otherwise we pass the folderId to set it as new active
+          const targetFichaId = isCurrentlyActive ? null : folderId;
+
+          const fichaAtualizada = await setFichaAtiva(user.id, targetFichaId, activeFicha?.id);
+
+          // Update local state
+          setActiveFicha(fichaAtualizada); // fichaAtualizada will be null if we removed principal
+          setFolders(prevFolders => {
+            const unassigned = prevFolders.find(f => f.type === 'unassigned');
+            const fichaFolders = prevFolders.filter(f => f.type === 'ficha');
+
+            fichaFolders.sort((a, b) => {
+              // If there's an active ficha, put it first
+              if (fichaAtualizada) {
+                if (a.id === fichaAtualizada.id) return -1;
+                if (b.id === fichaAtualizada.id) return 1;
+              }
+              // Otherwise (or for non-active ones), sort alphabetically
+              return a.nome.localeCompare(b.nome);
+            });
+
+            return unassigned ? [...fichaFolders, unassigned] : fichaFolders;
+          });
+          // Removed Success Alert as requested
         } catch (error) {
           console.error("Erro ao definir ficha ativa:", error);
           Alert.alert("Erro", "Não foi possível definir a ficha como principal.");

@@ -164,27 +164,49 @@ export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => 
   }
 };
 
-export const setFichaAtiva = async (userId: string, fichaId: string): Promise<Ficha | null> => {
+export const setFichaAtiva = async (userId: string, fichaId: string | null, previousFichaId?: string): Promise<Ficha | null> => {
   const batch = writeBatch(db);
   const fichasRef = collection(db, 'fichas');
 
+  // Deactivate currently active fichas found by query
   const q = query(fichasRef, where('usuarioId', '==', userId), where('ativa', '==', true));
   const activeFichasSnapshot = await getDocs(q);
+
+  const fichasToDeactivate = new Set<string>();
+
   activeFichasSnapshot.forEach(doc => {
-    batch.update(doc.ref, { ativa: false });
+    fichasToDeactivate.add(doc.id);
   });
 
-  const newActiveFichaRef = doc(db, 'fichas', fichaId);
-  batch.update(newActiveFichaRef, { ativa: true });
-
-  await batch.commit();
-
-  // ADICIONADO: Busca e retorna a ficha recém-ativada
-  const docSnap = await getDoc(newActiveFichaRef);
-  if (docSnap.exists()) {
-    return { id: docSnap.id, ...docSnap.data() } as Ficha;
+  // Also ensure the known previous active ficha is deactivated (fallback)
+  if (previousFichaId) {
+    fichasToDeactivate.add(previousFichaId);
   }
-  return null; // Caso a ficha não seja encontrada
+
+  fichasToDeactivate.forEach(id => {
+    // Avoid checking the one we are about to activate (optimization, though overwrite handles it)
+    if (id !== fichaId) {
+      const ref = doc(db, 'fichas', id);
+      batch.update(ref, { ativa: false });
+    }
+  });
+
+  if (fichaId) {
+    const newActiveFichaRef = doc(db, 'fichas', fichaId);
+    batch.update(newActiveFichaRef, { ativa: true });
+    await batch.commit();
+
+    // ADICIONADO: Busca e retorna a ficha recém-ativada
+    const docSnap = await getDoc(newActiveFichaRef);
+    if (docSnap.exists()) {
+      return { id: docSnap.id, ...docSnap.data() } as Ficha;
+    }
+    return null; // Caso a ficha não seja encontrada
+  } else {
+    // Se fichaId for null, apenas commitamos as desativações
+    await batch.commit();
+    return null;
+  }
 };
 
 export const addFicha = async (fichaData: Omit<Ficha, 'id'>): Promise<string> => {

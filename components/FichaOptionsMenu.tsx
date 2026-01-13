@@ -48,10 +48,9 @@ export const FichaOptionsMenu = ({ onSelect, isPrincipal }: FichaOptionsMenuProp
 
       <MenuOptions customStyles={menuStyles}>
         <MenuOptionItem
-          text={isPrincipal ? "Já é a ficha principal" : "Definir como principal"}
+          text={isPrincipal ? "Remover como principal" : "Definir como principal"}
           icon="star"
           onSelect={() => onSelect('set-active')}
-          disabled={isPrincipal}
         />
         <View style={styles.divider} />
         <MenuOptionItem

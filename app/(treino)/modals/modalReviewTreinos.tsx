@@ -59,7 +59,7 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
     const animatedChartStyle = useAnimatedStyle(() => {
         return {
             height: chartHeight.value,
-            overflow: 'hidden', 
+            overflow: 'hidden',
         };
     });
 
@@ -153,9 +153,9 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
                     keyExtractor={(item) => item.modeloId}
                     // --- SUBSTITUIÇÃO DO RENDERITEM ---
                     renderItem={({ item }) => (
-                        <ExpandableExerciseItem 
-                            item={item} 
-                            allUserLogs={allUserLogs} 
+                        <ExpandableExerciseItem
+                            item={item}
+                            allUserLogs={allUserLogs}
                             log={log}
                             userWeight={userWeight}
                         />
@@ -174,7 +174,7 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
                             <View style={styles.infoCard}>
                                 <Text style={styles.infoCardTitle}>Progressão de Carga</Text>
                                 <View style={styles.chartContainer}>
-                                    
+
                                     {/* --- SUBSTITUIÇÃO DO GRÁFICO --- */}
                                     <HistoricoCargaTreinoChart
                                         currentLog={log}
@@ -186,7 +186,7 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
 
                                 </View>
                             </View>
-                            <Text style={[styles.cardTitle, { marginTop: 20, marginBottom: 15}]}>Carga por Exercício</Text>
+                            <Text style={[styles.cardTitle, { marginTop: 20, marginBottom: 15 }]}>Carga por Exercício</Text>
                         </>
                     }
                     contentContainerStyle={{ paddingHorizontal: 15, paddingBottom: 30 }}
@@ -197,31 +197,38 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
 };
 
 const styles = StyleSheet.create({
-// ... (Estilos existentes)
-    safeArea: { flex: 1, backgroundColor: '#030405' },
-    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#1C1C1E', paddingTop: 10 },
-    headerTitle: { color: '#fff', fontSize: 22, fontWeight: 'bold' },
+    safeArea: { flex: 1, backgroundColor: '#0B0D10' },
+    header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingTop: 10, paddingBottom: 20 },
+    headerTitle: { color: '#EAEAEA', fontSize: 24, fontWeight: 'bold' },
     navigationCard: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        backgroundColor: '#141414',
-        borderRadius: 12,
-        padding: 15,
+        backgroundColor: '#1A1D23',
+        borderRadius: 16,
+        padding: 16,
         marginTop: 10,
+        borderWidth: 0.5,
+        borderColor: '#2A2E37',
     },
-    navigationTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-    navigationDate: { color: '#aaa', fontSize: 12, marginTop: 4 },
-    infoCard: { backgroundColor: '#141414', borderRadius: 12, padding: 15, marginTop: 20, borderWidth: 1, borderColor: '#222' },
-    infoCardTitle: { color: '#aaa', fontSize: 14, marginBottom: 10 },
-    durationValue: { color: '#fff', fontSize: 28, fontWeight: 'bold', textAlign: 'center' },
-    loadValue: { color: '#fff', fontSize: 28, fontWeight: 'bold', textAlign: 'center', paddingVertical: 10 },
-    timelineContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, marginTop: 15 },
-    timelineTrack: { flex: 1, height: 2, backgroundColor: '#333' },
-    timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#00A6FF' },
-    timeLabelContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 10, marginTop: 5 },
-    timeLabel: { color: '#ccc', fontSize: 12 },
-    cardTitle: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-    chartContainer: { alignItems: 'center' },
-    // Estilos de exerciseItem removidos (agora estão no componente)
+    navigationTitle: { color: '#EAEAEA', fontSize: 18, fontWeight: 'bold' },
+    navigationDate: { color: '#888', fontSize: 12, marginTop: 4 },
+    infoCard: {
+        backgroundColor: '#1A1D23',
+        borderRadius: 16,
+        padding: 20,
+        marginTop: 16,
+        borderWidth: 0.5,
+        borderColor: '#2A2E37'
+    },
+    infoCardTitle: { color: '#888', fontSize: 14, marginBottom: 8, fontWeight: '500' },
+    durationValue: { color: '#EAEAEA', fontSize: 32, fontWeight: 'bold', textAlign: 'center' },
+    loadValue: { color: '#EAEAEA', fontSize: 32, fontWeight: 'bold', textAlign: 'center', paddingVertical: 10 },
+    timelineContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, marginTop: 20 },
+    timelineTrack: { flex: 1, height: 4, backgroundColor: '#2A2E37', borderRadius: 2 },
+    timelineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#3B82F6' },
+    timeLabelContainer: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 5, marginTop: 8 },
+    timeLabel: { color: '#888', fontSize: 12, fontWeight: '500' },
+    cardTitle: { color: '#EAEAEA', fontSize: 20, fontWeight: 'bold' },
+    chartContainer: { alignItems: 'center', marginTop: 10 },
 });

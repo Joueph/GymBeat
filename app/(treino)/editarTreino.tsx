@@ -1,12 +1,16 @@
+import { MachineChooserDrawer } from '@/components/MachineChooserDrawer';
+import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { getLogsByUsuarioId } from '@/services/logService';
-import { addTreino, deleteTreino, getTreinoById, updateTreino } from '@/services/treinoService';
+import { getLastLogForMachine } from '@/services/machineService';
+import { deleteTreino, getTreinoById } from '@/services/treinoService';
 import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   LayoutAnimation,
   Platform,
   StyleSheet,
@@ -17,26 +21,34 @@ import {
   View
 } from 'react-native';
 import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedRef, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
+import { InfoCard } from '../../components/InfoCard';
+import { ExerciseMenuAction, ExerciseOptionsMenu } from '../../components/menus/ExerciseOptionsMenu';
 import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
 import { RepetitionsDrawer } from '../../components/RepetitionsDrawer';
 import { RestTimeDrawer } from '../../components/RestTimeDrawer';
 import { SetOptionsMenu } from '../../components/SetOptionsMenu';
+import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { VideoListItem } from '../../components/VideoListItem';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
 import { getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
 import { getUserProfile } from '../../userService';
 import { useAuth } from '../authprovider';
+import { ExerciseNotesModal } from './modals/ExerciseNotesModal';
+import { ExerciseReorderModal } from './modals/ExerciseReorderModal';
+import { WorkoutReviewModal } from './modals/modalReviewTreinos';
 import { MultiSelectExerciseModal } from './modals/MultiSelectExerciseModal';
+import { SelectExerciseModal } from './modals/SelectExerciseModal';
 import { WorkoutSettingsModal } from './modals/WorkoutSettingsModal';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+// ... interfaces
 interface SerieEdit extends Serie {
   id: string;
   type: 'normal' | 'dropset';
@@ -51,8 +63,13 @@ interface ExerciseItemProps {
   onRemoveExercise: () => void;
   exerciseIndex: number;
   onOpenRepDrawer: (exerciseIndex: number, setIndex: number) => void;
+  onOpenTimeDrawer: (exerciseIndex: number, setIndex: number) => void;
   onOpenRestTimeModal: (exerciseIndex: number) => void;
   setIsEditing: (isEditing: boolean) => void;
+  onOpenMachineDrawer: (exerciseIndex: number) => void;
+  onReorder: () => void;
+  onOpenNotes: () => void;
+  onSubstitute: () => void;
 }
 
 const formatRestTime = (seconds: number) => {
@@ -64,6 +81,62 @@ const formatRestTime = (seconds: number) => {
   return minutes > 0 ? `${minutes} min` : `${remainingSeconds} seg`;
 };
 
+const formatDate = (date: any): string => {
+  if (!date) return '-';
+  const d = date.toDate ? date.toDate() : new Date(date);
+  if (isNaN(d.getTime())) return '-';
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
+
+const calculateDuration = (start: any, end: any): string => {
+  if (!start || !end) return '-';
+  const startDate = start.toDate ? start.toDate() : new Date(start);
+  const endDate = end.toDate ? end.toDate() : new Date(end);
+  const diffMs = endDate.getTime() - startDate.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  return `${diffMins} min`;
+};
+
+const SessionHistoryItem = ({ log, onPress }: { log: Log; onPress: () => void }) => (
+  <TouchableOpacity style={styles.historyItem} onPress={onPress}>
+    <View style={styles.historyLeft}>
+      <FontAwesome5 name="calendar-alt" size={14} color="#888" style={{ marginRight: 8 }} />
+      <Text style={styles.historyDate}>{formatDate(log.horarioFim || log.horarioInicio)}</Text>
+    </View>
+    <View style={styles.historyRight}>
+      <View style={styles.historyStat}>
+        <FontAwesome5 name="clock" size={12} color="#666" style={{ marginRight: 4 }} />
+        <Text style={styles.historyValue}>{calculateDuration(log.horarioInicio, log.horarioFim)}</Text>
+      </View>
+      {log.cargaAcumulada ? (
+        <View style={[styles.historyStat, { marginLeft: 12 }]}>
+          <FontAwesome5 name="weight-hanging" size={12} color="#666" style={{ marginRight: 4 }} />
+          <Text style={styles.historyValue}>{Math.round(log.cargaAcumulada)}kg</Text>
+        </View>
+      ) : null}
+      <FontAwesome5 name="chevron-right" size={12} color="#444" style={{ marginLeft: 12 }} />
+    </View>
+  </TouchableOpacity>
+);
+
+const cascadeUpdate = (series: SerieEdit[], index: number, field: keyof SerieEdit, oldValue: any): SerieEdit[] => {
+  const newSeries = [...series];
+  const newValue = newSeries[index][field];
+
+  for (let i = index + 1; i < newSeries.length; i++) {
+    // Look for values that match the *old* value of the changed set
+    // Using loose equality (==) for safety with number/string mix, though typed strict is better
+    if (newSeries[i][field] == oldValue) {
+      newSeries[i] = { ...newSeries[i], [field]: newValue };
+    } else {
+      break;
+    }
+  }
+  return newSeries;
+};
+
+
+
 const ExerciseItem = ({
   item,
   drag,
@@ -72,12 +145,20 @@ const ExerciseItem = ({
   onRemoveExercise,
   exerciseIndex,
   onOpenRepDrawer,
+  onOpenTimeDrawer,
   onOpenRestTimeModal,
   setIsEditing,
+  onOpenMachineDrawer,
+  onReorder,
+  onOpenNotes,
+  onSubstitute,
 }: ExerciseItemProps) => {
   const [series, setSeries] = useState<SerieEdit[]>(
     item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' }))
   );
+
+  // Track the weight value on focus to enable cascade logic
+  const focusedWeightRef = React.useRef<number | null>(null);
 
   useEffect(() => {
     setSeries(item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' })));
@@ -110,7 +191,14 @@ const ExerciseItem = ({
         const currentSet = newSets[index];
         currentSet.isWarmup = !currentSet.isWarmup;
       } else if (option === 'toggleTime') {
-        newSets[index].isTimeBased = !newSets[index].isTimeBased;
+        const currentSet = newSets[index];
+        currentSet.isTimeBased = !currentSet.isTimeBased;
+        if (currentSet.isTimeBased) {
+          currentSet.peso = 0;
+          currentSet.repeticoes = '60';
+        } else {
+          currentSet.repeticoes = '10';
+        }
       }
       handleSeriesUpdate(newSets);
     }, 100);
@@ -132,32 +220,68 @@ const ExerciseItem = ({
         )}
         <View style={styles.inputGroup}>
           <TouchableOpacity
-            style={styles.repButton}
+            style={[
+              styles.repButton,
+              setItem.isTimeBased && { flexDirection: 'row', gap: 6 },
+              (index > 0 && series[index - 1].repeticoes === setItem.repeticoes) && { opacity: 0.7 }
+            ]}
             onPress={() => {
-              if (!setItem.isTimeBased) onOpenRepDrawer(exerciseIndex, index);
+              if (setItem.isTimeBased) {
+                onOpenTimeDrawer(exerciseIndex, index);
+              } else {
+                onOpenRepDrawer(exerciseIndex, index);
+              }
             }}
           >
-            <Text style={styles.repButtonText}>{String(setItem.repeticoes)}</Text>
+            {setItem.isTimeBased && <FontAwesome name="clock-o" size={16} color="#fff" />}
+            <Text style={styles.repButtonText}>
+              {setItem.isTimeBased
+                ? formatRestTime(parseInt(String(setItem.repeticoes), 10) || 0)
+                : String(setItem.repeticoes)}
+            </Text>
           </TouchableOpacity>
         </View>
         <Text style={styles.xText}>x</Text>
-        <View style={styles.inputGroup}>
-          <TextInput
-            style={styles.setInput}
-            value={String(setItem.peso || '')}
-            onChangeText={(text) => {
-              const newSets = [...series];
-              newSets[index] = { ...newSets[index], peso: text as any };
-              handleSeriesUpdate(newSets);
-            }}
-            onEndEditing={(e) => {
-              const newSets = [...series];
-              newSets[index] = { ...newSets[index], peso: parseFloat(e.nativeEvent.text.replace(',', '.')) || 0 };
-              handleSeriesUpdate(newSets);
-            }}
-            keyboardType="decimal-pad"
-          />
-        </View>
+        {item.modelo?.caracteristicas?.isPesoCorporal ? (
+          <View style={styles.inputGroup}>
+            <View style={[styles.setInput, styles.bodyWeightContainer]}>
+              <Text style={styles.bodyWeightText}>Corporal</Text>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.inputGroup}>
+            <TextInput
+              style={[styles.setInput, (index > 0 && series[index - 1].peso == setItem.peso) && { opacity: 0.7 }]}
+              value={String(setItem.peso || '')}
+              onFocus={() => {
+                focusedWeightRef.current = typeof setItem.peso === 'number' ? setItem.peso : parseFloat(String(setItem.peso));
+              }}
+              onChangeText={(text) => {
+                const newSets = [...series];
+                newSets[index] = { ...newSets[index], peso: text as any };
+                // We rely on state update for typing, but cascade happens on EndEditing
+                // We do call handleSeriesUpdate here to keep 'item' logic compliant, 
+                // BUT we must not cascade yet.
+                setSeries(newSets);
+                onUpdateExercise({ ...item, series: newSets });
+                setIsEditing(true);
+              }}
+              onEndEditing={(e) => {
+                let newSets = [...series];
+                const val = parseFloat(e.nativeEvent.text.replace(',', '.')) || 0;
+                newSets[index] = { ...newSets[index], peso: val };
+
+                // Apply cascade
+                if (focusedWeightRef.current !== null) {
+                  newSets = cascadeUpdate(newSets, index, 'peso', focusedWeightRef.current);
+                }
+
+                handleSeriesUpdate(newSets);
+              }}
+              keyboardType="decimal-pad"
+            />
+          </View>
+        )}
         <SetOptionsMenu
           isTimeBased={!!setItem.isTimeBased}
           isNormalSet={setItem.type === 'normal'}
@@ -177,7 +301,9 @@ const ExerciseItem = ({
       </View>
       <View style={styles.xText} />
       <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Peso (kg)</Text>
+        <Text style={styles.inputLabel}>
+          {item.modelo?.caracteristicas?.isPesoCorporal ? 'Peso' : 'Peso (kg)'}
+        </Text>
       </View>
       <View style={{ width: 40 }} />
     </View>
@@ -196,9 +322,23 @@ const ExerciseItem = ({
             <Text style={styles.exercicioName}>{item.modelo?.nome}</Text>
             <Text style={styles.muscleGroup}>{item.modelo?.grupoMuscular}</Text>
           </View>
-          <TouchableOpacity onLongPress={drag} disabled={isActive} style={styles.dragHandle}>
-            <FontAwesome name="bars" size={20} color="#888" />
-          </TouchableOpacity>
+          <ExerciseOptionsMenu
+            onSelect={(action: ExerciseMenuAction) => {
+              if (action === 'delete') {
+                onRemoveExercise();
+              } else if (action === 'changeMachine') {
+                onOpenMachineDrawer(exerciseIndex);
+              } else if (action === 'editRestTime') {
+                onOpenRestTimeModal(exerciseIndex);
+              } else if (action === 'addNote') {
+                onOpenNotes();
+              } else if (action === 'reorder') {
+                onReorder();
+              } else if (action === 'replace') {
+                onSubstitute();
+              }
+            }}
+          />
         </View>
         {item && (
           <View style={styles.notesContainer}>
@@ -214,6 +354,8 @@ const ExerciseItem = ({
           </View>
         )}
         <View style={styles.seriesContainer}>
+          {/* Machine Chooser Marker */}
+
           {series.length > 0 && renderSeriesHeader()}
           {series.map(renderSetItem)}
         </View>
@@ -237,15 +379,7 @@ const ExerciseItem = ({
           <FontAwesome name="plus" size={14} color="#3B82F6" />
           <Text style={styles.addSetButtonText}>Adicionar Série</Text>
         </TouchableOpacity>
-        <View style={styles.exerciseActions}>
-          <TouchableOpacity style={styles.restTimerCard} onPress={() => onOpenRestTimeModal(exerciseIndex)}>
-            <FontAwesome name="clock-o" size={18} color="#fff" />
-            <Text style={styles.restTimerText}>{formatRestTime(item.restTime || 90)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.removeExerciseButton} onPress={onRemoveExercise}>
-            <FontAwesome name="trash" size={16} color="#ff3b30" />
-          </TouchableOpacity>
-        </View>
+
       </View>
     </ScaleDecorator>
   );
@@ -259,10 +393,11 @@ export default function EditarTreinoScreen() {
 
   const [treino, setTreino] = useState<Treino | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const { saveTreino, isSaving } = useWorkoutOperations();
   const [isModalVisible, setModalVisible] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
+  const [isExerciseTimeDrawerVisible, setIsExerciseTimeDrawerVisible] = useState(false);
   const [isDefaultRestTimeDrawerVisible, setDefaultRestTimeDrawerVisible] = useState(false);
   const [isRestTimeModalVisible, setIsRestTimeModalVisible] = useState(false);
   const [editingIndices, setEditingIndices] = useState<{ exerciseIndex: number; setIndex: number } | null>(null);
@@ -270,6 +405,106 @@ export default function EditarTreinoScreen() {
   const [workoutScreenType, setWorkoutScreenType] = useState<'simplified' | 'complete'>('complete');
   const [activeLog, setActiveLog] = useState<Log | null>(null);
   const [allUserLogs, setAllUserLogs] = useState<Log[]>([]);
+  const [carouselIndex, setCarouselIndex] = useState(0); // Track active carousel page
+  const [isReorderModalVisible, setReorderModalVisible] = useState(false);
+  const [isNotesModalVisible, setIsNotesModalVisible] = useState(false);
+  const [exerciseForNotes, setExerciseForNotes] = useState<{ index: number, exercise: Exercicio } | null>(null);
+
+  // State for Review Modal
+  const [selectedLog, setSelectedLog] = useState<Log | null>(null);
+  const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
+
+
+  const carouselRef = useAnimatedRef<any>();
+
+  // ... (existing code) ...
+
+  const handleOpenReviewModal = (log: Log) => {
+    setSelectedLog(log);
+    setIsReviewModalVisible(true);
+  };
+
+  // Machine Drawer Logic
+  const [isMachineDrawerVisible, setIsMachineDrawerVisible] = useState(false);
+  const [exerciseForMachine, setExerciseForMachine] = useState<{ index: number, exercise: Exercicio } | null>(null);
+
+  // Substitute Logic
+  const [isSubstituteModalVisible, setSubstituteModalVisible] = useState(false);
+  const [exerciseForSubstitution, setExerciseForSubstitution] = useState<{ index: number, exercise: Exercicio } | null>(null);
+
+  const handleOpenSubstitute = (index: number) => {
+    if (!treino) return;
+    setExerciseForSubstitution({ index, exercise: treino.exercicios[index] });
+    setSubstituteModalVisible(true);
+  };
+
+  const handleConfirmSubstitute = (newModel: ExercicioModelo) => {
+    if (!exerciseForSubstitution || !treino) return;
+    const { index } = exerciseForSubstitution;
+
+    // Preserve sets, notes, etc., but update model
+    const updatedExercise: Exercicio = {
+      ...treino.exercicios[index],
+      modeloId: newModel.id,
+      modelo: newModel,
+    };
+
+    // Explicitly remove machine info to avoid passing 'undefined' to Firebase
+    delete updatedExercise.machineId;
+    delete updatedExercise.machineName;
+
+    handleUpdateExercise(updatedExercise, index);
+    setSubstituteModalVisible(false);
+    setExerciseForSubstitution(null);
+  };
+
+  const handleMachineSelect = async (machineId: string | undefined, machineName: string | undefined, shouldClose: boolean = true) => {
+    if (!exerciseForMachine || !treino) return;
+
+    const { index, exercise } = exerciseForMachine;
+    const newExercises = [...treino.exercicios];
+
+    const updatedExercise = {
+      ...exercise,
+      machineId: machineId,
+      machineName: machineName,
+    };
+
+    // For display purposes we just set it above
+
+    if (machineId && user) {
+      try {
+        const lastLog = await getLastLogForMachine(exercise.modeloId, machineId, user.id);
+        if (lastLog && lastLog.exercicios) {
+          const prevEx = lastLog.exercicios.find(e => e.modeloId === exercise.modeloId && e.machineId === machineId);
+          if (prevEx && prevEx.series && prevEx.series.length > 0) {
+            updatedExercise.series = updatedExercise.series.map((s, i) => {
+              const prevSet = prevEx.series[i];
+              if (prevSet) {
+                return {
+                  ...s,
+                  repeticoes: prevSet.repeticoes,
+                  peso: prevSet.peso,
+                };
+              }
+              return s;
+            });
+          }
+        }
+      } catch (e) {
+        console.log("Error fetching machine history:", e);
+      }
+    }
+
+    newExercises[index] = updatedExercise;
+    setTreino({ ...treino, exercicios: newExercises });
+    if (!isEditing) setIsEditing(true);
+
+    if (shouldClose) {
+      setIsMachineDrawerVisible(false);
+      setExerciseForMachine(null);
+    }
+  };
 
   const hasRelevantLogs = useMemo(() => {
     if (!treinoId || !allUserLogs || allUserLogs.length === 0) {
@@ -366,7 +601,7 @@ export default function EditarTreinoScreen() {
           id: '',
           nome: 'Novo Treino',
           usuarioId: user?.id || '',
-          fichaId: fichaId || undefined,
+          fichaId: (typeof fichaId === 'string' && fichaId === 'unassigned') ? undefined : (fichaId || undefined),
           exercicios: [],
           diasSemana: [],
           intervalo: { min: 1, seg: 30 },
@@ -400,15 +635,46 @@ export default function EditarTreinoScreen() {
     setIsRepDrawerVisible(true);
   };
 
+  const handleOpenTimeDrawer = (exerciseIndex: number, setIndex: number) => {
+    setEditingIndices({ exerciseIndex, setIndex });
+    setIsExerciseTimeDrawerVisible(true);
+  };
+
+  const handleTimeBasedSetSave = (newSeconds: number) => {
+    if (!editingIndices || !treino) return;
+    const { exerciseIndex, setIndex } = editingIndices;
+    const updatedExercicios = [...treino.exercicios];
+    const seriesToUpdate = [...updatedExercicios[exerciseIndex].series] as SerieEdit[];
+
+    const oldValue = seriesToUpdate[setIndex].repeticoes;
+    seriesToUpdate[setIndex] = { ...seriesToUpdate[setIndex], repeticoes: String(newSeconds) };
+
+    // Cascade
+    const cascadedSeries = cascadeUpdate(seriesToUpdate, setIndex, 'repeticoes', oldValue);
+
+    updatedExercicios[exerciseIndex] = { ...updatedExercicios[exerciseIndex], series: cascadedSeries };
+
+    if (!isEditing) setIsEditing(true);
+    setTreino({ ...treino, exercicios: updatedExercicios });
+
+    setIsExerciseTimeDrawerVisible(false);
+    setEditingIndices(null);
+  };
+
   const handleRepetitionsSave = (newReps: string) => {
     if (!editingIndices || !treino) return;
 
     const { exerciseIndex, setIndex } = editingIndices;
     const updatedExercicios = [...treino.exercicios];
-    const seriesToUpdate = [...updatedExercicios[exerciseIndex].series];
+    const seriesToUpdate = [...updatedExercicios[exerciseIndex].series] as SerieEdit[];
 
+    const oldValue = seriesToUpdate[setIndex].repeticoes;
     seriesToUpdate[setIndex] = { ...seriesToUpdate[setIndex], repeticoes: newReps };
-    updatedExercicios[exerciseIndex] = { ...updatedExercicios[exerciseIndex], series: seriesToUpdate };
+
+    // Cascade
+    const cascadedSeries = cascadeUpdate(seriesToUpdate, setIndex, 'repeticoes', oldValue);
+
+    updatedExercicios[exerciseIndex] = { ...updatedExercicios[exerciseIndex], series: cascadedSeries };
 
     if (!isEditing) setIsEditing(true);
     setTreino({ ...treino, exercicios: updatedExercicios });
@@ -465,20 +731,17 @@ export default function EditarTreinoScreen() {
 
   const handleSave = async () => {
     if (!treino) return;
-    setIsSaving(true);
-    try {
-      if (treino.id && treino.id !== '') {
-        await updateTreino(treino.id, treino);
-      } else {
-        const newTreinoId = await addTreino(treino);
-        setTreino(prev => prev ? { ...prev, id: newTreinoId } : null);
+
+    // Validate if it is really a new workout or an update
+    const isNew = !treino.id || treino.id === '';
+
+    const savedId = await saveTreino(treino, isNew);
+
+    if (savedId) {
+      if (isNew) {
+        setTreino(prev => prev ? { ...prev, id: savedId } : null);
       }
       setIsEditing(false);
-    } catch (error) {
-      console.error("Erro ao salvar treino:", error);
-      Alert.alert('Erro', 'Não foi possível salvar o treino.');
-    } finally {
-      setIsSaving(false);
     }
   };
 
@@ -564,13 +827,26 @@ export default function EditarTreinoScreen() {
         item={item}
         exerciseIndex={index}
         onOpenRepDrawer={handleOpenRepDrawer}
+        onOpenTimeDrawer={handleOpenTimeDrawer}
         drag={drag}
         onOpenRestTimeModal={handleOpenRestTimeModal}
         isActive={isActive}
         onUpdateExercise={(ex) => handleUpdateExercise(ex, index)}
-        onRemoveExercise={() => handleRemoveExercise(index)} setIsEditing={setIsEditing} />
+        onRemoveExercise={() => handleRemoveExercise(index)}
+        setIsEditing={setIsEditing}
+        onReorder={() => setReorderModalVisible(true)}
+        onOpenMachineDrawer={() => {
+          setExerciseForMachine({ index, exercise: item });
+          setIsMachineDrawerVisible(true);
+        }}
+        onOpenNotes={() => {
+          setExerciseForNotes({ index, exercise: item });
+          setIsNotesModalVisible(true);
+        }}
+        onSubstitute={() => handleOpenSubstitute(index)}
+      />
     );
-  }, [treino]);
+  }, [treino, handleUpdateExercise, handleRemoveExercise, isEditing]);
 
   const viewingStyle = useAnimatedStyle(() => {
     return {
@@ -664,29 +940,124 @@ export default function EditarTreinoScreen() {
                 placeholder="Nome do Treino"
                 placeholderTextColor="#888"
               />
-              {treinoId && hasRelevantLogs && (
-                <View style={{ marginTop: 20, alignItems: 'center' }}>
-                  <HistoricoCargaTreinoChart
-                    treinoId={treinoId}
-                    allUserLogs={allUserLogs}
-                  />
+
+
+              <View style={{ marginTop: 16 }}>
+                <Animated.FlatList
+                  ref={carouselRef}
+                  data={[
+                    { key: 'info', type: 'info' },
+                    { key: 'chart', type: 'chart' }
+                  ]}
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  onScroll={(e) => {
+                    // Simple calculation for index based on offset
+                    const offsetX = e.nativeEvent.contentOffset.x;
+                    const width = Dimensions.get('window').width - 16;
+                    const index = Math.round(offsetX / width);
+                    if (index !== carouselIndex) {
+                      setCarouselIndex(index);
+                    }
+                  }}
+                  scrollEventThrottle={16}
+                  keyExtractor={item => item.key}
+                  renderItem={({ item }) => {
+                    if (item.type === 'info') {
+                      return (
+                        <View style={{ width: Dimensions.get('window').width - 16, paddingHorizontal: 0 }}>
+                          <InfoCard
+                            treino={treino}
+                            allUserLogs={allUserLogs}
+                            onUpdateTreino={(updatedTreino: Treino) => setTreino(updatedTreino)}
+                            isEditing={isEditing}
+                            setIsEditing={setIsEditing}
+                            onPressProgresso={() => {
+                              carouselRef.current?.scrollToIndex({ index: 1, animated: true });
+                            }}
+                          />
+                        </View>
+                      );
+                    } else {
+                      return (
+                        <View style={{ width: Dimensions.get('window').width - 16, alignItems: 'center' }}>
+                          {treinoId && hasRelevantLogs ? (
+                            <HistoricoCargaTreinoChart
+                              treinoId={treinoId}
+                              allUserLogs={allUserLogs}
+                              style={{ marginTop: 0 }}
+                            />
+                          ) : (
+                            <View style={{ height: 200, justifyContent: 'center', alignItems: 'center' }}>
+                              <Text style={{ color: '#888' }}>Sem dados históricos suficientes.</Text>
+                            </View>
+                          )}
+                        </View>
+                      );
+                    }
+                  }}
+                  style={{ overflow: 'visible' }}
+                />
+
+                {/* Pagination Dots */}
+                <View style={styles.paginationContainer}>
+                  {[0, 1].map((index) => (
+                    <FontAwesome
+                      key={index}
+                      name={carouselIndex === index ? "circle" : "circle-o"}
+                      size={8}
+                      color="#666"
+                      style={{ marginHorizontal: 4 }}
+                    />
+                  ))}
                 </View>
-              )}
-              {/* Seletor de dias removido daqui */}
+              </View>
+              <Text style={styles.sectionTitle}>Exercícios</Text>
             </View>
           }
           ListFooterComponent={
             <>
-              <TouchableOpacity style={styles.addExerciseButton} onPress={() => setModalVisible(true)}>
-                <FontAwesome name="plus" size={16} color="#fff" />
-                <Text style={styles.addExerciseButtonText}>Adicionar Exercício</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 15 }}>
+                <TouchableOpacity style={[styles.addExerciseButton, { flex: 1, margin: 0 }]} onPress={() => setModalVisible(true)}>
+                  <FontAwesome name="plus" size={16} color="#fff" />
+                  <Text style={styles.addExerciseButtonText}>Adicionar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.addExerciseButton, { flex: 1, margin: 0, backgroundColor: '#2A2E37', borderColor: '#333' }]} onPress={() => setReorderModalVisible(true)}>
+                  <FontAwesome name="bars" size={16} color="#fff" />
+                  <Text style={styles.addExerciseButtonText}>Reordenar</Text>
+                </TouchableOpacity>
+              </View>
 
               {treinoId && (
                 <TouchableOpacity style={styles.deleteWorkoutButton} onPress={handleDeleteTreino}>
                   <FontAwesome name="trash" size={16} color="#ff3b30" />
                   <Text style={styles.deleteWorkoutButtonText}>Apagar Treino</Text>
                 </TouchableOpacity>
+              )}
+
+              {treinoId && hasRelevantLogs && (
+                <View style={styles.historySection}>
+                  <Text style={styles.sectionTitle}>Histórico de Sessões</Text>
+                  {allUserLogs
+                    .filter(log => log.treino?.id === treinoId && (log.horarioFim || log.status === 'concluido'))
+                    .sort((a, b) => {
+                      const dateA = a.horarioFim?.toDate ? a.horarioFim.toDate() : new Date(a.horarioFim || 0);
+                      const dateB = b.horarioFim?.toDate ? b.horarioFim.toDate() : new Date(b.horarioFim || 0);
+                      return dateB.getTime() - dateA.getTime();
+                    })
+                    .slice(0, 5)
+                    .map(log => (
+                      <SessionHistoryItem
+                        key={log.id}
+                        log={log}
+                        onPress={() => handleOpenReviewModal(log)}
+                      />
+                    ))}
+                  {allUserLogs.filter(log => log.treino?.id === treinoId).length === 0 && (
+                    <Text style={styles.emptyHistoryText}>Nenhuma sessão realizada ainda.</Text>
+                  )}
+                </View>
               )}
             </>
           }
@@ -706,6 +1077,13 @@ export default function EditarTreinoScreen() {
         onClose={() => setIsRepDrawerVisible(false)}
         onSave={handleRepetitionsSave}
         initialValue={getRepetitionsValue()}
+      />
+
+      <TimeBasedSetDrawer
+        visible={isExerciseTimeDrawerVisible}
+        onClose={() => setIsExerciseTimeDrawerVisible(false)}
+        onSave={handleTimeBasedSetSave}
+        initialValue={parseInt(getRepetitionsValue(), 10) || 60}
       />
 
       {/* Modal de Dias removido daqui e passado para dentro do WorkoutSettingsModal */}
@@ -738,7 +1116,62 @@ export default function EditarTreinoScreen() {
         }}
       />
 
+      <WorkoutReviewModal
+        visible={isReviewModalVisible}
+        onClose={() => setIsReviewModalVisible(false)}
+        initialLog={selectedLog}
+        allUserLogs={allUserLogs}
+      />
+
+      <MachineChooserDrawer
+        visible={isMachineDrawerVisible}
+        onClose={() => setIsMachineDrawerVisible(false)}
+        onSelectMachine={handleMachineSelect}
+        exerciseId={exerciseForMachine?.exercise.modeloId || ''}
+        currentMachineId={exerciseForMachine?.exercise.machineId}
+      />
+
+      <ExerciseNotesModal
+        visible={isNotesModalVisible}
+        onClose={() => {
+          setIsNotesModalVisible(false);
+          setExerciseForNotes(null);
+        }}
+        exerciseId={exerciseForNotes?.exercise.modeloId || ''}
+        exerciseName={exerciseForNotes?.exercise.modelo.nome || ''}
+        currentNote={exerciseForNotes?.exercise.notes || ''}
+        onSaveNote={(note) => {
+          if (exerciseForNotes) {
+            const updatedExercise = { ...exerciseForNotes.exercise, notes: note };
+            handleUpdateExercise(updatedExercise, exerciseForNotes.index);
+          }
+        }}
+      />
+
+      <ExerciseReorderModal
+        visible={isReorderModalVisible}
+        onClose={() => setReorderModalVisible(false)}
+        exercises={treino?.exercicios || []}
+        onSave={(newOrder) => {
+          if (!isEditing) setIsEditing(true);
+          setTreino(prev => prev ? { ...prev, exercicios: newOrder as Exercicio[] } : null);
+        }}
+      />
+
       <OngoingWorkoutFooter />
+
+      {/* Substitute Modal */}
+      <SelectExerciseModal
+        visible={isSubstituteModalVisible}
+        onClose={() => {
+          setSubstituteModalVisible(false);
+          setExerciseForSubstitution(null);
+        }}
+        onSelect={handleConfirmSubstitute}
+        excludeIds={treino?.exercicios.map(e => e.modeloId) || []}
+        initialGroup={exerciseForSubstitution?.exercise.modelo.grupoMuscular}
+        sortByWordCount={true}
+      />
 
     </SafeAreaView>
   );
@@ -749,6 +1182,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0B0D10',
     paddingHorizontal: 8,
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 8,
   },
   header: {
     flexDirection: 'row',
@@ -789,6 +1229,15 @@ const styles = StyleSheet.create({
     color: '#1cb0f6',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  sectionTitle: {
+    color: '#888',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 10,
+    marginTop: 20,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   startButton: {
     backgroundColor: '#fff',
@@ -1049,4 +1498,77 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   customRestTimeButton: { backgroundColor: '#555' },
+  historySection: {
+    marginTop: 30,
+    marginBottom: 20,
+    paddingHorizontal: 8,
+  },
+  historyItem: {
+    backgroundColor: '#1A1D23',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  historyLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyDate: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  historyStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyValue: {
+    color: '#ccc',
+    fontSize: 12,
+  },
+  emptyHistoryText: {
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
+  },
+
+  machineMarker: {
+    flexDirection: 'row',
+    alignSelf: 'flex-start',
+    backgroundColor: '#1c1c1e', // darker contrast
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 8, // inside seriesContainer usually has padding, but here we are inside it.
+    marginLeft: 10,
+    marginTop: 5,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+  },
+  machineMarkerText: {
+    color: '#3B82F6',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  bodyWeightContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 42, // Match the height of repButton
+  },
+  bodyWeightText: {
+    color: '#ccc',
+    fontSize: 16,
+    fontWeight: '500',
+  },
 });

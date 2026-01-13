@@ -6,6 +6,7 @@ declare class NotificationsLiveActivityModule extends NativeModule<Notifications
   PI: number;
   hello(): string;
   setValueAsync(value: string): Promise<void>;
+  listActivities(): Promise<string[]>;
 }
 
 // This call loads the native module object from the JSI.

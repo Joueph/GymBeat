@@ -116,6 +116,19 @@ export const getCachedTreinoById = async (treinoId: string): Promise<Treino | nu
 };
 
 /**
+ * Salva um treino específico no cache do AsyncStorage.
+ * @param treino O objeto de treino a ser salvo.
+ */
+export const cacheTreino = async (treino: Treino): Promise<void> => {
+    try {
+        await AsyncStorage.setItem(`${TREINOS_CACHE_KEY_PREFIX}${treino.id}`, JSON.stringify(treino));
+        console.log(`[Cache] Treino '${treino.nome}' salvo no cache.`);
+    } catch (error) {
+        console.error(`[Cache] Erro ao salvar o treino ${treino.id} no cache:`, error);
+    }
+};
+
+/**
  * Salva a sessão do usuário atual no cache local para acesso offline.
  * @param user O objeto do usuário a ser salvo.
  */

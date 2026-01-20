@@ -10,8 +10,11 @@ import { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 // import { SvgUri } from 'react-native-svg'; // Removido
 // --- Imports dos novos componentes ---
+import { PostCard } from '@/components/amigos/PostCard';
 import { HistoricoCargaTreinoChart } from '@/components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '@/components/exercicios/ExpandableExerciseItem';
+import { Post } from '@/models/post';
+import { getPostByLogId } from '@/services/postService';
 
 interface SerieComStatus extends Omit<Serie, 'concluido'> {
     concluido?: boolean;
@@ -51,8 +54,22 @@ const calculateDuration = (start: Date | null, end: Date | null): string => {
     return `${minutes} min`;
 };
 
-export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }: { visible: boolean; onClose: () => void; initialLog: Log | null; allUserLogs: Log[] }) => {
+export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs, currentUserId }: { visible: boolean; onClose: () => void; initialLog: Log | null; allUserLogs: Log[]; currentUserId: string }) => {
     const [currentLog, setCurrentLog] = React.useState(initialLog);
+    const [post, setPost] = React.useState<Post | null>(null);
+
+    // Fetch post when log changes
+    useEffect(() => {
+        const fetchPost = async () => {
+            if (currentLog?.id) {
+                const fetchedPost = await getPostByLogId(currentLog.id);
+                setPost(fetchedPost);
+            } else {
+                setPost(null);
+            }
+        };
+        fetchPost();
+    }, [currentLog]);
 
     // --- Animação ---
     const chartHeight = useSharedValue(0);
@@ -163,6 +180,8 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
                     // --- FIM DA SUBSTITUIÇÃO ---
                     ListHeaderComponent={
                         <>
+
+
                             <View style={styles.infoCard}>
                                 <Text style={styles.infoCardTitle}>Duração do Treino</Text>
                                 <Text style={styles.durationValue}>{duration}</Text>
@@ -186,6 +205,15 @@ export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs }
 
                                 </View>
                             </View>
+
+                            {post && (
+                                <View style={{ marginTop: 20 }}>
+                                    <PostCard
+                                        post={post}
+                                        currentUserId={currentUserId}
+                                    />
+                                </View>
+                            )}
                             <Text style={[styles.cardTitle, { marginTop: 20, marginBottom: 15 }]}>Carga por Exercício</Text>
                         </>
                     }

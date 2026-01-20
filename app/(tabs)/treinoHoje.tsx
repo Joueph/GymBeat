@@ -9,7 +9,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeInUp } from 'react-native-reanimated';
 import { FichaMenuAction, FichaOptionsMenu } from '../../components/FichaOptionsMenu';
 
-import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
+
 import { Ficha } from '../../models/ficha';
 import { Treino } from '../../models/treino'; // CORREÇÃO: Importa a função com o nome correto
 import { deleteFicha, getFichaAtiva, getFichasByUsuarioId, setFichaAtiva, updateFicha } from '../../services/fichaService';
@@ -259,14 +259,16 @@ export default function MeusTreinosScreen() {
 
   const handleDragEnd = async ({ data: newDisplayItems, from, to }: { data: DisplayItem[], from: number, to: number }) => {
     const draggedItem = displayItems[from];
-    if (draggedItem.type !== 'workout' || !draggedItem.data) return;
+    if (!draggedItem || draggedItem.type !== 'workout' || !draggedItem.data) {
+      setFolders(prev => [...prev]);
+      return;
+    }
 
     const originalParentFolderItem = displayItems.slice(0, from).reverse().find(d => d.type === 'folder');
     const newParentFolderItem = newDisplayItems.slice(0, to).reverse().find(d => d.type === 'folder');
 
     // 🚫 Caso o treino tenha sido solto fora de qualquer pasta
     if (!newParentFolderItem?.id || !originalParentFolderItem?.id) {
-      // Retorna imediatamente o treino para o estado anterior (sem popup, sem reload)
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setFolders(prev => [...prev]); // força re-render rápido
       return;
@@ -278,9 +280,21 @@ export default function MeusTreinosScreen() {
     const originalFolderIndex = newFoldersState.findIndex((f: Folder) => f.id === originalParentFolderItem.id);
     const targetFolderIndex = isReorder ? originalFolderIndex : newFoldersState.findIndex((f: Folder) => f.id === newParentFolderItem.id);
 
-    if (originalFolderIndex === -1 || targetFolderIndex === -1) return;
+    if (originalFolderIndex === -1 || targetFolderIndex === -1) {
+      console.warn("Folder not found during drag");
+      setFolders(prev => [...prev]);
+      return;
+    }
 
     const workoutIndex = newFoldersState[originalFolderIndex].treinos.findIndex((t: Treino) => t.id === draggedItem.id);
+
+    // Safety check: if workout not found in source, abort
+    if (workoutIndex === -1) {
+      console.warn("Workout not found in source folder during drag");
+      setFolders(prev => [...prev]);
+      return;
+    }
+
     const [workout] = newFoldersState[originalFolderIndex].treinos.splice(workoutIndex, 1);
 
     if (isReorder) {
@@ -291,6 +305,14 @@ export default function MeusTreinosScreen() {
       newFoldersState[targetFolderIndex].treinos.splice(targetIndex, 0, workout);
     } else {
       newFoldersState[targetFolderIndex].treinos.push(workout);
+
+      // Auto Sort: Dom - Sab
+      const getDayValue = (t: Treino) => {
+        if (!t.diasSemana || t.diasSemana.length === 0) return 7;
+        return Math.min(...t.diasSemana.map(d => DIAS_SEMANA_ORDEM[d] ?? 7));
+      };
+
+      newFoldersState[targetFolderIndex].treinos.sort((a: Treino, b: Treino) => getDayValue(a) - getDayValue(b));
     }
 
     setFolders(newFoldersState);
@@ -320,16 +342,40 @@ export default function MeusTreinosScreen() {
       }
     } catch (error) {
       console.error("Erro ao mover/reordenar treino:", error);
-      setFolders(folders); // reverte visualmente sem quebrar
+      Alert.alert("Erro", "Falha ao salvar a alteração. Sincronizando...");
+      fetchData(false);
     }
   };
+
+  // Helper: Render Folder Card
+  const renderFolderItem = (item: { id: string, data: Folder, isExpanded?: boolean, isPrincipal?: boolean }) => (
+    <View key={`folder-wrapper-${item.id}`} style={styles.folderWrapper}>
+      <TouchableOpacity style={styles.folderCard} onPress={() => handleFolderPress(item.id)}>
+        <View style={styles.folderInfo}>
+          <Ionicons name={item.isExpanded ? "arrow-up" : "arrow-down"} size={16} color="#555" />
+          <Text style={styles.folderName}>{item.data.nome}</Text>
+          {item.isPrincipal && <Text style={styles.principalTag}>principal</Text>}
+        </View>
+        {(item.data.type === 'ficha') && (
+          <FichaOptionsMenu
+            isPrincipal={!!item.isPrincipal}
+            onSelect={(action) => handleFichaAction(action, item.id)}
+          />
+        )}
+      </TouchableOpacity>
+    </View>
+  );
 
   const displayItems = useMemo(() => {
     const items: DisplayItem[] = [];
     folders.forEach(folder => {
       const isExpanded = folder.id === expandedFolderId;
       const isPrincipal = folder.type === 'ficha' && activeFicha?.id === folder.id;
-      items.push({ type: 'folder', id: folder.id, data: folder, isExpanded, isPrincipal });
+
+      // If NOT principal, add folder header. Principal header is in ListHeaderComponent.
+      if (!isPrincipal) {
+        items.push({ type: 'folder', id: folder.id, data: folder, isExpanded, isPrincipal });
+      }
 
       if (isExpanded) {
         folder.treinos.forEach(treino => {
@@ -339,6 +385,120 @@ export default function MeusTreinosScreen() {
     });
     return items;
   }, [folders, expandedFolderId, activeFicha]);
+
+  const activeFichaFolder = useMemo(() => {
+    return folders.find(f => f.type === 'ficha' && activeFicha?.id === f.id);
+  }, [folders, activeFicha]);
+
+  // Re-declare handleDragEnd inside the component to use activeFichaFolder
+  const onDragEndCommon = async ({ data: newDisplayItems, from, to }: { data: DisplayItem[], from: number, to: number }) => {
+    const draggedItem = displayItems[from];
+    if (!draggedItem || draggedItem.type !== 'workout' || !draggedItem.data) {
+      setFolders(prev => [...prev]);
+      return;
+    }
+
+    // Determine Source Parent
+    let originalParentFolderItem = displayItems.slice(0, from).reverse().find(d => d.type === 'folder');
+    // If no folder found above in list, it implies it belongs to the Header (Active Ficha)
+    if (!originalParentFolderItem && activeFichaFolder) {
+      originalParentFolderItem = { type: 'folder', id: activeFichaFolder.id, data: activeFichaFolder };
+    }
+
+    // Determine Destination Parent
+    let newParentFolderItem = newDisplayItems.slice(0, to).reverse().find(d => d.type === 'folder');
+    // If no folder found above drop location, it belongs to the Header (Active Ficha)
+    if (!newParentFolderItem && activeFichaFolder) {
+      newParentFolderItem = { type: 'folder', id: activeFichaFolder.id, data: activeFichaFolder };
+    }
+
+    // 🚫 Double Check validity
+    if (!newParentFolderItem?.id || !originalParentFolderItem?.id) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setFolders(prev => [...prev]);
+      return;
+    }
+
+    const isReorder = originalParentFolderItem.id === newParentFolderItem.id;
+    const newFoldersState = JSON.parse(JSON.stringify(folders));
+
+    const originalFolderIndex = newFoldersState.findIndex((f: Folder) => f.id === originalParentFolderItem?.id);
+    const targetFolderIndex = isReorder ? originalFolderIndex : newFoldersState.findIndex((f: Folder) => f.id === newParentFolderItem?.id);
+
+    if (originalFolderIndex === -1 || targetFolderIndex === -1) {
+      console.warn("Folder not found in state");
+      setFolders(prev => [...prev]);
+      return;
+    }
+
+    const workoutIndex = newFoldersState[originalFolderIndex].treinos.findIndex((t: Treino) => t.id === draggedItem.id);
+
+    // 🛡️ Previne bug de desaparecimento
+    if (workoutIndex === -1) {
+      console.warn("Workout not found in source folder");
+      setFolders(prev => [...prev]);
+      return;
+    }
+
+    const [workout] = newFoldersState[originalFolderIndex].treinos.splice(workoutIndex, 1);
+
+    if (isReorder) {
+      // Calculate relative index for splice
+      let targetIndexRelative = 0;
+      for (let i = 0; i < to; i++) {
+        const item = newDisplayItems[i];
+        if (item.type === 'workout' && (item.data as Treino).fichaId === newParentFolderItem?.id) {
+          targetIndexRelative++;
+        }
+      }
+      newFoldersState[targetFolderIndex].treinos.splice(targetIndexRelative, 0, workout);
+    } else {
+      // Movimento entre pastas -> Auto Sort (Dom - Sab)
+      newFoldersState[targetFolderIndex].treinos.push(workout);
+
+      const getDayValue = (t: Treino) => {
+        if (!t.diasSemana || t.diasSemana.length === 0) return 7;
+        return Math.min(...t.diasSemana.map(d => DIAS_SEMANA_ORDEM[d] ?? 7));
+      };
+
+      newFoldersState[targetFolderIndex].treinos.sort((a: Treino, b: Treino) => {
+        return getDayValue(a) - getDayValue(b);
+      });
+    }
+
+    setFolders(newFoldersState);
+
+    // Persistência
+    try {
+      if (isReorder) {
+        const reorderedWorkoutIds = newFoldersState[targetFolderIndex].treinos.map((t: Treino) => t.id);
+        if (newFoldersState[targetFolderIndex].type === 'ficha') {
+          await updateFicha(newFoldersState[targetFolderIndex].id, { treinos: reorderedWorkoutIds });
+        } else {
+          await updateTreinosOrdem(reorderedWorkoutIds);
+        }
+      } else {
+        const treinoId = draggedItem.id;
+        const newFichaId = newParentFolderItem.id === 'unassigned' ? null : newParentFolderItem.id;
+
+        await updateTreino(treinoId, { fichaId: newFichaId ?? undefined });
+
+        if ((originalParentFolderItem.data as Folder).type === 'ficha') {
+          const originalTreinoIds = newFoldersState[originalFolderIndex].treinos.map((t: Treino) => t.id);
+          await updateFicha(originalParentFolderItem.id, { treinos: originalTreinoIds });
+        }
+
+        if (newFoldersState[targetFolderIndex].type === 'ficha') {
+          const targetTreinoIds = newFoldersState[targetFolderIndex].treinos.map((t: Treino) => t.id);
+          await updateFicha(newFoldersState[targetFolderIndex].id, { treinos: targetTreinoIds });
+        }
+      }
+    } catch (error) {
+      console.error("Erro ao mover/reordenar treino:", error);
+      Alert.alert("Erro", "Falha ao salvar. Recarregando...");
+      fetchData(false);
+    }
+  };
 
   const handleFolderOptions = (folderId: string) => {
     console.log("Opções da pasta:", folderId);
@@ -376,30 +536,27 @@ export default function MeusTreinosScreen() {
             data={displayItems}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingHorizontal: 15, paddingTop: 10 }}
-            onDragEnd={handleDragEnd}
+            onDragEnd={onDragEndCommon}
+            ListHeaderComponent={
+              <>
+                {activeFichaFolder &&
+                  renderFolderItem({
+                    id: activeFichaFolder.id,
+                    data: activeFichaFolder,
+                    isExpanded: expandedFolderId === activeFichaFolder.id,
+                    isPrincipal: true
+                  })
+                }
+              </>
+            }
             renderItem={({ item, drag, isActive }: RenderItemParams<DisplayItem>) => {
               if (item.type === 'folder') {
-                return (
-                  <View
-                    // Adiciona uma key única para o wrapper para ajudar o React a identificar o item
-                    key={`folder-wrapper-${item.id}`}
-                    style={styles.folderWrapper}
-                  >
-                    <TouchableOpacity style={styles.folderCard} onPress={() => handleFolderPress(item.id)}>
-                      <View style={styles.folderInfo}>
-                        <Ionicons name={item.isExpanded ? "arrow-up" : "arrow-down"} size={16} color="#555" />
-                        <Text style={styles.folderName}>{(item.data as Folder).nome}</Text>
-                        {item.isPrincipal && <Text style={styles.principalTag}>principal</Text>}
-                      </View>
-                      {(item.data as Folder).type === 'ficha' && (
-                        <FichaOptionsMenu
-                          isPrincipal={!!item.isPrincipal}
-                          onSelect={(action) => handleFichaAction(action, item.id)}
-                        />
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                );
+                return renderFolderItem({
+                  id: item.id,
+                  data: item.data as Folder,
+                  isExpanded: item.isExpanded,
+                  isPrincipal: item.isPrincipal
+                });
               }
 
               if (item.type === 'workout') {
@@ -436,7 +593,7 @@ export default function MeusTreinosScreen() {
             ListFooterComponent={<View style={{ height: 20 }} />}
           />
         )}
-        <OngoingWorkoutFooter />
+
       </View>
     </GestureHandlerRootView>
   );

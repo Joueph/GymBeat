@@ -1,6 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { MetricBarChart } from './charts/MetricBarChart';
 import { MetricHistoryChart } from './charts/MetricHistoryChart';
 
 interface MetricCardProps {
@@ -9,9 +10,10 @@ interface MetricCardProps {
   isEditable?: boolean;
   onEdit?: () => void;
   historyData?: { valor: number; data: Date }[];
+  graphType?: 'bar' | 'line';
 }
 
-export const MetricCard: React.FC<MetricCardProps> = ({ metricName, metricValue, isEditable, onEdit, historyData }) => {
+export const MetricCard: React.FC<MetricCardProps> = ({ metricName, metricValue, isEditable, onEdit, historyData, graphType = 'bar' }) => {
   return (
     <View style={styles.card}>
       <View style={styles.header}>
@@ -26,7 +28,11 @@ export const MetricCard: React.FC<MetricCardProps> = ({ metricName, metricValue,
       </View>
       <Text style={styles.metricValue}>{metricValue}</Text>
       {historyData && historyData.length > 1 ? (
-        <MetricHistoryChart data={historyData} />
+        graphType === 'bar' ? (
+          <MetricBarChart data={historyData} />
+        ) : (
+          <MetricHistoryChart data={historyData} />
+        )
       ) : (
         <View style={styles.chartPlaceholder}>
           <FontAwesome name="line-chart" size={30} color="#444" />

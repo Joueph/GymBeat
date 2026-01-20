@@ -33,7 +33,8 @@ export const MetricHistoryChart: React.FC<MetricHistoryChartProps> = ({ data }) 
   // 1. Ordena os dados por data
   const sortedData = data
     .map(d => ({ ...d, data: toDate(d.data) }))
-    .sort((a, b) => a.data.getTime() - b.data.getTime());
+    .sort((a, b) => a.data.getTime() - b.data.getTime())
+    .slice(-5); // Keep line charts fixed to 5 points for consistency
 
   // 2. Aplica uma suavização (média móvel) para deixar a curva mais natural
   const smoothedData = sortedData.map((point, index, array) => {

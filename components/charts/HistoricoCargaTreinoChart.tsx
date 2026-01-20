@@ -25,9 +25,11 @@ interface Props {
     style?: any;
     onDataReady?: (hasData: boolean) => void;
     variant?: 'default' | 'minimal';
+    timeRange?: '3m' | '1y' | 'all';
+    metric?: 'volume' | 'volume_per_rep' | 'reps';
 }
 
-export const HistoricoCargaTreinoChart = ({ currentLog, treinoId, allUserLogs, style, onDataReady, variant = 'default' }: Props) => {
+export const HistoricoCargaTreinoChart = ({ currentLog, treinoId, allUserLogs, style, onDataReady, variant = 'default', timeRange = '3m', metric = 'volume' }: Props) => {
     const [animatedData, setAnimatedData] = useState<number[]>([]);
     const [showValues, setShowValues] = useState<boolean[]>([]);
 
@@ -50,12 +52,40 @@ export const HistoricoCargaTreinoChart = ({ currentLog, treinoId, allUserLogs, s
         let allLogsForChart: Log[] = [];
         const maxItems = variant === 'minimal' ? 8 : 4; // Show more bars in minimal mode
 
-        if (currentLog) {
-            const currentIndex = allRelevantLogs.findIndex(log => log.id === currentLog.id);
-            allLogsForChart = allRelevantLogs.slice(Math.max(0, currentIndex - (maxItems - 1)), currentIndex + 1);
+        if (timeRange !== 'all') {
+            const now = new Date();
+            const cutoffDate = new Date();
+            if (timeRange === '3m') {
+                cutoffDate.setDate(now.getDate() - 90);
+            } else if (timeRange === '1y') {
+                cutoffDate.setDate(now.getDate() - 365);
+            }
+            // Filter by date first
+            const filteredByDate = allRelevantLogs.filter(log => {
+                const logDate = toDate(log.horarioInicio);
+                return logDate && logDate >= cutoffDate;
+            });
+
+            // Use filtered list
+            if (currentLog) {
+                const currentIndex = filteredByDate.findIndex(log => log.id === currentLog.id);
+                // If current not found in range (rare if opening old log), fallback
+                if (currentIndex >= 0) {
+                    allLogsForChart = filteredByDate.slice(Math.max(0, currentIndex - (maxItems - 1)), currentIndex + 1);
+                } else {
+                    allLogsForChart = filteredByDate.slice(-maxItems);
+                }
+            } else {
+                allLogsForChart = filteredByDate.slice(-maxItems);
+            }
         } else {
-            // Pega os últimos N logs disponíveis
-            allLogsForChart = allRelevantLogs.slice(-maxItems);
+            // Logic for 'all' (standard slicing)
+            if (currentLog) {
+                const currentIndex = allRelevantLogs.findIndex(log => log.id === currentLog.id);
+                allLogsForChart = allRelevantLogs.slice(Math.max(0, currentIndex - (maxItems - 1)), currentIndex + 1);
+            } else {
+                allLogsForChart = allRelevantLogs.slice(-maxItems);
+            }
         }
 
         const labels = allLogsForChart.map(l => {
@@ -64,10 +94,35 @@ export const HistoricoCargaTreinoChart = ({ currentLog, treinoId, allUserLogs, s
         });
 
         const data = allLogsForChart.map(log => {
-            if (log.cargaAcumulada && typeof log.cargaAcumulada === 'number' && log.cargaAcumulada > 0) {
-                return log.cargaAcumulada;
+            if (metric === 'volume') {
+                if (log.cargaAcumulada && typeof log.cargaAcumulada === 'number' && log.cargaAcumulada > 0) {
+                    return log.cargaAcumulada;
+                }
+                return calculateTotalVolume(log.exercicios, (log as any).usuario?.peso || 70, true);
             }
-            return calculateTotalVolume(log.exercicios, (log as any).usuario?.peso || 70, true);
+
+            if (metric === 'reps') {
+                let totalReps = 0;
+                log.exercicios?.forEach(ex => {
+                    ex.series?.forEach(s => {
+                        totalReps += parseFloat(String(s.repeticoes || 0));
+                    });
+                });
+                return totalReps;
+            }
+
+            if (metric === 'volume_per_rep') {
+                const vol = calculateTotalVolume(log.exercicios, (log as any).usuario?.peso || 70, true);
+                let totalReps = 0;
+                log.exercicios?.forEach(ex => {
+                    ex.series?.forEach(s => {
+                        totalReps += parseFloat(String(s.repeticoes || 0));
+                    });
+                });
+                return totalReps > 0 ? Math.round((vol / totalReps) * 10) / 10 : 0;
+            }
+
+            return 0;
         });
         const maxValue = Math.max(...data, 1);
 
@@ -93,7 +148,7 @@ export const HistoricoCargaTreinoChart = ({ currentLog, treinoId, allUserLogs, s
             hasData: data.length > 0
         };
 
-    }, [allUserLogs, currentLog, treinoId, variant]);
+    }, [allUserLogs, currentLog, treinoId, variant, timeRange, metric]);
 
     // Inicializa a animação quando os dados mudam
     useEffect(() => {

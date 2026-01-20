@@ -6,6 +6,8 @@ import { useEffect } from "react";
 import { View } from 'react-native';
 import { MenuProvider } from 'react-native-popup-menu';
 import { KeyboardDismissButton } from '../components/KeyboardDismissButton';
+import { FeedbackProvider } from '../components/providers/FeedbackProvider';
+import { RevenueCatProvider } from '../components/providers/RevenueCatProvider';
 import { TimerProvider } from '../contexts/TimerContext'; // Added
 import { syncExercicios } from '../services/exercicioService';
 import { processQueue } from '../services/synchronizationService';
@@ -86,6 +88,8 @@ function MainNavigation() {
         <Stack.Screen name="SuggestFeatureModal" options={{ title: 'SuggestFeatureModal', presentation: 'modal' }} />
         <Stack.Screen name="perfil" options={{ title: 'Meu Perfil', presentation: 'modal' }} />
         <Stack.Screen name="settings" options={{ title: 'Configurações', presentation: 'modal' }} />
+        <Stack.Screen name="paywall" options={{ title: 'Assinar Premium', presentation: 'modal', headerShown: false }} />
+        <Stack.Screen name="customer-center" options={{ title: 'Minha Assinatura', presentation: 'modal' }} />
         <Stack.Screen name="(treino)" options={{ headerShown: false }} />
         <Stack.Screen name="(projetos)" options={{ headerShown: false }} />
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -143,10 +147,14 @@ export default function RootLayout() {
     <NetworkProvider>
       <AuthProvider>
         <TimerProvider>
-          <View style={{ flex: 1 }}>
-            <MainNavigation />
-            <KeyboardDismissButton />
-          </View>
+          <RevenueCatProvider>
+            <FeedbackProvider>
+              <View style={{ flex: 1 }}>
+                <MainNavigation />
+                <KeyboardDismissButton />
+              </View>
+            </FeedbackProvider>
+          </RevenueCatProvider>
         </TimerProvider>
       </AuthProvider>
     </NetworkProvider>

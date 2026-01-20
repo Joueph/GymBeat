@@ -39,12 +39,7 @@ export default function TreinoLayout() {
               animation: 'slide_from_bottom',
             }}
           />
-          <Stack.Screen
-            name="ongoingWorkout"
-            options={{
-              headerShown: false,
-            }}
-          />
+
 
           <Stack.Screen
             name="treinoCompleto"

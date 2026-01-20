@@ -13,6 +13,8 @@ struct TodayWorkoutData: Codable {
     let exercisesDone: Int?
     let totalExercises: Int?
     let lastUpdate: Double?
+    let treinoId: String?
+    let fichaId: String?
 }
 
 struct WeekStreakData: Codable {
@@ -45,7 +47,7 @@ struct GymBeatProvider: TimelineProvider {
     // Placeholder para pré-visualização (XCode/Galeria)
     func placeholder(in context: Context) -> GymBeatEntry {
         // Exemplo com treino em andamento
-        GymBeatEntry(date: Date(), workout: TodayWorkoutData(name: "Treino A", muscleGroup: "Peito e Tríceps", duration: "60 min", isCompleted: false, dayLabel: "HOJE", status: "in_progress", exercisesDone: 5, totalExercises: 8, lastUpdate: Date().timeIntervalSince1970), streak: WeekStreakData(daysTrained: [false, true, true, false, true, false, false], totalDays: 3))
+        GymBeatEntry(date: Date(), workout: TodayWorkoutData(name: "Treino A", muscleGroup: "Peito e Tríceps", duration: "60 min", isCompleted: false, dayLabel: "HOJE", status: "in_progress", exercisesDone: 5, totalExercises: 8, lastUpdate: Date().timeIntervalSince1970, treinoId: "test_id", fichaId: "test_ficha"), streak: WeekStreakData(daysTrained: [false, true, true, false, true, false, false], totalDays: 3))
     }
 
     func getSnapshot(in context: Context, completion: @escaping (GymBeatEntry) -> Void) {
@@ -215,6 +217,25 @@ struct TodayWorkoutView: View {
                 }
             }
         }
+        .widgetURL(createWidgetURL(workout: workout))
+    }
+    
+    func createWidgetURL(workout: TodayWorkoutData?) -> URL? {
+        guard let workout = workout,
+              let treinoId = workout.treinoId,
+              let fichaId = workout.fichaId else { return nil }
+        
+        // Scheme: gymbeat://?action=open_workout&treinoId=...&fichaId=...
+        var components = URLComponents()
+        components.scheme = "gymbeat"
+        components.host = ""
+        components.queryItems = [
+            URLQueryItem(name: "action", value: "open_workout"),
+            URLQueryItem(name: "treinoId", value: treinoId),
+            URLQueryItem(name: "fichaId", value: fichaId)
+        ]
+        
+        return components.url
     }
 }
 

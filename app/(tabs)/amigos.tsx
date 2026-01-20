@@ -3,7 +3,8 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
+
+import { FreeTrialEnforcer } from '@/components/FreeTrialEnforcer';
 import { FriendDetailsModal } from '../../components/amigos/FriendDetailsModal';
 import { FriendData } from '../../components/amigos/FriendListItem';
 import { FriendRequestsModal } from '../../components/amigos/FriendRequestsModal';
@@ -76,7 +77,7 @@ export default function AmigosScreen() {
 
         <PostFeedWidget />
       </ScrollView>
-      <OngoingWorkoutFooter />
+
 
       {/* Modals - Keeping them here for now as they are page-level interactions */}
       <Modal visible={modals.addOptions.visible} transparent={true} animationType="fade" onRequestClose={() => modals.addOptions.setVisible(false)}>
@@ -133,6 +134,8 @@ export default function AmigosScreen() {
           setSelectedFriend(null);
         }}
       />
+
+      <FreeTrialEnforcer />
     </>
   );
 }

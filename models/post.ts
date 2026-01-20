@@ -12,4 +12,6 @@ export interface Post {
     };
     createdAt: any;
     likes: string[];
+    userName?: string;
+    userPhotoUrl?: string;
 }

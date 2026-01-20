@@ -10,10 +10,11 @@ type MetricsGridProps = {
     historyMetrics: any;
     onEditWeight: () => void;
     onOpenConfig: () => void;
-    config: { key: string; visible: boolean; fullWidth: boolean }[];
+    config: { key: string; visible: boolean; fullWidth: boolean; graphType?: 'bar' | 'line' }[];
+    isPremium: boolean;
 };
 
-export const MetricsGrid: React.FC<MetricsGridProps> = ({ userProfile, weeklyMetrics, historyMetrics, onEditWeight, onOpenConfig, config }) => {
+export const MetricsGrid: React.FC<MetricsGridProps> = ({ userProfile, weeklyMetrics, historyMetrics, onEditWeight, onOpenConfig, config, isPremium }) => {
     const getLatestWeight = () => {
         if (!userProfile?.historicoPeso || userProfile.historicoPeso.length === 0) return 70;
         const sortedHistorico = [...userProfile.historicoPeso]
@@ -24,32 +25,55 @@ export const MetricsGrid: React.FC<MetricsGridProps> = ({ userProfile, weeklyMet
 
     if (!userProfile) return null;
 
-    const renderCard = (item: { key: string; visible: boolean; fullWidth: boolean }) => {
+    const renderCard = (item: { key: string; visible: boolean; fullWidth: boolean; graphType?: 'bar' | 'line' }) => {
         const widthStyle: any = item.fullWidth ? { width: '100%' } : { width: '48.9%' };
+        const graphType = item.graphType || 'bar';
 
         switch (item.key) {
             case 'weight':
                 return (
                     <View key={item.key} style={[widthStyle]}>
-                        <MetricCard metricName="Peso Corporal" metricValue={`${getLatestWeight()} kg`} isEditable={true} onEdit={onEditWeight} historyData={historyMetrics.pesoCorporal} />
+                        <MetricCard
+                            metricName="Peso Corporal"
+                            metricValue={`${getLatestWeight()} kg`}
+                            isEditable={true}
+                            onEdit={onEditWeight}
+                            historyData={isPremium ? historyMetrics.pesoCorporal : (historyMetrics.pesoCorporal || []).slice(0, 3)}
+                            graphType={graphType}
+                        />
                     </View>
                 );
             case 'time':
                 return (
                     <View key={item.key} style={[widthStyle]}>
-                        <MetricCard metricName="Tempo de treino" metricValue={weeklyMetrics.tempoDeTreino} historyData={historyMetrics.tempoDeTreino} />
+                        <MetricCard
+                            metricName="Tempo de treino"
+                            metricValue={weeklyMetrics.tempoDeTreino}
+                            historyData={isPremium ? historyMetrics.tempoDeTreino : (historyMetrics.tempoDeTreino || []).slice(0, 3)}
+                            graphType={graphType}
+                        />
                     </View>
                 );
             case 'sets':
                 return (
                     <View key={item.key} style={[widthStyle]}>
-                        <MetricCard metricName="Séries" metricValue={String(weeklyMetrics.series)} historyData={historyMetrics.series} />
+                        <MetricCard
+                            metricName="Séries"
+                            metricValue={String(weeklyMetrics.series)}
+                            historyData={isPremium ? historyMetrics.series : (historyMetrics.series || []).slice(0, 3)}
+                            graphType={graphType}
+                        />
                     </View>
                 );
             case 'volume':
                 return (
                     <View key={item.key} style={[widthStyle]}>
-                        <MetricCard metricName="Volume" metricValue={weeklyMetrics.volume} historyData={historyMetrics.volume} />
+                        <MetricCard
+                            metricName="Volume"
+                            metricValue={weeklyMetrics.volume}
+                            historyData={isPremium ? historyMetrics.volume : (historyMetrics.volume || []).slice(0, 3)}
+                            graphType={graphType}
+                        />
                     </View>
                 );
             default:

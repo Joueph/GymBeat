@@ -35,6 +35,10 @@ export const PostCard = ({ post, currentUserId, onDelete, onLike }: PostCardProp
     const [likeCount, setLikeCount] = useState(likes.length);
     const router = useRouter();
 
+    // Denormalized data
+    const displayName = userProfile?.nome || post.userName || 'Usuário';
+    const displayPhoto = userProfile?.photoURL || post.userPhotoUrl;
+
     useEffect(() => {
         const fetchUser = async () => {
             try {
@@ -57,7 +61,7 @@ export const PostCard = ({ post, currentUserId, onDelete, onLike }: PostCardProp
     const handleShare = async () => {
         try {
             await Share.share({
-                message: `Confira o treino de ${userProfile?.nome || 'um amigo'} no GymBeat!`,
+                message: `Confira o treino de ${displayName} no GymBeat!`,
                 title: 'Compartilhar Treino'
             });
         } catch (error) {
@@ -80,12 +84,12 @@ export const PostCard = ({ post, currentUserId, onDelete, onLike }: PostCardProp
         <View style={styles.header}>
             <TouchableOpacity style={styles.userInfo} onPress={() => {/* Navigate to profile? */ }}>
                 <Image
-                    source={userProfile?.photoURL ? { uri: userProfile.photoURL } : require('../../assets/images/icon.png')}
+                    source={displayPhoto ? { uri: displayPhoto } : require('../../assets/images/icon.png')}
                     style={styles.avatar}
                     contentFit="cover"
                 />
                 <View>
-                    <Text style={styles.username}>{userProfile?.nome || 'Usuário'}</Text>
+                    <Text style={styles.username}>{displayName}</Text>
                     <Text style={styles.timestamp}>{new Date(post.createdAt?.toDate ? post.createdAt.toDate() : post.createdAt).toLocaleDateString()}</Text>
                 </View>
             </TouchableOpacity>

@@ -11,12 +11,14 @@ import { StreakWidget } from '@/components/home/StreakWidget';
 import { TodayWorkoutCard } from '@/components/home/TodayWorkoutCard';
 import { WeeklyCalendar } from '@/components/home/WeeklyCalendar';
 import { WeeklyProgress } from '@/components/home/WeeklyProgress';
-import { OngoingWorkoutFooter } from '@/components/OngoingWorkoutFooter';
+import { usePremiumStatus } from '@/hooks/usePremiumStatus';
+
+import { FreeTrialEnforcer } from '@/components/FreeTrialEnforcer';
 import { WeightInputDrawer } from '@/components/WeightInputDrawer';
 import { useHomeData } from '@/hooks/useHomeData';
 import { Log } from '@/models/log';
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { FeatureUpvoteModal } from '../FeatureUpvoteModal';
 
@@ -44,7 +46,10 @@ export default function HomeScreen() {
     getLatestWeight,
     metricsLayout,
     saveMetricsConfig,
+    user,
   } = useHomeData();
+
+  const { isPremium, navigateToPaywall } = usePremiumStatus();
 
   const [isMetricsConfigVisible, setMetricsConfigVisible] = useState(false);
   const [selectedReviewLog, setSelectedReviewLog] = useState<Log | null>(null);
@@ -56,8 +61,31 @@ export default function HomeScreen() {
 
   const handleFichaSelect = (fichaId: string) => {
     setFichaSelectorVisible(false);
+    setFichaSelectorVisible(false);
     router.push({ pathname: '/(treino)/LoggingDuringWorkout', params: { fichaId } });
   };
+
+  // --- WIDGET DEEP LINK HANDLER ---
+  const params = useLocalSearchParams();
+  useEffect(() => {
+    if (params.action === 'open_workout' && params.treinoId && params.fichaId) {
+      console.log('[DeepLink] 🚀 Opening workout from widget:', params.treinoId);
+
+      // Navigate to the ongoing workout screen
+      // We use push to ensure the user can go back to the home screen
+      // Clear the params to prevent loop when returning to this screen
+      router.setParams({ action: '', treinoId: '', fichaId: '' });
+
+      router.push({
+        pathname: '/(treino)/LoggingDuringWorkout',
+        params: {
+          treinoId: params.treinoId as string,
+          fichaId: params.fichaId as string,
+        }
+      });
+    }
+  }, [params]);
+  // ------------------------------
 
   const handleSelectLog = (log: Log) => {
     setSelectedReviewLog(log);
@@ -87,6 +115,7 @@ export default function HomeScreen() {
             onEditWeight={() => setWeightDrawerVisible(true)}
             onOpenConfig={() => setMetricsConfigVisible(true)}
             config={metricsLayout}
+            isPremium={isPremium}
           />
         );
       case 'friends':
@@ -112,7 +141,13 @@ export default function HomeScreen() {
         <HomeHeader
           onOpenUpvote={() => setFeatureUpvoteModalVisible(true)}
           onOpenSettings={() => router.push('/settings')}
-          onOpenLayoutConfig={() => setLayoutConfigVisible(true)}
+          onOpenLayoutConfig={() => {
+            if (!isPremium) {
+              navigateToPaywall();
+              return;
+            }
+            setLayoutConfigVisible(true)
+          }}
         />
 
         {layout.map(item => {
@@ -134,14 +169,25 @@ export default function HomeScreen() {
           visible={isLayoutConfigVisible}
           onClose={() => setLayoutConfigVisible(false)}
           layout={layout}
-          onSaveLayout={saveLayout}
+          onSaveLayout={(newLayout) => {
+            // Double check just in case
+            if (!isPremium) return;
+            saveLayout(newLayout);
+          }}
         />
 
         <MetricsConfigModal
           visible={isMetricsConfigVisible}
           onClose={() => setMetricsConfigVisible(false)}
           config={metricsLayout}
-          onSaveConfig={saveMetricsConfig}
+
+          onSaveConfig={(newConfig) => {
+            if (!isPremium) {
+              navigateToPaywall();
+              return;
+            }
+            saveMetricsConfig(newConfig);
+          }}
         />
 
         <WorkoutReviewModal
@@ -149,9 +195,11 @@ export default function HomeScreen() {
           onClose={() => setReviewModalVisible(false)}
           initialLog={selectedReviewLog}
           allUserLogs={logs}
+          currentUserId={user?.id || ''}
         />
       </ScrollView>
-      <OngoingWorkoutFooter />
+
+      <FreeTrialEnforcer />
     </View>
   );
 }

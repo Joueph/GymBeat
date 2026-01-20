@@ -18,6 +18,8 @@ interface TodayWorkoutData {
   exercisesDone?: number;
   totalExercises?: number;
   lastUpdate: number;
+  treinoId?: string;
+  fichaId?: string;
 }
 
 interface WeekStreakData {
@@ -145,7 +147,9 @@ export const widgetService = {
       status: isCompleted ? 'completed' : 'todo',
       exercisesDone: exercisesDone,
       totalExercises: totalExercises,
-      lastUpdate: Date.now()
+      lastUpdate: Date.now() / 1000,
+      treinoId: treinoDisplay.id,
+      fichaId: treinoDisplay.fichaId || undefined
     } : {
       name: "Descanso",
       muscleGroup: "Recupere-se",
@@ -155,7 +159,7 @@ export const widgetService = {
       status: 'todo',
       exercisesDone: 0,
       totalExercises: 0,
-      lastUpdate: Date.now()
+      lastUpdate: Date.now() / 1000
     };
 
     console.log(`[WidgetDebug] 💾 Salvando JSON para 'widget_today_workout':`, JSON.stringify(data));

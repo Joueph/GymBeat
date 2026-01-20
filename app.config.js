@@ -2,7 +2,7 @@ export default {
   expo: {
     name: "GymBeat",
     slug: "GymBeat",
-    version: "0.2.3",
+    version: "0.2.4",
     orientation: "portrait",
     icon: "./assets/icons/ios/ios-dark.png",
     scheme: "gymbeat",
@@ -55,8 +55,9 @@ export default {
       favicon: "./assets/images/favicon.png",
     },
     plugins: [
-      "@bacons/apple-targets",
+
       "expo-router",
+      ["@bacons/apple-targets", { "group": "group.br.com.gymbeat" }],
       [
         "expo-splash-screen",
         {
@@ -93,6 +94,9 @@ export default {
           ios: {
             useFrameworks: "static",
             deploymentTarget: "16.2",
+          },
+          android: {
+            kotlinVersion: "1.9.0",
           },
         },
       ],

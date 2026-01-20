@@ -92,3 +92,21 @@ export const unlikePost = async (postId: string, userId: string) => {
     });
 };
 
+
+export const getPostByLogId = async (logId: string): Promise<Post | null> => {
+    try {
+        const postsRef = collection(db, 'posts');
+        const q = query(postsRef, where('logId', '==', logId), limit(1));
+        const snapshot = await getDocs(q);
+
+        if (snapshot.empty) {
+            return null;
+        }
+
+        const doc = snapshot.docs[0];
+        return { id: doc.id, ...doc.data() } as Post;
+    } catch (error) {
+        console.error("Error fetching post by logId:", error);
+        return null;
+    }
+};

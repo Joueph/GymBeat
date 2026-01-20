@@ -1,4 +1,5 @@
 import { useAuth } from '@/app/authprovider';
+import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 import { Ficha } from '@/models/ficha';
 import { Log } from '@/models/log';
 import { Treino } from '@/models/treino';
@@ -15,6 +16,7 @@ import { Alert } from 'react-native';
 
 export const useHomeData = () => {
     const { user } = useAuth();
+    const { isPremium } = usePremiumStatus();
     const [treinos, setTreinos] = useState<Treino[]>([]);
     const [logs, setLogs] = useState<Log[]>([]);
     const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
@@ -25,7 +27,7 @@ export const useHomeData = () => {
     const [isFichaSelectorVisible, setFichaSelectorVisible] = useState(false);
     const [isLayoutConfigVisible, setLayoutConfigVisible] = useState(false);
     const [layout, setLayout] = useState<{ key: string; visible: boolean }[]>([]);
-    const [metricsLayout, setMetricsLayout] = useState<{ key: string; visible: boolean; fullWidth: boolean }[]>([]);
+    const [metricsLayout, setMetricsLayout] = useState<{ key: string; visible: boolean; fullWidth: boolean; graphType?: 'bar' | 'line' }[]>([]);
 
     const DEFAULT_LAYOUT = [
         { key: 'weeklyCalendar', visible: true },
@@ -39,10 +41,10 @@ export const useHomeData = () => {
     ];
 
     const DEFAULT_METRICS = [
-        { key: 'weight', visible: true, fullWidth: false },
-        { key: 'time', visible: true, fullWidth: false },
-        { key: 'sets', visible: true, fullWidth: false },
-        { key: 'volume', visible: true, fullWidth: false },
+        { key: 'weight', visible: true, fullWidth: false, graphType: 'bar' as const },
+        { key: 'time', visible: true, fullWidth: false, graphType: 'bar' as const },
+        { key: 'sets', visible: true, fullWidth: false, graphType: 'bar' as const },
+        { key: 'volume', visible: true, fullWidth: false, graphType: 'bar' as const },
     ];
 
     const fetchData = useCallback(async () => {
@@ -70,7 +72,10 @@ export const useHomeData = () => {
             setLogs(combinedLogs);
             setUserProfile(profile);
 
-            if (profile?.homeScreenConfig?.layout) {
+            setUserProfile(profile);
+
+            // Layout Config - Only load custom if premium
+            if (isPremium && profile?.homeScreenConfig?.layout) {
                 // Merge with default to ensure new widgets appear if added later
                 const profileLayout = profile.homeScreenConfig.layout;
                 // Basic merge: use profile layout, but if any key from DEFAULT is missing, append it?
@@ -83,7 +88,7 @@ export const useHomeData = () => {
                 setLayout(DEFAULT_LAYOUT);
             }
 
-            if (profile?.homeScreenConfig?.metrics) {
+            if (isPremium && profile?.homeScreenConfig?.metrics) {
                 setMetricsLayout(profile.homeScreenConfig.metrics);
             } else {
                 setMetricsLayout(DEFAULT_METRICS);
@@ -104,7 +109,7 @@ export const useHomeData = () => {
         } catch (error) {
             console.error("Erro ao buscar dados da ficha ativa:", error);
         }
-    }, [user]);
+    }, [user, isPremium]);
 
     useFocusEffect(
         useCallback(() => {
@@ -164,7 +169,8 @@ export const useHomeData = () => {
                 return date;
             };
             const fiveWeeksAgo = getWeekStart(new Date());
-            fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - (4 * 7));
+            const historyLenght = 12;
+            fiveWeeksAgo.setDate(fiveWeeksAgo.getDate() - ((historyLenght - 1) * 7));
 
             const completedLogs = logs.filter(log => {
                 const time = log.horarioFim?.seconds ? log.horarioFim.seconds * 1000 : (log.horarioFim ? new Date(log.horarioFim).getTime() : 0);
@@ -182,9 +188,10 @@ export const useHomeData = () => {
             }
 
             const result: { valor: number; data: Date }[] = [];
-            for (let i = 0; i < 5; i++) {
+            // historyLenght is already declared above
+            for (let i = 0; i < historyLenght; i++) {
                 const weekStartDate = getWeekStart(new Date());
-                weekStartDate.setDate(weekStartDate.getDate() - ((4 - i) * 7));
+                weekStartDate.setDate(weekStartDate.getDate() - ((historyLenght - 1 - i) * 7));
                 const weekKey = weekStartDate.toISOString().split('T')[0];
                 result.push({ data: weekStartDate, valor: weeklyTotals.get(weekKey)?.total || 0 });
             }
@@ -247,7 +254,7 @@ export const useHomeData = () => {
         }
     };
 
-    const saveMetricsConfig = async (newMetricsLayout: { key: string; visible: boolean; fullWidth: boolean }[]) => {
+    const saveMetricsConfig = async (newMetricsLayout: { key: string; visible: boolean; fullWidth: boolean; graphType?: 'bar' | 'line' }[]) => {
         if (!user) return;
         setMetricsLayout(newMetricsLayout);
         try {

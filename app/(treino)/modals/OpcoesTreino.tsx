@@ -15,6 +15,8 @@ import {
   View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFeedback } from '../../../components/providers/FeedbackProvider';
+import { usePremiumStatus } from '../../../hooks/usePremiumStatus';
 import { Ficha } from '../../../models/ficha';
 import { addFicha, getFichasByUsuarioId } from '../../../services/fichaService';
 import { useAuth } from '../../authprovider';
@@ -22,6 +24,8 @@ import { useAuth } from '../../authprovider';
 export default function OpcoesTreinoScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { isPremium, navigateToPaywall, isLoading: isPremiumLoading } = usePremiumStatus();
+  const { showFeedback } = useFeedback();
   const [isFolderModalVisible, setFolderModalVisible] = useState(false);
   const [isNewFolderInputVisible, setNewFolderInputVisible] = useState(false);
   const [userFichas, setUserFichas] = useState<Ficha[]>([]);
@@ -75,6 +79,7 @@ export default function OpcoesTreinoScreen() {
         ativa: false,
       };
       await addFicha(newFicha);
+      showFeedback('success', 'Sucesso', 'Pasta criada com sucesso!');
       setNewFolderName('');
       setNewFolderInputVisible(false);
 
@@ -86,7 +91,7 @@ export default function OpcoesTreinoScreen() {
 
     } catch (error) {
       console.error("Erro ao criar nova pasta:", error);
-      Alert.alert("Erro", "Não foi possível criar a pasta.");
+      showFeedback('failure', 'Erro', 'Não foi possível criar a pasta.', 4000);
     } finally {
       setIsCreatingFolder(false);
     }
@@ -140,7 +145,24 @@ export default function OpcoesTreinoScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <TouchableOpacity style={styles.largeCard} onPress={() => setNewFolderInputVisible(true)}>
+          <TouchableOpacity
+            style={[styles.largeCard, isPremiumLoading && { opacity: 0.5 }]}
+            disabled={isPremiumLoading}
+            onPress={() => {
+              console.log('DEBUG CHECK:', { isPremium, isPremiumLoading, userFichasCount: userFichas.length });
+
+              // Prevent checking if still loading (though button is disabled, just safety)
+              if (isPremiumLoading) return;
+
+              // PREMIUM CHECK BEFORE OPENING INPUT
+              if (!isPremium && userFichas.length >= 1) {
+                showFeedback('failure', 'Limite Atingido', 'Usuários gratuitos podem criar apenas 1 pasta. Assine o Premium!', 4000);
+                setTimeout(() => navigateToPaywall(), 1500);
+                return;
+              }
+              setNewFolderInputVisible(true);
+            }}
+          >
             <FontAwesome name="folder" size={24} color="#fff" style={styles.cardIcon} />
             <View>
               <Text style={styles.cardTitle}>Criar uma nova pasta de treinos</Text>

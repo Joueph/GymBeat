@@ -1,4 +1,4 @@
-import { arrayUnion, collection, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { arrayUnion, collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../firebaseconfig';
 import { Projeto } from '../models/projeto';
 
@@ -10,15 +10,15 @@ const projetosCollection = collection(db, 'projetos');
  * @returns O ID do novo projeto criado.
  */
 export const createProjeto = async (projetoData: Omit<Projeto, 'id'>): Promise<string> => {
-  const newProjetoRef = doc(projetosCollection);
-  const newProjeto: Projeto = { ...projetoData, id: newProjetoRef.id };
+    const newProjetoRef = doc(projetosCollection);
+    const newProjeto: Projeto = { ...projetoData, id: newProjetoRef.id };
 
-  await setDoc(newProjetoRef, newProjeto);
+    await setDoc(newProjetoRef, newProjeto);
 
-  const userDocRef = doc(db, 'users', newProjeto.criadorId);
-  await updateDoc(userDocRef, { projetos: arrayUnion(newProjeto.id) });
+    const userDocRef = doc(db, 'users', newProjeto.criadorId);
+    await updateDoc(userDocRef, { projetos: arrayUnion(newProjeto.id) });
 
-  return newProjeto.id;
+    return newProjeto.id;
 };
 
 /**
@@ -46,4 +46,23 @@ export const getProjetoById = async (projetoId: string): Promise<Projeto | null>
 export const updateProjeto = async (projetoId: string, projetoData: Partial<Projeto>): Promise<void> => {
     const projetoDocRef = doc(db, 'projetos', projetoId);
     await updateDoc(projetoDocRef, projetoData);
+};
+
+export const getProjetosByUsuarioId = async (userId: string): Promise<Projeto[]> => {
+    // Note: This relies on 'participantes' array or 'criadorId'. 
+    // Assuming we want projects created by user.
+    // If 'participantes' isn't indexed, we might need a composite index.
+    // However, if we filter by criadorId it's simpler.
+
+    // Simplest: Query by criadorId
+    const q = query(
+        projetosCollection,
+        where("criadorId", "==", userId)
+    );
+    const querySnapshot = await getDocs(q);
+    const projetos: Projeto[] = [];
+    querySnapshot.forEach((doc: any) => {
+        projetos.push({ id: doc.id, ...doc.data() } as Projeto);
+    });
+    return projetos;
 };

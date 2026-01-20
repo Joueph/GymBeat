@@ -3,7 +3,7 @@ import { useWorkoutOperations } from '@/hooks/useWorkoutOperations';
 import { Exercicio, ExercicioModelo, Serie } from '@/models/exercicio';
 import { getLogsByUsuarioId } from '@/services/logService';
 import { getLastLogForMachine } from '@/services/machineService';
-import { deleteTreino, getTreinoById } from '@/services/treinoService';
+import { deleteTreino, getTreinoById, getTreinosByUsuarioId } from '@/services/treinoService';
 import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -26,12 +26,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { InfoCard } from '../../components/InfoCard';
 import { ExerciseMenuAction, ExerciseOptionsMenu } from '../../components/menus/ExerciseOptionsMenu';
-import { OngoingWorkoutFooter } from '../../components/OngoingWorkoutFooter';
+
 import { RepetitionsDrawer } from '../../components/RepetitionsDrawer';
 import { RestTimeDrawer } from '../../components/RestTimeDrawer';
 import { SetOptionsMenu } from '../../components/SetOptionsMenu';
 import { TimeBasedSetDrawer } from '../../components/TimeBasedSetDrawer';
 import { VideoListItem } from '../../components/VideoListItem';
+import { usePremiumStatus } from '../../hooks/usePremiumStatus';
 import { Log } from '../../models/log';
 import { Treino } from '../../models/treino';
 import { getCachedActiveWorkoutLog, getCachedTreinoById } from '../../services/offlineCacheService';
@@ -70,6 +71,9 @@ interface ExerciseItemProps {
   onReorder: () => void;
   onOpenNotes: () => void;
   onSubstitute: () => void;
+  onShowDetail: () => void;
+  isPremium: boolean;
+  navigateToPaywall: () => void;
 }
 
 const formatRestTime = (seconds: number) => {
@@ -152,6 +156,9 @@ const ExerciseItem = ({
   onReorder,
   onOpenNotes,
   onSubstitute,
+  onShowDetail,
+  isPremium,
+  navigateToPaywall,
 }: ExerciseItemProps) => {
   const [series, setSeries] = useState<SerieEdit[]>(
     item.series.map((s, i) => ({ ...s, id: s.id || `set-${Date.now()}-${i}`, type: s.type || 'normal' }))
@@ -327,6 +334,10 @@ const ExerciseItem = ({
               if (action === 'delete') {
                 onRemoveExercise();
               } else if (action === 'changeMachine') {
+                if (!isPremium) {
+                  navigateToPaywall();
+                  return;
+                }
                 onOpenMachineDrawer(exerciseIndex);
               } else if (action === 'editRestTime') {
                 onOpenRestTimeModal(exerciseIndex);
@@ -410,9 +421,19 @@ export default function EditarTreinoScreen() {
   const [isNotesModalVisible, setIsNotesModalVisible] = useState(false);
   const [exerciseForNotes, setExerciseForNotes] = useState<{ index: number, exercise: Exercicio } | null>(null);
 
+  // Detail Modal
+  const [isDetailModalVisible, setDetailModalVisible] = useState(false);
+  const [detailExerciseIndex, setDetailExerciseIndex] = useState<number | null>(null);
+
+  const handleShowDetail = (index: number) => {
+    setDetailExerciseIndex(index);
+    setDetailModalVisible(true);
+  };
+
   // State for Review Modal
   const [selectedLog, setSelectedLog] = useState<Log | null>(null);
   const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
+  const { isPremium, navigateToPaywall } = usePremiumStatus();
 
 
   const carouselRef = useAnimatedRef<any>();
@@ -537,7 +558,14 @@ export default function EditarTreinoScreen() {
 
   useEffect(() => {
     if (user?.id) {
-      getLogsByUsuarioId(user.id).then(setAllUserLogs);
+      getLogsByUsuarioId(user.id).then(fetchedLogs => {
+        // Free user -> user can see tops 5 past workouts
+        if (!isPremium) {
+          setAllUserLogs(fetchedLogs.slice(0, 5));
+        } else {
+          setAllUserLogs(fetchedLogs);
+        }
+      });
       getUserProfile(user.id).then(profile => {
         if (profile?.workoutScreenType) {
           setWorkoutScreenType(profile.workoutScreenType);
@@ -620,12 +648,9 @@ export default function EditarTreinoScreen() {
 
   const handleStartWorkout = () => {
     if (!treino || !treino.id) return;
-    const targetPath = user?.workoutScreenType === 'simplified'
-      ? '/(treino)/ongoingWorkout'
-      : '/(treino)/LoggingDuringWorkout';
 
     router.push({
-      pathname: targetPath,
+      pathname: '/(treino)/LoggingDuringWorkout',
       params: { treinoId: treino.id, fichaId: treino.fichaId }
     });
   };
@@ -734,6 +759,19 @@ export default function EditarTreinoScreen() {
 
     // Validate if it is really a new workout or an update
     const isNew = !treino.id || treino.id === '';
+
+    if (!isPremium && isNew && user?.id) {
+      // Check limit
+      try {
+        const treinos = await getTreinosByUsuarioId(user.id);
+        if (treinos.length >= 5) {
+          navigateToPaywall();
+          return;
+        }
+      } catch (e) {
+        console.error("Error checking limits:", e);
+      }
+    }
 
     const savedId = await saveTreino(treino, isNew);
 
@@ -844,6 +882,9 @@ export default function EditarTreinoScreen() {
           setIsNotesModalVisible(true);
         }}
         onSubstitute={() => handleOpenSubstitute(index)}
+        onShowDetail={() => handleShowDetail(index)}
+        isPremium={isPremium}
+        navigateToPaywall={navigateToPaywall}
       />
     );
   }, [treino, handleUpdateExercise, handleRemoveExercise, isEditing]);
@@ -1121,6 +1162,7 @@ export default function EditarTreinoScreen() {
         onClose={() => setIsReviewModalVisible(false)}
         initialLog={selectedLog}
         allUserLogs={allUserLogs}
+        currentUserId={user?.id || ''}
       />
 
       <MachineChooserDrawer
@@ -1158,7 +1200,7 @@ export default function EditarTreinoScreen() {
         }}
       />
 
-      <OngoingWorkoutFooter />
+
 
       {/* Substitute Modal */}
       <SelectExerciseModal

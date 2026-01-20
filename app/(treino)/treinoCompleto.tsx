@@ -139,6 +139,7 @@ export default function TreinoCompletoScreen() {
   const [loading, setLoading] = useState(true);
   // ... (código existente do state)
   const [log, setLog] = useState<Log | null>(null);
+  const [userProfile, setUserProfile] = useState<any | null>(null); // Store user profile
   const [duration, setDuration] = useState(0);
   const [weeklyProgress, setWeeklyProgress] = useState({ completed: 0, total: 2 });
   const [scheduledTreinos, setScheduledTreinos] = useState<Treino[]>([]); // Novo estado para treinos da ficha
@@ -277,6 +278,7 @@ export default function TreinoCompletoScreen() {
       if (latestWeight) {
         setUserWeight(latestWeight);
       }
+      setUserProfile(userProfile); // Save profile to state
 
       setActiveFicha(fichaAtiva);
       const streakGoal = userProfile?.streakGoal || 2;
@@ -426,6 +428,8 @@ export default function TreinoCompletoScreen() {
         logId: log.id,
         stats: stats,
         descricao: '',
+        userName: userProfile?.nome || user.email || 'Usuário',
+        userPhotoUrl: userProfile?.photoURL || null,
       }, imageToUpload || undefined);
 
       // No Alert, just move to next step

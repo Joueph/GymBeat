@@ -8,6 +8,7 @@ import { ActivityIndicator, Alert, FlatList, Image, Modal, StyleSheet, Text, Tou
 import { GestureHandlerRootView, ScrollView } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AnimatedGradientBorderButton from '../../components/AnimatedGradientBorderButton';
+import { FreeTrialEnforcer } from '../../components/FreeTrialEnforcer';
 import { Ficha } from '../../models/ficha';
 import { FichaModelo } from '../../models/fichaModelo';
 import { TreinoModelo } from '../../models/treinoModelo';
@@ -125,30 +126,30 @@ export default function WorkoutsScreen() {
     }
   };
 
-const handleSelectFicha = async (ficha: FichaModelo) => {
-  setSelectedFicha(ficha);
-  setModalVisible(true);
-  setLoadingTreinos(true);
-  try {
-    const treinosData = await getTreinosModelosByIds(ficha.treinos ?? []);
+  const handleSelectFicha = async (ficha: FichaModelo) => {
+    setSelectedFicha(ficha);
+    setModalVisible(true);
+    setLoadingTreinos(true);
+    try {
+      const treinosData = await getTreinosModelosByIds(ficha.treinos ?? []);
 
-    // Verifica se algum treino tem mais de um dia, desabilitando a customização se for o caso.
-    const allowCustomization = treinosData.every(t => t.diasSemana.length <= 1);
-    setIsCustomizationAllowed(allowCustomization);
-    // Ordena os treinos pela ordem dos dias da semana (dom a sab)
-    treinosData.sort((a, b) => (DIAS_SEMANA_ORDEM[a.diasSemana[0]] ?? 7) - (DIAS_SEMANA_ORDEM[b.diasSemana[0]] ?? 7));
-    const initialDays = new Set(treinosData.flatMap(t => t.diasSemana));
-    setOriginalDays(initialDays);
-    setCustomDays(Array.from(initialDays).sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]));
-    setIsCustomizing(false); // Reseta o modo de customização ao abrir
-    setTreinos(treinosData);
-  } catch (error) {
-    console.error("Erro ao buscar treinos da ficha:", error);
-    Alert.alert("Erro", "Não foi possível carregar os detalhes desta ficha.");
-  } finally {
-    setLoadingTreinos(false);
-  }
-};
+      // Verifica se algum treino tem mais de um dia, desabilitando a customização se for o caso.
+      const allowCustomization = treinosData.every(t => t.diasSemana.length <= 1);
+      setIsCustomizationAllowed(allowCustomization);
+      // Ordena os treinos pela ordem dos dias da semana (dom a sab)
+      treinosData.sort((a, b) => (DIAS_SEMANA_ORDEM[a.diasSemana[0]] ?? 7) - (DIAS_SEMANA_ORDEM[b.diasSemana[0]] ?? 7));
+      const initialDays = new Set(treinosData.flatMap(t => t.diasSemana));
+      setOriginalDays(initialDays);
+      setCustomDays(Array.from(initialDays).sort((a, b) => DIAS_SEMANA_ORDEM[a] - DIAS_SEMANA_ORDEM[b]));
+      setIsCustomizing(false); // Reseta o modo de customização ao abrir
+      setTreinos(treinosData);
+    } catch (error) {
+      console.error("Erro ao buscar treinos da ficha:", error);
+      Alert.alert("Erro", "Não foi possível carregar os detalhes desta ficha.");
+    } finally {
+      setLoadingTreinos(false);
+    }
+  };
 
   const handleCopyFicha = async () => {
     if (!user || !selectedFicha || !treinos) return;
@@ -313,7 +314,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
             const isScheduled = originalDays.has(day);
             const isSelected = customDays.includes(day);
             const isDisabled = isCustomizing && !isSelected && customDays.length >= treinos.length;
-            
+
             return (
               <TouchableOpacity
                 key={day}
@@ -459,7 +460,7 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
                 </TouchableOpacity>
               </View>
             </View>
-            
+
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalList}>
               {renderGoalDifferenceCard()}
               {isCustomizationAllowed && (
@@ -472,9 +473,9 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
               {loadingTreinos ? (
                 <ActivityIndicator style={{ marginTop: 40 }} size="large" color="#fff" />
               ) : treinos.length > 0 ? (
-                  treinos.map(treino => <View key={treino.id}>{renderTreinoDetailItem({ item: treino })}</View>) ) : (
-                  <Text style={styles.emptyText}>Nenhum treino nesta ficha.</Text>
-                )
+                treinos.map(treino => <View key={treino.id}>{renderTreinoDetailItem({ item: treino })}</View>)) : (
+                <Text style={styles.emptyText}>Nenhum treino nesta ficha.</Text>
+              )
               }
             </ScrollView>
 
@@ -497,8 +498,10 @@ const handleSelectFicha = async (ficha: FichaModelo) => {
             </View>
           </View>
         </Modal>
-      </SafeAreaView>
-    </GestureHandlerRootView>
+
+        <FreeTrialEnforcer />
+      </SafeAreaView >
+    </GestureHandlerRootView >
   );
 }
 
@@ -630,10 +633,10 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
     borderWidth: 1,
-        borderTopColor: '#2A2E37',
-        borderLeftColor: '#2A2E37', 
-        borderBottomColor: '#2A2E37',
-        borderRightColor: '#2A2E37',
+    borderTopColor: '#2A2E37',
+    borderLeftColor: '#2A2E37',
+    borderBottomColor: '#2A2E37',
+    borderRightColor: '#2A2E37',
   },
   treinoTitle: {
     fontSize: 16,
@@ -659,7 +662,7 @@ const styles = StyleSheet.create({
     color: '#aaa',
     marginTop: 4, // Adiciona espaço abaixo do nome do exercício
   },
-    // Goal Difference Card
+  // Goal Difference Card
   goalDiffCard: {
     borderRadius: 12,
     padding: 15,

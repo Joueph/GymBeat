@@ -189,3 +189,24 @@ export const rejectFriendRequest = async (currentUserId: string, requesterId: st
     throw new Error("Não foi possível rejeitar o pedido de amizade.");
   }
 };
+
+/**
+ * Concede um período de teste gratuito ao usuário.
+ * Define o campo `premiumUntil` para a data atual + dias especificados.
+ */
+export const grantFreeTrial = async (uid: string, days: number = 14) => {
+  if (!uid) return;
+  try {
+    const userRef = doc(db, `users/${uid}`);
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + days);
+
+    await updateDoc(userRef, {
+      premiumUntil: futureDate.toISOString()
+    });
+    console.log(`Trial gratuito de ${days} dias concedido para: ${uid}`);
+  } catch (error) {
+    console.error("Erro ao conceder trial gratuito:", error);
+    throw error;
+  }
+};

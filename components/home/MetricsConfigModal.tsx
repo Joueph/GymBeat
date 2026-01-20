@@ -5,8 +5,8 @@ import { Modal, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, Touchabl
 type MetricsConfigModalProps = {
     visible: boolean;
     onClose: () => void;
-    config: { key: string; visible: boolean; fullWidth: boolean }[];
-    onSaveConfig: (newConfig: { key: string; visible: boolean; fullWidth: boolean }[]) => void;
+    config: { key: string; visible: boolean; fullWidth: boolean; graphType?: 'bar' | 'line' }[];
+    onSaveConfig: (newConfig: { key: string; visible: boolean; fullWidth: boolean; graphType?: 'bar' | 'line' }[]) => void;
 };
 
 const METRIC_LABELS: { [key: string]: { label: string } } = {
@@ -35,6 +35,12 @@ export const MetricsConfigModal: React.FC<MetricsConfigModalProps> = ({ visible,
         setLocalConfig(newConfig);
     };
 
+    const handleToggleGraphType = (index: number, type: 'bar' | 'line') => {
+        const newConfig = [...localConfig];
+        newConfig[index] = { ...newConfig[index], graphType: type };
+        setLocalConfig(newConfig);
+    };
+
     const handleSave = () => {
         onSaveConfig(localConfig);
         onClose();
@@ -60,38 +66,62 @@ export const MetricsConfigModal: React.FC<MetricsConfigModalProps> = ({ visible,
                 <ScrollView style={styles.configContainer}>
                     {localConfig.map((item, index) => {
                         const label = METRIC_LABELS[item.key]?.label || item.key;
+                        const graphType = item.graphType || 'bar';
 
                         return (
-                            <View key={item.key} style={styles.configRow}>
-                                <View style={styles.labelContainer}>
-                                    <Text style={styles.labelText}>{label}</Text>
-                                </View>
+                            <View key={item.key} style={styles.configContainerItem}>
+                                <View style={styles.configRow}>
+                                    <View style={styles.labelContainer}>
+                                        <Text style={styles.labelText}>{label}</Text>
+                                    </View>
 
-                                <View style={styles.controlsContainer}>
-                                    <TouchableOpacity
-                                        style={[styles.sizeButton, item.fullWidth && styles.sizeButtonActive]}
-                                        onPress={() => handleToggleWidth(index)}
-                                    >
-                                        <Ionicons
-                                            name={item.fullWidth ? "square" : "grid"}
-                                            size={16}
-                                            color="#fff"
-                                            style={{ marginRight: 4 }}
+                                    <View style={styles.controlsContainer}>
+                                        <TouchableOpacity
+                                            style={[styles.sizeButton, item.fullWidth && styles.sizeButtonActive]}
+                                            onPress={() => handleToggleWidth(index)}
+                                        >
+                                            <Ionicons
+                                                name={item.fullWidth ? "square" : "grid"}
+                                                size={16}
+                                                color="#fff"
+                                                style={{ marginRight: 4 }}
+                                            />
+                                            <Text style={styles.sizeButtonText}>
+                                                {item.fullWidth ? '1:2' : '1:1'}
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                        <Switch
+                                            trackColor={{ false: "#767577", true: "#3B82F6" }}
+                                            thumbColor={item.visible ? "#ffffff" : "#f4f3f4"}
+                                            ios_backgroundColor="#3e3e3e"
+                                            onValueChange={() => handleToggleVisibility(index)}
+                                            value={item.visible}
+                                            style={{ marginLeft: 10 }}
                                         />
-                                        <Text style={styles.sizeButtonText}>
-                                            {item.fullWidth ? '1:2' : '1:1'}
-                                        </Text>
-                                    </TouchableOpacity>
-
-                                    <Switch
-                                        trackColor={{ false: "#767577", true: "#3B82F6" }}
-                                        thumbColor={item.visible ? "#ffffff" : "#f4f3f4"}
-                                        ios_backgroundColor="#3e3e3e"
-                                        onValueChange={() => handleToggleVisibility(index)}
-                                        value={item.visible}
-                                        style={{ marginLeft: 10 }}
-                                    />
+                                    </View>
                                 </View>
+                                {item.visible && (
+                                    <View style={styles.graphTypeRow}>
+                                        <Text style={styles.subLabelText}>Tipo de gráfico:</Text>
+                                        <View style={styles.graphTypeContainer}>
+                                            <TouchableOpacity
+                                                style={[styles.graphTypeButton, graphType === 'bar' && styles.graphTypeButtonActive]}
+                                                onPress={() => handleToggleGraphType(index, 'bar')}
+                                            >
+                                                <Ionicons name="stats-chart" size={14} color={graphType === 'bar' ? '#fff' : '#888'} style={{ marginRight: 4 }} />
+                                                <Text style={[styles.graphTypeButtonText, graphType === 'bar' && styles.graphTypeButtonTextActive]}>Barras</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[styles.graphTypeButton, graphType === 'line' && styles.graphTypeButtonActive]}
+                                                onPress={() => handleToggleGraphType(index, 'line')}
+                                            >
+                                                <Ionicons name="pulse" size={14} color={graphType === 'line' ? '#fff' : '#888'} style={{ marginRight: 4 }} />
+                                                <Text style={[styles.graphTypeButtonText, graphType === 'line' && styles.graphTypeButtonTextActive]}>Linhas</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                )}
                             </View>
                         );
                     })}
@@ -146,9 +176,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#2A2E37',
     },
     labelContainer: {
         flex: 1,
@@ -192,5 +219,45 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    configContainerItem: {
+        borderBottomWidth: 1,
+        borderBottomColor: '#2A2E37',
+        paddingVertical: 12,
+    },
+    graphTypeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 12,
+        paddingLeft: 4,
+    },
+    subLabelText: {
+        color: '#888',
+        fontSize: 14,
+    },
+    graphTypeContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#111317',
+        borderRadius: 8,
+        padding: 2,
+    },
+    graphTypeButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 6,
+    },
+    graphTypeButtonActive: {
+        backgroundColor: '#2A2E37',
+    },
+    graphTypeButtonText: {
+        color: '#888',
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    graphTypeButtonTextActive: {
+        color: '#fff',
     },
 });

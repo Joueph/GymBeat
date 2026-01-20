@@ -10,7 +10,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "./authprovider";
 
 import { uploadImageAndGetURL } from '@/services/storageService';
+import { useRouter } from "expo-router"; // Ensure useRouter is imported
 import { ActivityCalendar } from '../components/ActivityCalendar';
+import { usePremiumStatus } from "../hooks/usePremiumStatus"; // IMPORT HOOK
 import { Usuario } from "../models/usuario";
 import { getLogsByUsuarioId } from "../services/logService";
 import { cancelNotification, scheduleNotification } from "../services/notificationService";
@@ -76,6 +78,8 @@ export default function PerfilScreen() {
   const [isSettingsModalVisible, setSettingsModalVisible] = useState(false); // New state for the settings modal
   const [loggedDays, setLoggedDays] = useState<Set<string>>(new Set());
   const navigation = useNavigation();
+  const router = useRouter(); // Initialize router
+  const { isPremium } = usePremiumStatus(); // Get premium status
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -335,6 +339,28 @@ export default function PerfilScreen() {
         <Text style={styles.emailText}>{user?.email}</Text>
 
         {/* Exibe o peso mais recente do histórico */}
+
+
+        {/* SUBSCRIPTION CARD */}
+        <TouchableOpacity
+          style={[styles.subscriptionCard, isPremium ? styles.subCardPro : styles.subCardFree]}
+          onPress={() => router.push('/customer-center')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.subCardContent}>
+            <View>
+              <Text style={styles.subCardTitle}>Minha Assinatura</Text>
+              <Text style={styles.subCardStatus}>
+                {isPremium ? 'GymBeat Pro Ativo ✨' : 'Plano Gratuito'}
+              </Text>
+            </View>
+            <FontAwesome5 name={isPremium ? "crown" : "arrow-right"} size={20} color={isPremium ? "#FFD700" : "#ccc"} />
+          </View>
+          <Text style={styles.subCardFooter}>
+            {isPremium ? 'Toque para gerenciar sua assinatura' : 'Toque para conhecer os planos Premium'}
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.widgetsContainer}>
           <View style={styles.widget}>
             <Text style={styles.widgetValue}>
@@ -352,7 +378,7 @@ export default function PerfilScreen() {
 
         <ActivityCalendar loggedDays={loggedDays} />
 
-      </ScrollView>
+      </ScrollView >
 
       <Modal
         animationType="slide"
@@ -472,7 +498,7 @@ export default function PerfilScreen() {
           />
         </SafeAreaView>
       </Modal>
-    </View>
+    </View >
   );
 }
 
@@ -639,5 +665,43 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     fontSize: 24, fontWeight: "bold", color: "#fff"
+  },
+  subscriptionCard: {
+    width: '100%',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 10, // Adjusted margin to sit nicely above widgets
+    borderWidth: 1,
+  },
+  subCardPro: {
+    backgroundColor: '#1E1E1E',
+    borderColor: '#DAA520',
+  },
+  subCardFree: {
+    backgroundColor: '#141414',
+    borderColor: '#333',
+  },
+  subCardContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  subCardTitle: {
+    color: '#aaa',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  subCardStatus: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  subCardFooter: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 5,
   },
 });

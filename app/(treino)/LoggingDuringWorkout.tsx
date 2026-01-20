@@ -114,6 +114,7 @@ const LoggedExerciseCard = ({
   onReorder,
   onOpenNotes,
   onSubstitute,
+  allUserLogs,
 }: {
   item: LoggedExercise;
   onSeriesChange: (newSeries: SerieEdit[]) => void;
@@ -134,6 +135,7 @@ const LoggedExerciseCard = ({
   onReorder: () => void;
   onOpenNotes: () => void;
   onSubstitute: () => void;
+  allUserLogs: Log[];
 }) => {
   const [isDetailModalVisible, setDetailModalVisible] = useState(false);
   const [isRepDrawerVisible, setIsRepDrawerVisible] = useState(false);
@@ -611,6 +613,7 @@ const LoggedExerciseCard = ({
         visible={isDetailModalVisible}
         onClose={() => setDetailModalVisible(false)}
         exercise={item}
+        allUserLogs={allUserLogs}
       />
     </>
   );
@@ -940,16 +943,23 @@ export default function LoggingDuringWorkoutScreen() {
     const loadWorkout = async () => {
       if (!user) return;
 
+      let capturedWorkoutName = 'Treino';
+
       const cachedLog = await getCachedActiveWorkoutLog();
 
       const isMatchingLogId = logId && cachedLog?.id === logId;
-      const isMatchingTreinoId = treinoId && cachedLog?.treino?.id === treinoId;
+      // Use loose equality for safety and ensure IDs are strings for comparison
+      const isMatchingTreinoId = treinoId && cachedLog?.treino?.id && String(cachedLog.treino.id) === String(treinoId);
+      // Also check if we are just opening the "current" workout without specific ID (or if widget sent ID but it matches active)
+      const isActiveIsTarget = cachedLog && (isMatchingLogId || isMatchingTreinoId);
       const isResumeFreeWorkout = !treinoId && !logId && cachedLog;
 
-      if (cachedLog && (isMatchingLogId || isMatchingTreinoId || isResumeFreeWorkout)) {
+      if (isActiveIsTarget || isResumeFreeWorkout) {
         console.log('[LoggingDuringWorkout] Resuming from cache:', cachedLog.id);
+        const name = String(cachedLog.nomeTreino || 'Treino');
         setLoggedExercises(cachedLog.exercicios || []);
-        setWorkoutName(String(cachedLog.nomeTreino || 'Treino'));
+        setWorkoutName(name);
+        capturedWorkoutName = name;
         setStartTime(toDate(cachedLog.horarioInicio));
         setTotalLoad(cachedLog.cargaAcumulada || 0);
         setActiveLogId(cachedLog.id);
@@ -985,6 +995,7 @@ export default function LoggingDuringWorkoutScreen() {
           }));
           setLoggedExercises(exercisesWithState);
           setWorkoutName(fetchedTreino.nome);
+          capturedWorkoutName = fetchedTreino.nome;
           setStartTime(new Date());
           setActiveLogId(`structured-workout-${Date.now()}`);
           setWorkoutOwnerId(fetchedTreino.usuarioId); // Salva o dono do treino
@@ -996,6 +1007,7 @@ export default function LoggingDuringWorkoutScreen() {
         setStartTime(new Date());
         setLoggedExercises([]);
         setWorkoutName('Treino Livre');
+        capturedWorkoutName = 'Treino Livre';
         setWorkoutOwnerId(user.id); // Treino livre pertence ao usuário atual
       }
 
@@ -1009,9 +1021,29 @@ export default function LoggingDuringWorkoutScreen() {
           setWorkoutScreenType(profile.workoutScreenType);
         }
       });
+
+      // Start Live Activity if not exists
+      if (Platform.OS === 'ios') {
+        const activities = await NotificationsLiveActivity.listActivities();
+        if (activities.length === 0) {
+          const timestamp = Date.now() + (60 * 60 * 1000); // 1 hour default deadline
+
+          await NotificationsLiveActivity.startActivity(
+            timestamp,
+            capturedWorkoutName,
+            1, // Set 1
+            0, // Total sets unknown or 0 for now
+            "-", // Weight
+            "-", // Reps
+            0 // Dropset
+          );
+        }
+      }
     };
 
-    loadWorkout();
+    if (user) {
+      loadWorkout();
+    }
   }, [user, treinoId, logId]);
 
   // Efeito para buscar o peso do usuário
@@ -1461,6 +1493,7 @@ export default function LoggingDuringWorkoutScreen() {
                   return (
                     <LoggedExerciseCard
                       item={item}
+                      allUserLogs={userLogs}
                       userWeight={userWeight}
                       exerciseIndex={index} // Pass correct index
                       onSeriesChange={(newSeries) =>

@@ -28,6 +28,7 @@ export interface Usuario {
   photoURL?: string;
   lastTrained?: Date; // Timestamp do último treino
   isPro?: boolean; // Indica se o usuário é PRO
+  premiumUntil?: string; // Data ISO String até quando o usuário tem acesso premium (ex: trial)
   hasTrainedToday?: boolean;
   streakGoal?: number; // Meta de treinos por semana para a sequência (streak)
   weeksStreakGoal?: number; // Meta de semanas seguidas de treino

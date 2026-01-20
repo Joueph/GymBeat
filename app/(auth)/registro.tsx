@@ -18,6 +18,7 @@ import {
   FlatList,
   Image,
   Keyboard,
+  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -27,9 +28,13 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import RevenueCatUI from 'react-native-purchases-ui';
 import Animated, { FadeInUp, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { NumberSlider } from '../../components/NumberSlider';
 import { OnboardingOption } from '../../components/Onboarding/onboardingOptions'; // Importar o novo componente
+import { FreeTrialModal } from '../../components/Paywall/FreeTrialModal';
+import { PremiumWalkthroughModal } from '../../components/Paywall/PremiumWalkthroughModal';
+import { useRevenueCat } from '../../components/providers/RevenueCatProvider';
 import { auth } from "../../firebaseconfig";
 import { EstatisticasOnboarding } from '../../models/EstatisticasOnboarding'; // Importar o Model
 import { FichaModelo } from '../../models/fichaModelo';
@@ -43,7 +48,7 @@ import {
 } from '../../services/onboardingService'; // Importar o Service
 import { uploadImageAndGetURL } from '../../services/storageService';
 import { DiaSemana, getTreinosModelosByIds } from '../../services/treinoService';
-import { createUserProfileDocument } from "../../userService";
+import { createUserProfileDocument, grantFreeTrial } from "../../userService";
 
 GoogleSignin.configure({
   webClientId: '418244836174-0e2ch7p0rjdg58d1hcghn135munqat75.apps.googleusercontent.com',
@@ -151,6 +156,11 @@ export default function CadastroScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [isStarting, setIsStarting] = useState(false); // Novo estado para o botão "Vamos lá!"
+
+  const [showFreeTrialModal, setShowFreeTrialModal] = useState(false);
+  const [showPremiumWalkthrough, setShowPremiumWalkthrough] = useState(false);
+  const [showPaywall, setShowPaywall] = useState(false);
+  const { isPro } = useRevenueCat();
 
   // --- Refs para o carrossel de metas ---
   const flatListRef = useRef<FlatList>(null);
@@ -347,24 +357,8 @@ export default function CadastroScreen() {
     // que tudo seja salvo.
 
     if (onboardingStep === 16) { // Ao sair da tela de peso
-      // Avança para a tela de processamento
-      setOnboardingStep(s => s + 1);
-      // Inicia a recomendação em background
-      handleRecommendation();
-      setOnboardingStep(17); // Vai para "Já possui ficha?"
-      return;
-    }
-
-
-    // Esta lógica agora executa IMEDIATAMENTE, sem esperar o salvamento
-    // Lógica de navegação após "Deseja recomendação?" (step 18)
-    if (onboardingStep === 18) {
-      if (onboardingData.desejaFichaRecomendada) {
-        setOnboardingStep(19); // Vai para a tela de processamento
-        handleRecommendation(); // Inicia a recomendação AQUI
-      } else {
-        setOnboardingStep(21); // Pula para a tela de nome/foto
-      }
+      // Avança para a tela de Nome (Pula recomendação de treino)
+      setOnboardingStep(21);
       return;
     }
     if (onboardingStep < TOTAL_FORM_STEPS) {
@@ -483,18 +477,8 @@ export default function CadastroScreen() {
       }
 
       if (onboardingStep === 21) { // Vindo da tela de nome
-        // Se o usuário pulou a recomendação, volta para a pergunta correspondente
-        if (onboardingData.possuiFicha) {
-          setOnboardingStep(17); // Volta para "Já possui ficha?"
-          return;
-        }
-        if (onboardingData.desejaFichaRecomendada === false) {
-          setOnboardingStep(18); // Volta para "Deseja recomendação?"
-          return;
-        }
-
-        // Volta para a tela de recomendação
-        setOnboardingStep(20);
+        // Volta para a tela de Peso (Pula recomendação de treino)
+        setOnboardingStep(16);
         return;
       }
       // --- FIM NOVA LÓGICA CONDICIONAL ---
@@ -632,8 +616,9 @@ export default function CadastroScreen() {
         adicionouFotoPerfil: !!photoURI || !!finalPhotoURL,
       });
 
-      await finalizarOnboarding();
 
+      // VERIFICAÇÃO DE PREMIUM / TRIAL
+      // 1. Cria o perfil
       await createUserProfileDocument(user, {
         nome: finalNome,
         isPro: false,
@@ -649,6 +634,18 @@ export default function CadastroScreen() {
         possuiEquipamentosCasa: onboardingData.possuiEquipamentosCasa === undefined ? null : onboardingData.possuiEquipamentosCasa,
         problemasParaTreinar: onboardingData.problemasParaTreinar || [],
       });
+
+      // 2. Lógica pós-perfil para decidir o fluxo
+      // Como é cadastro novo, assumimos que não tem trial.
+      // Se tiver RevenueCat PRO (ex: restore purchases detectado antes), passa direto.
+      if (!isPro) {
+        setShowFreeTrialModal(true);
+        // O modal vai chamar o grantFreeTrial e depois navegar
+        return;
+      }
+
+      // Se já é PRO, finaliza direto
+      await finalizarOnboarding();
 
     } catch (error: any) {
       Alert.alert("Erro ao finalizar cadastro", error.message);
@@ -711,9 +708,6 @@ export default function CadastroScreen() {
         adicionouFotoPerfil: !!photoURI,
       });
 
-      // 3. Finaliza o onboarding (salva o horário de registro)
-      await finalizarOnboarding();
-
       // 4. Cria o perfil principal do usuário
       await createUserProfileDocument(currentUser, {
         nome: finalNome,
@@ -733,7 +727,22 @@ export default function CadastroScreen() {
         possuiEquipamentosCasa: onboardingData.possuiEquipamentosCasa === undefined ? null : onboardingData.possuiEquipamentosCasa,
         problemasParaTreinar: onboardingData.problemasParaTreinar || [],
       });
+
+      // 5. Lógica de Trial / Paywall
+      if (!isPro) {
+        // Verifica se usuário JÁ tinha trial (caso de conversão de anônimo que já usou, improvável ser novo mas possível se for re-login)
+        // Na simplificação: SEMPRE oferece trial para cadastro NOVO de email/senha se não for PRO.
+        // Se fosse login existente, checaríamos o premiumUntil no banco.
+        // Mas aqui é Cadastro. Assumimos elegível para trial.
+
+        setIsLoading(false);
+        setShowFreeTrialModal(true);
+        return;
+      }
+
+      await finalizarOnboarding();
       setIsLoading(false);
+
 
     } catch (error: any) {
       setIsLoading(false);
@@ -961,7 +970,6 @@ export default function CadastroScreen() {
 
       case 8: // NOVO STEP: "Onde você costuma treinar?" (Onboarding 12.png)
         const localOptions = [
-          { key: 'Em casa', text: 'Em casa', icon: 'home-outline' },
           { key: 'Na academia', text: 'Na academia', icon: 'barbell-outline' }, // Usei barbell, ajuste se tiver ícone melhor
         ] as const;
 
@@ -1567,6 +1575,59 @@ export default function CadastroScreen() {
         )}
 
       </View>
+      {/* Free Trial Modal */}
+      <FreeTrialModal
+        visible={showFreeTrialModal}
+        isLoading={isLoading}
+        onRedeem={async () => {
+          if (!auth.currentUser) return;
+          setIsLoading(true);
+          try {
+            await grantFreeTrial(auth.currentUser.uid, 14);
+            // await finalizarOnboarding(); // MOVED TO WALKTHROUGH
+            // Close trial modal and open walkthrough
+            setShowFreeTrialModal(false);
+            setShowPremiumWalkthrough(true);
+          } catch (e) {
+            console.error(e);
+            Alert.alert("Erro", "Não foi possível ativar o trial.");
+            setShowFreeTrialModal(false);
+          } finally {
+            setIsLoading(false);
+          }
+        }}
+      />
+
+      {/* Premium Features Walkthrough */}
+      <PremiumWalkthroughModal
+        visible={showPremiumWalkthrough}
+        onComplete={async () => {
+          setShowPremiumWalkthrough(false);
+          try {
+            await finalizarOnboarding();
+          } catch (e) {
+            console.error("Error finalizing onboarding", e);
+            // Fallback navigation if needed or let interceptors handle
+          }
+        }}
+      />
+
+      {/* RevenueCat Paywall */}
+      <Modal visible={showPaywall} animationType="slide">
+        <RevenueCatUI.Paywall
+          onPurchaseCompleted={async () => {
+            setShowPaywall(false);
+            await finalizarOnboarding();
+          }}
+          onRestoreCompleted={async ({ customerInfo }) => {
+            if (customerInfo.entitlements.active['GymBeat Pro']) {
+              setShowPaywall(false);
+              await finalizarOnboarding();
+            }
+          }}
+        />
+      </Modal>
+
     </SafeAreaView>
   );
 

@@ -1,5 +1,6 @@
 
 import { useAuth } from '@/app/authprovider';
+import { usePremiumStatus } from '@/hooks/usePremiumStatus';
 import { getLogsByUsuarioId } from '@/services/logService';
 import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -42,6 +43,7 @@ export const ExerciseNotesModal = ({
     onSaveNote,
 }: ExerciseNotesModalProps) => {
     const { user } = useAuth();
+    const { isPremium } = usePremiumStatus();
     const [note, setNote] = useState(currentNote);
     const [history, setHistory] = useState<NoteHistoryItem[]>([]);
     const [loading, setLoading] = useState(false);
@@ -54,7 +56,7 @@ export const ExerciseNotesModal = ({
         if (visible && user?.id && exerciseId) {
             loadHistory();
         }
-    }, [visible, user, exerciseId]);
+    }, [visible, user, exerciseId, isPremium]);
 
     const loadHistory = async () => {
         if (!user?.id) return;
@@ -83,7 +85,12 @@ export const ExerciseNotesModal = ({
 
             // Sort by date descending
             notesList.sort((a, b) => b.date.getTime() - a.date.getTime());
-            setHistory(notesList);
+
+            if (!isPremium) {
+                setHistory(notesList.slice(0, 5));
+            } else {
+                setHistory(notesList);
+            }
         } catch (error) {
             console.error("Failed to load exercise history", error);
         } finally {

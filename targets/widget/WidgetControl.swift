@@ -3,6 +3,7 @@ import SwiftUI
 import WidgetKit
 
 // Adicione 'public' na struct
+@available(iOS 18.0, *)
 public struct widgetControl: ControlWidget {
     static let kind: String = "com.developer.example.widget"
 
@@ -28,6 +29,7 @@ public struct widgetControl: ControlWidget {
     }
 }
 
+@available(iOS 18.0, *)
 extension widgetControl {
     struct Value {
         var isRunning: Bool
@@ -46,6 +48,7 @@ extension widgetControl {
     }
 }
 
+@available(iOS 18.0, *)
 struct TimerConfiguration: ControlConfigurationIntent {
     static let title: LocalizedStringResource = "Timer Name Configuration"
 
@@ -53,6 +56,7 @@ struct TimerConfiguration: ControlConfigurationIntent {
     var timerName: String
 }
 
+@available(iOS 16.0, *)
 struct StartTimerIntent: SetValueIntent {
     static let title: LocalizedStringResource = "Start a timer"
 

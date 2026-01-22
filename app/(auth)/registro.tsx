@@ -30,6 +30,7 @@ import {
 } from 'react-native';
 import RevenueCatUI from 'react-native-purchases-ui';
 import Animated, { FadeInUp, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { FeedbackToast } from '../../components/FeedbackToast'; // Import FeedbackToast
 import { NumberSlider } from '../../components/NumberSlider';
 import { OnboardingOption } from '../../components/Onboarding/onboardingOptions'; // Importar o novo componente
 import { FreeTrialModal } from '../../components/Paywall/FreeTrialModal';
@@ -135,7 +136,7 @@ export default function CadastroScreen() {
   const [isRecommending, setIsRecommending] = useState(false);
   const [recommendationProgress, setRecommendationProgress] = useState(0);
   const [acceptedFicha, setAcceptedFicha] = useState(false);
-  const [onboardingData, setOnboardingData] = useState<Partial<EstatisticasOnboarding>>({ problemasParaTreinar: [] });
+  const [onboardingData, setOnboardingData] = useState<Partial<EstatisticasOnboarding> & { referralCode?: string }>({ problemasParaTreinar: [] });
   // -------------------------------
 
   // Dados do usuário (antigos - vamos migrar o que for do onboarding para 'onboardingData')
@@ -161,6 +162,48 @@ export default function CadastroScreen() {
   const [showPremiumWalkthrough, setShowPremiumWalkthrough] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const { isPro } = useRevenueCat();
+
+  // Toast State
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastType, setToastType] = useState<'success' | 'failure'>('success');
+  const [toastTitle, setToastTitle] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+  const [verifyingCode, setVerifyingCode] = useState(false);
+
+  const showToast = (type: 'success' | 'failure', title: string, message: string) => {
+    setToastType(type);
+    setToastTitle(title);
+    setToastMessage(message);
+    setToastVisible(true);
+  };
+
+  const handleVerifyCode = async () => {
+    if (!onboardingData.referralCode || !onboardingData.referralCode.trim()) {
+      showToast('failure', 'Código Inválido', 'Por favor, insira um código para verificar.');
+      return;
+    }
+    setVerifyingCode(true);
+    Keyboard.dismiss();
+    try {
+      const { functions } = require('../../firebaseconfig');
+      const { httpsCallable } = require('firebase/functions');
+      const activateAffiliateCode = httpsCallable(functions, 'activateAffiliateCode');
+
+      // We are just verifying if it exists by trying to activate it or check it.
+      // Since the user is likely anonymous or not fully created, we might face issues if activate relies on a full user profile?
+      // But typically affiliate codes can be checked or attached to the current auth user (anonymous).
+      // If activateAffiliateCode works for anonymous users, great.
+      const result = await activateAffiliateCode({ code: onboardingData.referralCode });
+
+      showToast('success', 'Código Válido!', `O código foi aplicado com sucesso.`);
+    } catch (error: any) {
+      console.error("Verification error:", error);
+      showToast('failure', 'Código Inválido', error.message || "Não foi possível validar o código.");
+    } finally {
+      setVerifyingCode(false);
+    }
+  };
+
 
   // --- Refs para o carrossel de metas ---
   const flatListRef = useRef<FlatList>(null);
@@ -616,6 +659,19 @@ export default function CadastroScreen() {
         adicionouFotoPerfil: !!photoURI || !!finalPhotoURL,
       });
 
+      // Tenta ativar o código de afiliado se houver
+      if (onboardingData.referralCode) {
+        try {
+          const { functions } = require('../../firebaseconfig');
+          const { httpsCallable } = require('firebase/functions');
+          const activateAffiliateCode = httpsCallable(functions, 'activateAffiliateCode');
+          await activateAffiliateCode({ code: onboardingData.referralCode });
+          console.log("Código de afiliado ativado com sucesso:", onboardingData.referralCode);
+        } catch (err) {
+          console.warn("Falha ao ativar código de afiliado:", err);
+          // Não bloqueia o fluxo, apenas loga
+        }
+      }
 
       // VERIFICAÇÃO DE PREMIUM / TRIAL
       // 1. Cria o perfil
@@ -729,6 +785,19 @@ export default function CadastroScreen() {
       });
 
       // 5. Lógica de Trial / Paywall
+
+      // Tenta ativar o código de afiliado se houver (para cadastro Email/Senha)
+      if (onboardingData.referralCode) {
+        try {
+          const { functions } = require('../../firebaseconfig');
+          const { httpsCallable } = require('firebase/functions');
+          const activateAffiliateCode = httpsCallable(functions, 'activateAffiliateCode');
+          await activateAffiliateCode({ code: onboardingData.referralCode });
+          console.log("Código de afiliado ativado com sucesso:", onboardingData.referralCode);
+        } catch (err) {
+          console.warn("Falha ao ativar código de afiliado:", err);
+        }
+      }
       if (!isPro) {
         // Verifica se usuário JÁ tinha trial (caso de conversão de anônimo que já usou, improvável ser novo mas possível se for re-login)
         // Na simplificação: SEMPRE oferece trial para cadastro NOVO de email/senha se não for PRO.
@@ -821,6 +890,8 @@ export default function CadastroScreen() {
           </>
         );
 
+
+
       case 1: // NOVO STEP: Onde ouviu falar?
         const appStoreOption = Platform.select({
           ios: { key: 'App Store', text: 'App Store', icon: 'logo-apple-appstore' },
@@ -854,6 +925,37 @@ export default function CadastroScreen() {
                 />
               ))}
             </View>
+
+            {/* Input Condicional para Código de Indicação */}
+            {onboardingData.ondeOuviuGymBeat === 'Indicação' && (
+              <Animated.View entering={FadeInUp.duration(400)} style={{ marginTop: 20 }}>
+                <Text style={styles.label}>Possui um código de convite?</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <TextInput
+                    style={[styles.input, { flex: 1 }]}
+                    placeholder="DIGITE O CÓDIGO"
+                    placeholderTextColor="#777"
+                    autoCapitalize="characters"
+                    value={onboardingData.referralCode || ''}
+                    onChangeText={(text) => setOnboardingData(prev => ({ ...prev, referralCode: text.toUpperCase() }))}
+                  />
+                  <TouchableOpacity
+                    style={{
+                      backgroundColor: '#1cb0f6',
+                      padding: 12,
+                      borderRadius: 8,
+                      height: 50,
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}
+                    onPress={handleVerifyCode}
+                    disabled={verifyingCode}
+                  >
+                    {verifyingCode ? <ActivityIndicator size="small" color="#fff" /> : <Text style={{ color: '#fff', fontWeight: 'bold' }}>Verificar</Text>}
+                  </TouchableOpacity>
+                </View>
+              </Animated.View>
+            )}
           </ScrollView>
         );
 
@@ -1518,117 +1620,126 @@ export default function CadastroScreen() {
 
   // Layout para todos os outros passos do formulário (1-17+)
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.stepContainer}>
+    <View style={{ flex: 1, backgroundColor: "#030405" }}>
+      <FeedbackToast
+        visible={toastVisible}
+        type={toastType}
+        title={toastTitle}
+        message={toastMessage}
+        onHide={() => setToastVisible(false)}
+      />
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.stepContainer}>
 
-        {/* Cabeçalho com Progresso e Voltar */}
-        <View style={styles.topNavContainer}>
-          <TouchableOpacity style={styles.navButton} onPress={handleBack}>
-            {/* O botão de voltar aparece em todos os steps > 0 */}
-            <Ionicons name="arrow-back" size={18} color="#fff" />
-          </TouchableOpacity>
+          {/* Cabeçalho com Progresso e Voltar */}
+          <View style={styles.topNavContainer}>
+            <TouchableOpacity style={styles.navButton} onPress={handleBack}>
+              {/* O botão de voltar aparece em todos os steps > 0 */}
+              <Ionicons name="arrow-back" size={18} color="#fff" />
+            </TouchableOpacity>
 
-          <ProgressBar progress={progress} />
+            <ProgressBar progress={progress} />
 
-          {/* View vazia para manter a barra de progresso centralizada */}
-        </View>
+            {/* View vazia para manter a barra de progresso centralizada */}
+          </View>
 
-        {/* Container Principal do Conteúdo (sem ScrollView) */}
-        <View style={styles.contentContainer}>
-          {/* Título e Subtítulo */}
-          {title && <Text style={styles.mainTitle}>{title}</Text>}
-          {subtitle && <Text style={styles.featureSubtitle}>{subtitle}</Text>}
+          {/* Container Principal do Conteúdo (sem ScrollView) */}
+          <View style={styles.contentContainer}>
+            {/* Título e Subtítulo */}
+            {title && <Text style={styles.mainTitle}>{title}</Text>}
+            {subtitle && <Text style={styles.featureSubtitle}>{subtitle}</Text>}
 
-          {/* Renderiza o conteúdo da etapa atual (opções, inputs, etc.) */}
-          {renderStepContent()}
-        </View>
+            {/* Renderiza o conteúdo da etapa atual (opções, inputs, etc.) */}
+            {renderStepContent()}
+          </View>
 
-        {/* Rodapé com Botão "Avançar" */}
-        {/* Oculta o botão no step 0 (tela de welcome) 
+          {/* Rodapé com Botão "Avançar" */}
+          {/* Oculta o botão no step 0 (tela de welcome) 
           e no step 17 (tela de credenciais), pois ele tem seu próprio botão "Finalizar Cadastro"
         */}
-        {onboardingStep > 0 && ![22].includes(onboardingStep) && (
-          <View style={styles.footer}>
-            {/* Mostra o botão na etapa 17 apenas quando o progresso for 100%, caso contrário, não mostra nada no rodapé. */}
-            {onboardingStep === 19 && recommendationProgress < 1 ? null : (
-              <>
-                {onboardingStep === 20 && (
-                  <TouchableOpacity style={styles.secondaryButton} onPress={() => { setAcceptedFicha(false); handleNext(); }}>
-                    <Text style={styles.secondaryButtonText}>Quero criar meu próprio treino</Text>
+          {onboardingStep > 0 && ![22].includes(onboardingStep) && (
+            <View style={styles.footer}>
+              {/* Mostra o botão na etapa 17 apenas quando o progresso for 100%, caso contrário, não mostra nada no rodapé. */}
+              {onboardingStep === 19 && recommendationProgress < 1 ? null : (
+                <>
+                  {onboardingStep === 20 && (
+                    <TouchableOpacity style={styles.secondaryButton} onPress={() => { setAcceptedFicha(false); handleNext(); }}>
+                      <Text style={styles.secondaryButtonText}>Quero criar meu próprio treino</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[styles.nextButton, !stepComplete && styles.nextButtonDisabled]}
+                    onPress={handleNext}
+                    disabled={!stepComplete}
+                  >
+                    <Text style={styles.nextButtonText}>
+                      {onboardingStep === TOTAL_FORM_STEPS ? "Finalizar Cadastro" :
+                        [5, 6, 7].includes(onboardingStep) ? "Eu vou conseguir" :
+                          onboardingStep === 20 ? "Usar este treino" :
+                            "Próximo"}
+                    </Text>
                   </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[styles.nextButton, !stepComplete && styles.nextButtonDisabled]}
-                  onPress={handleNext}
-                  disabled={!stepComplete}
-                >
-                  <Text style={styles.nextButtonText}>
-                    {onboardingStep === TOTAL_FORM_STEPS ? "Finalizar Cadastro" :
-                      [5, 6, 7].includes(onboardingStep) ? "Eu vou conseguir" :
-                        onboardingStep === 20 ? "Usar este treino" :
-                          "Próximo"}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        )}
+                </>
+              )}
+            </View>
+          )}
 
-      </View>
-      {/* Free Trial Modal */}
-      <FreeTrialModal
-        visible={showFreeTrialModal}
-        isLoading={isLoading}
-        onRedeem={async () => {
-          if (!auth.currentUser) return;
-          setIsLoading(true);
-          try {
-            await grantFreeTrial(auth.currentUser.uid, 14);
-            // await finalizarOnboarding(); // MOVED TO WALKTHROUGH
-            // Close trial modal and open walkthrough
-            setShowFreeTrialModal(false);
-            setShowPremiumWalkthrough(true);
-          } catch (e) {
-            console.error(e);
-            Alert.alert("Erro", "Não foi possível ativar o trial.");
-            setShowFreeTrialModal(false);
-          } finally {
-            setIsLoading(false);
-          }
-        }}
-      />
-
-      {/* Premium Features Walkthrough */}
-      <PremiumWalkthroughModal
-        visible={showPremiumWalkthrough}
-        onComplete={async () => {
-          setShowPremiumWalkthrough(false);
-          try {
-            await finalizarOnboarding();
-          } catch (e) {
-            console.error("Error finalizing onboarding", e);
-            // Fallback navigation if needed or let interceptors handle
-          }
-        }}
-      />
-
-      {/* RevenueCat Paywall */}
-      <Modal visible={showPaywall} animationType="slide">
-        <RevenueCatUI.Paywall
-          onPurchaseCompleted={async () => {
-            setShowPaywall(false);
-            await finalizarOnboarding();
-          }}
-          onRestoreCompleted={async ({ customerInfo }) => {
-            if (customerInfo.entitlements.active['GymBeat Pro']) {
-              setShowPaywall(false);
-              await finalizarOnboarding();
+        </View>
+        {/* Free Trial Modal */}
+        <FreeTrialModal
+          visible={showFreeTrialModal}
+          isLoading={isLoading}
+          onRedeem={async () => {
+            if (!auth.currentUser) return;
+            setIsLoading(true);
+            try {
+              await grantFreeTrial(auth.currentUser.uid, 14);
+              // await finalizarOnboarding(); // MOVED TO WALKTHROUGH
+              // Close trial modal and open walkthrough
+              setShowFreeTrialModal(false);
+              setShowPremiumWalkthrough(true);
+            } catch (e) {
+              console.error(e);
+              Alert.alert("Erro", "Não foi possível ativar o trial.");
+              setShowFreeTrialModal(false);
+            } finally {
+              setIsLoading(false);
             }
           }}
         />
-      </Modal>
 
-    </SafeAreaView>
+        {/* Premium Features Walkthrough */}
+        <PremiumWalkthroughModal
+          visible={showPremiumWalkthrough}
+          onComplete={async () => {
+            setShowPremiumWalkthrough(false);
+            try {
+              await finalizarOnboarding();
+            } catch (e) {
+              console.error("Error finalizing onboarding", e);
+              // Fallback navigation if needed or let interceptors handle
+            }
+          }}
+        />
+
+        {/* RevenueCat Paywall */}
+        <Modal visible={showPaywall} animationType="slide">
+          <RevenueCatUI.Paywall
+            onPurchaseCompleted={async () => {
+              setShowPaywall(false);
+              await finalizarOnboarding();
+            }}
+            onRestoreCompleted={async ({ customerInfo }) => {
+              if (customerInfo.entitlements.active['GymBeat Pro']) {
+                setShowPaywall(false);
+                await finalizarOnboarding();
+              }
+            }}
+          />
+        </Modal>
+
+      </SafeAreaView>
+    </View >
   );
 
 };

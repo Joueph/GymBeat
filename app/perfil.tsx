@@ -12,6 +12,7 @@ import { useAuth } from "./authprovider";
 import { uploadImageAndGetURL } from '@/services/storageService';
 import { useRouter } from "expo-router"; // Ensure useRouter is imported
 import { ActivityCalendar } from '../components/ActivityCalendar';
+import { FeedbackToast } from '../components/FeedbackToast';
 import { usePremiumStatus } from "../hooks/usePremiumStatus"; // IMPORT HOOK
 import { Usuario } from "../models/usuario";
 import { getLogsByUsuarioId } from "../services/logService";
@@ -80,6 +81,47 @@ export default function PerfilScreen() {
   const navigation = useNavigation();
   const router = useRouter(); // Initialize router
   const { isPremium } = usePremiumStatus(); // Get premium status
+  const [isRedeemCodeModalVisible, setRedeemCodeModalVisible] = useState(false);
+  const [redeemCode, setRedeemCode] = useState('');
+  const [redeemLoading, setRedeemLoading] = useState(false);
+
+  // Toast State
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastType, setToastType] = useState<'success' | 'failure'>('success');
+  const [toastTitle, setToastTitle] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+
+  const showToast = (type: 'success' | 'failure', title: string, message: string) => {
+    setToastType(type);
+    setToastTitle(title);
+    setToastMessage(message);
+    setToastVisible(true);
+  };
+
+  const handleRedeemCode = async () => {
+    if (!redeemCode.trim()) return;
+    setRedeemLoading(true);
+    try {
+      // Dynamic require to avoid initialization issues if not used
+      const { functions } = require('../../firebaseconfig');
+      const { httpsCallable } = require('firebase/functions');
+      const activateAffiliateCode = httpsCallable(functions, 'activateAffiliateCode');
+      const result = await activateAffiliateCode({ code: redeemCode });
+
+      showToast('success', 'Sucesso', `Código ${(result.data as any).code} ativado com sucesso!`);
+      // Wait a bit before closing so user sees the success toast? 
+      // Actually FeedbackToast has a duration. If we close the modal, the toast might disappear if it's inside the modal.
+      // Strategy: Clear code, keep toast visible. User can close modal manually or we delayed close.
+      // Let's just clear the code for now.
+      setRedeemCode('');
+    } catch (error: any) {
+      console.error("Redeem error:", error);
+      showToast('failure', 'Erro', error.message || "Falha ao ativar código.");
+    } finally {
+      setRedeemLoading(false);
+    }
+  };
+
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -376,6 +418,12 @@ export default function PerfilScreen() {
           </View>
         </View>
 
+        {/* botão de resgatar código */}
+        <TouchableOpacity style={styles.redeemButton} onPress={() => setRedeemCodeModalVisible(true)}>
+          <FontAwesome5 name="ticket-alt" size={16} color="#ccc" style={{ marginRight: 8 }} />
+          <Text style={styles.redeemButtonText}>Resgatar Código de Convite</Text>
+        </TouchableOpacity>
+
         <ActivityCalendar loggedDays={loggedDays} />
 
       </ScrollView >
@@ -497,7 +545,46 @@ export default function PerfilScreen() {
             onSettingsChange={handleSettingsChange}
           />
         </SafeAreaView>
+
       </Modal>
+
+      {/* Redeem Code Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={isRedeemCodeModalVisible}
+        onRequestClose={() => setRedeemCodeModalVisible(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          {/* Feedback Toast rendered at Modal Root to overlay correctly */}
+          <FeedbackToast
+            visible={toastVisible}
+            type={toastType}
+            title={toastTitle}
+            message={toastMessage}
+            onHide={() => setToastVisible(false)}
+          />
+          <View style={{ width: '90%', backgroundColor: '#141414', borderRadius: 12, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: '#333' }}>
+            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 15 }}>Resgatar Código</Text>
+            <Text style={{ color: '#ccc', textAlign: 'center', marginBottom: 20 }}>Insira o código de convite do seu influenciador ou parceiro.</Text>
+
+            <TextInput
+              style={[styles.input, { textAlign: 'center' }]}
+              placeholder="W84IT"
+              placeholderTextColor="#555"
+              autoCapitalize="characters"
+              value={redeemCode}
+              onChangeText={(text) => setRedeemCode(text.toUpperCase())}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <Button title="Cancelar" color="#666" onPress={() => setRedeemCodeModalVisible(false)} />
+              <Button title={redeemLoading ? "Verificando..." : "Resgatar"} color="#1cb0f6" onPress={handleRedeemCode} disabled={redeemLoading} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View >
   );
 }
@@ -703,5 +790,18 @@ const styles = StyleSheet.create({
     color: '#888',
     fontSize: 12,
     marginTop: 5,
+  },
+  redeemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 10,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  redeemButtonText: {
+    color: '#ccc',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });

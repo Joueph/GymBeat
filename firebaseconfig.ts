@@ -29,3 +29,7 @@ export const db = initializeFirestore(app, {
 });
 
 export const storage = getStorage(app);
+
+// Inicializa Functions
+import { getFunctions } from 'firebase/functions';
+export const functions = getFunctions(app);

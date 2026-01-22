@@ -40,16 +40,24 @@ export const PostCard = ({ post, currentUserId, onDelete, onLike }: PostCardProp
     const displayPhoto = userProfile?.photoURL || post.userPhotoUrl;
 
     useEffect(() => {
+        // Optimization: Use denormalized data if available to avoid unnecessary (and potentially restricted) DB calls
+        if (post.userName && post.userPhotoUrl) {
+            return;
+        }
+
         const fetchUser = async () => {
             try {
                 const profile = await getUserProfile(usuarioId);
                 setUserProfile(profile);
-            } catch (e) {
-                console.warn("Failed to load user for post", e);
+            } catch (e: any) {
+                // Ignore permission errors as they are expected for non-friends
+                if (e.code !== 'permission-denied') {
+                    console.warn("Failed to load user for post", e);
+                }
             }
         };
         fetchUser();
-    }, [usuarioId]);
+    }, [usuarioId, post.userName, post.userPhotoUrl]);
 
     const handleLike = () => {
         const newLikedState = !isLiked;

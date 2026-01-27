@@ -77,7 +77,7 @@ export default function HomeScreen() {
       router.setParams({ action: '', treinoId: '', fichaId: '' });
 
       router.push({
-        pathname: '/(treino)/LoggingDuringWorkout',
+        pathname: '/(treino)/editarTreino',
         params: {
           treinoId: params.treinoId as string,
           fichaId: params.fichaId as string,

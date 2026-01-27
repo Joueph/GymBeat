@@ -8,6 +8,7 @@ import { MenuProvider } from 'react-native-popup-menu';
 import { KeyboardDismissButton } from '../components/KeyboardDismissButton';
 import { FeedbackProvider } from '../components/providers/FeedbackProvider';
 import { RevenueCatProvider } from '../components/providers/RevenueCatProvider';
+import { OngoingWorkoutFooter } from '../components/treino/OngoingWorkoutFooter'; // Added
 import { TimerProvider } from '../contexts/TimerContext'; // Added
 import { syncExercicios } from '../services/exercicioService';
 import { processQueue } from '../services/synchronizationService';
@@ -151,6 +152,7 @@ export default function RootLayout() {
             <FeedbackProvider>
               <View style={{ flex: 1 }}>
                 <MainNavigation />
+                <OngoingWorkoutFooter />
                 <KeyboardDismissButton />
               </View>
             </FeedbackProvider>

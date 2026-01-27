@@ -16,16 +16,8 @@ interface RevenueCatContextType {
 const RevenueCatContext = createContext<RevenueCatContextType | undefined>(undefined);
 
 const APIKeys = {
-    apple: "appl_ignored_for_now", // Placeholder, will rely on the provided key for testing if platform specific keys not provided
-    google: "goog_ignored_for_now",
-    // The user provided a single key "test_KnXDyEbImhhosGKxUVmpApMrBYx", usually this is platform specific but for now we might use it for one or both if it's a specific test key.
-    // Actually, typically you have one key per platform. 
-    // Given the user provided ONE key "test_KnXDyEbImhhosGKxUVmpApMrBYx", it likely belongs to one platform or is a public key for a specific test environment.
-    // RevenueCat recommends platform specific keys. 
-    // REQUIRED: Please replace with your actual platform-specific keys from RevenueCat dashboard.
-    // For this implementation I will use the *provided* key for both to ensure initialization happens, 
-    // but the user should verify which platform this key is for.
-    common: "test_KnXDyEbImhhosGKxUVmpApMrBYx"
+    apple: "appl_fURGrToceCwOWcGhAjtXTiYcSUh",
+    google: "test_KnXDyEbImhhosGKxUVmpApMrBYx",
 };
 
 export function RevenueCatProvider({ children }: { children: React.ReactNode }) {
@@ -37,9 +29,9 @@ export function RevenueCatProvider({ children }: { children: React.ReactNode }) 
         const init = async () => {
             try {
                 if (Platform.OS === 'ios') {
-                    await Purchases.configure({ apiKey: APIKeys.common }); // Using common key as requested
+                    await Purchases.configure({ apiKey: APIKeys.apple });
                 } else if (Platform.OS === 'android') {
-                    await Purchases.configure({ apiKey: APIKeys.common }); // Using common key as requested
+                    await Purchases.configure({ apiKey: APIKeys.google });
                 }
 
                 const info = await Purchases.getCustomerInfo();

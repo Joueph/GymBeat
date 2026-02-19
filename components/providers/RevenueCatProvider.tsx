@@ -11,6 +11,7 @@ interface RevenueCatContextType {
     isLoaded: boolean;
     purchasePackage: (pack: PurchasesPackage) => Promise<void>;
     restorePurchases: () => Promise<void>;
+    refreshTrialStatus: () => void;
 }
 
 const RevenueCatContext = createContext<RevenueCatContextType | undefined>(undefined);
@@ -52,6 +53,11 @@ export function RevenueCatProvider({ children }: { children: React.ReactNode }) 
     }, []);
 
     const [isTrial, setIsTrial] = useState(false);
+    const [trialVersion, setTrialVersion] = useState(0);
+
+    const refreshTrialStatus = () => {
+        setTrialVersion(v => v + 1);
+    };
 
 
 
@@ -81,7 +87,7 @@ export function RevenueCatProvider({ children }: { children: React.ReactNode }) 
         // Re-check when auth user changes could be added if we had an auth listener here, 
         // but for now on mount or component update is acceptable. 
         // Ideally we would depend on an auth context.
-    }, [customerInfo]); // Re-check when customer info changes (e.g. login/restore)
+    }, [customerInfo, trialVersion]); // Re-check when customer info changes or trial is explicitly refreshed
 
     const isRevenueCatPro = customerInfo?.entitlements.active['GymBeat Pro'] !== undefined;
     const isPro = isRevenueCatPro || isTrial;
@@ -112,7 +118,7 @@ export function RevenueCatProvider({ children }: { children: React.ReactNode }) 
     };
 
     return (
-        <RevenueCatContext.Provider value={{ isPro, customerInfo, currentOffering, isLoaded, purchasePackage, restorePurchases }}>
+        <RevenueCatContext.Provider value={{ isPro, customerInfo, currentOffering, isLoaded, purchasePackage, restorePurchases, refreshTrialStatus }}>
             {children}
         </RevenueCatContext.Provider>
     );

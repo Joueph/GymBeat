@@ -161,7 +161,7 @@ export default function CadastroScreen() {
   const [showFreeTrialModal, setShowFreeTrialModal] = useState(false);
   const [showPremiumWalkthrough, setShowPremiumWalkthrough] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
-  const { isPro, currentOffering } = useRevenueCat();
+  const { isPro, currentOffering, refreshTrialStatus } = useRevenueCat();
 
   // Toast State
   const [toastVisible, setToastVisible] = useState(false);
@@ -1705,7 +1705,8 @@ export default function CadastroScreen() {
             setIsLoading(true);
             try {
               await grantFreeTrial(auth.currentUser.uid, 14);
-              // await finalizarOnboarding(); // MOVED TO WALKTHROUGH
+              // Force the provider to re-check premiumUntil so isPro updates immediately
+              refreshTrialStatus();
               // Close trial modal and open walkthrough
               setShowFreeTrialModal(false);
               setShowPremiumWalkthrough(true);

@@ -160,7 +160,7 @@ export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => 
       console.log('[FichaService] Usando fichas em cache (offline)');
       return cached;
     }
-    throw error; // Ou retornar array vazio se preferir não quebrar a UI
+    return []; // Retorna array vazio para não quebrar a UI offline
   }
 };
 

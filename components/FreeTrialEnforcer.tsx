@@ -11,7 +11,7 @@ export function FreeTrialEnforcer() {
     const [showModal, setShowModal] = useState(false);
     const [showWalkthrough, setShowWalkthrough] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const { isPro } = useRevenueCat();
+    const { isPro, refreshTrialStatus } = useRevenueCat();
     // We access RevenueCat Pro status. 
     // If they are Pro (via sub OR valid premiumUntil), we generally don't show the modal.
     // However, the requirement is: "push the modal in case premiumUntil is empty".
@@ -57,9 +57,8 @@ export function FreeTrialEnforcer() {
         try {
             if (auth.currentUser) {
                 await grantFreeTrial(auth.currentUser.uid, 14);
-                // After granting, the specific screen (and app) will re-render
-                // and `isPro` will become true locally via provider update or next fetch.
-                // We should also close the modal manually to be sure.
+                // Force the provider to re-check premiumUntil so isPro updates immediately
+                refreshTrialStatus();
                 setShowModal(false);
                 setShowWalkthrough(true);
             }

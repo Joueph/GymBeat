@@ -63,10 +63,12 @@ function MainNavigation() {
     if (user && inAuthGroup) {
       // CORREÇÃO: Redireciona para o layout de tabs
       router.replace('/(tabs)');
-    } else if (!user && !inAuthGroup) {
-      router.replace('/(auth)/registro'); // Verifique sua rota de login
+    } else if (!user && !inAuthGroup && isOnline) {
+      // Só redireciona para registro se estiver ONLINE.
+      // Offline, o AuthProvider restaura o usuário do cache.
+      router.replace('/(auth)/registro');
     }
-  }, [user, initialized, segments, router]);
+  }, [user, initialized, segments, router, isOnline]);
 
   // Enquanto não estiver inicializado, não mostre nada.
   // Isso evita "piscar" a tela.

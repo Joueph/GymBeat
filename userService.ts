@@ -2,6 +2,7 @@
 
 import { User } from "firebase/auth";
 // ADICIONADO: deleteField e writeBatch para operações atômicas
+import { deleteUser } from "firebase/auth";
 import {
   arrayRemove,
   collection,
@@ -16,7 +17,7 @@ import {
   where,
   writeBatch
 } from "firebase/firestore";
-import { db } from "./firebaseconfig";
+import { auth, db } from "./firebaseconfig";
 import { Usuario } from "./models/usuario";
 
 import { getCachedUserSession } from "./services/offlineCacheService";
@@ -207,6 +208,46 @@ export const grantFreeTrial = async (uid: string, days: number = 14) => {
     console.log(`Trial gratuito de ${days} dias concedido para: ${uid}`);
   } catch (error) {
     console.error("Erro ao conceder trial gratuito:", error);
+    throw error;
+  }
+};
+
+/**
+ * Exclui a conta do usuário e seus dados associados.
+ */
+export const deleteUserAccount = async (uid: string) => {
+  if (!uid) return;
+
+  try {
+    // 1. Excluir dados do Firestore
+    // Nota: A exclusão de documentos não exclui subcoleções automaticamente no Firestore client-side.
+    // Para uma exclusão completa de subcoleções, seria ideal usar uma Cloud Function.
+    // Aqui faremos o melhor esforço para limpar os dados principais.
+
+    const batch = writeBatch(db);
+
+    const userRef = doc(db, `users/${uid}`);
+    batch.delete(userRef);
+
+    // Tenta excluir perfil público se existir
+    const publicProfileRef = doc(db, `users/${uid}/publicProfile/data`);
+    batch.delete(publicProfileRef);
+
+    // Excluir estatísticas de onboarding
+    const statsRef = doc(db, `estatisticasOnboarding/${uid}`);
+    batch.delete(statsRef);
+
+    await batch.commit();
+
+    // 2. Excluir usuário do Authentication
+    const user = auth.currentUser;
+    if (user) {
+      await deleteUser(user);
+    }
+
+    console.log(`Conta excluída com sucesso: ${uid}`);
+  } catch (error) {
+    console.error("Erro ao excluir conta do usuário:", error);
     throw error;
   }
 };

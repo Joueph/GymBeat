@@ -75,6 +75,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const userDocRef = doc(db, 'users', currentUser.uid);
 
+      // CORREÇÃO: Se offline, NÃO tenta onSnapshot (fica pendurado sem Firestore persistence).
+      // Usa direto o cache do AsyncStorage para não bloquear a inicialização.
+      if (!isOnline) {
+        try {
+          const cachedUser = await getCachedUserSession();
+          if (cachedUser && cachedUser.id === currentUser.uid) {
+            console.log('[Auth] Offline — usando sessão em cache para', currentUser.uid);
+            setUser(cachedUser);
+          } else {
+            console.warn('[Auth] Offline — sem cache compatível para', currentUser.uid);
+            setUser(null);
+          }
+        } catch (e) {
+          console.error('[Auth] Erro ao recuperar cache offline:', e);
+          setUser(null);
+        }
+        setInitialized(true);
+        return;
+      }
+
       firestoreUnsubscribe = onSnapshot(
         userDocRef,
         async (docSnap) => {

@@ -1,8 +1,9 @@
 import * as Notifications from 'expo-notifications';
+import { useRouter } from "expo-router";
 import React, { ReactNode, useEffect, useState } from "react";
-import { Linking, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
 import { TimePickerDrawer } from '../components/TimePickerDrawer';
-import { getUserProfile, updateUserProfile } from '../userService';
+import { deleteUserAccount, getUserProfile, updateUserProfile } from '../userService';
 import { useAuth } from './authprovider';
 // --- Tipos para as Configurações ---
 type PrivacyLevel = 'todos' | 'amigos' | 'ninguem';
@@ -94,19 +95,19 @@ const defaultNotificationSettings: NotificationSettings = {
 };
 
 const defaultPrivacySettings: PrivacySettings = {
-    profileVisibility: 'amigos',
-    weekStreak: 'todos',
-    workoutDays: 'todos',
-    workoutDetails: 'amigos',
-    autoAcceptFriendRequests: false,
+  profileVisibility: 'amigos',
+  weekStreak: 'todos',
+  workoutDays: 'todos',
+  workoutDetails: 'amigos',
+  autoAcceptFriendRequests: false,
 };
 
 interface SettingsPageProps {
-    initialSettings: {
-        notifications: NotificationSettings;
-        privacy: PrivacySettings;
-    };
-    onSettingsChange: (newSettings: { notifications: NotificationSettings; privacy: PrivacySettings }) => void;
+  initialSettings: {
+    notifications: NotificationSettings;
+    privacy: PrivacySettings;
+  };
+  onSettingsChange: (newSettings: { notifications: NotificationSettings; privacy: PrivacySettings }) => void;
 }
 
 const SettingsPage = ({ initialSettings, onSettingsChange }: Partial<SettingsPageProps>) => {
@@ -187,6 +188,46 @@ const SettingsPage = ({ initialSettings, onSettingsChange }: Partial<SettingsPag
     handleSettingsSave({ notifications, privacy: newSettings });
   };
 
+  const { logout } = useAuth();
+  const router = useRouter();
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteAccountPress = () => {
+    Alert.alert(
+      "Confirmar Exclusão",
+      "Tem certeza que deseja excluir sua conta permanentemente? Esta ação não pode ser desfeita e todos os seus dados serão perdidos.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Excluir",
+          style: "destructive",
+          onPress: async () => {
+            if (!user) return;
+            setIsDeleting(true);
+            try {
+              await deleteUserAccount(user.id);
+              await logout();
+              router.replace('/');
+            } catch (error: any) {
+              Alert.alert("Erro", "Não foi possível excluir sua conta. Talvez seja necessário fazer login novamente.");
+            } finally {
+              setIsDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  if (isDeleting) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#030405' }}>
+        <ActivityIndicator size="large" color="#ff4444" />
+        <Text style={{ color: '#fff', marginTop: 20 }}>Excluindo conta...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       {/* Seção de Permissões */}
@@ -221,7 +262,7 @@ const SettingsPage = ({ initialSettings, onSettingsChange }: Partial<SettingsPag
           </TouchableOpacity>
         )}
         <SwitchSetting label="Acabando o tempo do intervalo" isEnabled={notifications.restTimeEnding} onToggle={(v) => handleNotificationChange('restTimeEnding', v)} />
-        
+
         <Text style={styles.subHeader}>Lembretes</Text>
         <SwitchSetting label="Lembrete para tomar creatina" isEnabled={notifications.creatine} onToggle={(v) => handleNotificationChange('creatine', v)} />
         <SwitchSetting label="Lembrete de suplementos proteicos" isEnabled={notifications.protein} onToggle={(v) => handleNotificationChange('protein', v)} />
@@ -238,6 +279,29 @@ const SettingsPage = ({ initialSettings, onSettingsChange }: Partial<SettingsPag
         <PrivacySetting label="Quem pode ver os dias em que treinei" value={privacy.workoutDays} onChange={(v) => handlePrivacyChange('workoutDays', v)} />
         <PrivacySetting label="Quem pode ver detalhes do meu treino" value={privacy.workoutDetails} onChange={(v) => handlePrivacyChange('workoutDetails', v)} />
         <SwitchSetting label="Aceitar pedidos de amizade automaticamente" isEnabled={privacy.autoAcceptFriendRequests} onToggle={(v) => handlePrivacySwitchChange('autoAcceptFriendRequests', v)} />
+      </CollapsibleSection>
+
+      {/* Seção de Perigo (Exclusão de Conta) - Required by Apple Guideline 5.1.1(v) */}
+      <CollapsibleSection title="Zona de Perigo">
+        <TouchableOpacity
+          style={[styles.settingItem, { justifyContent: 'center' }]}
+          onPress={() => {
+            // Implement logic to confirm and delete account
+            // This usually requires a separate function or passing a prop
+            if (onSettingsChange) {
+              // Propagate a specialized event or handle via context?
+              // Ideally settings handles this or calls a provided function.
+              // For now, let's inject a specialized handler or expose it via props in next iteration, 
+              // but since I can't easily change the hook in the parent without reload, 
+              // I will alert the user here and call the service directly if possible, 
+              // but I need the auth context.
+              // Luckily I have useAuth() in this component.
+            }
+            handleDeleteAccountPress();
+          }}
+        >
+          <Text style={{ color: '#ff4444', fontWeight: 'bold', fontSize: 16 }}>Excluir Minha Conta</Text>
+        </TouchableOpacity>
       </CollapsibleSection>
 
       <TimePickerDrawer

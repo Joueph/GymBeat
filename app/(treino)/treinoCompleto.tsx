@@ -27,6 +27,7 @@ import { Treino } from '@/models/treino';
 import { createPost } from '@/services/postService';
 import { getTreinosByIds } from '@/services/treinoService';
 import { widgetService } from '@/services/widgetService';
+import NetInfo from '@react-native-community/netinfo';
 import { Image } from 'expo-image';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
@@ -34,7 +35,8 @@ import Svg, { Circle } from 'react-native-svg';
 import { HistoricoCargaTreinoChart } from '../../components/charts/HistoricoCargaTreinoChart';
 import { ExpandableExerciseItem } from '../../components/exercicios/ExpandableExerciseItem';
 import { PostCarousel } from '../../components/treino/PostCarousel';
-import { getCachedUserLogs } from '../../services/offlineCacheService';
+import { getCachedUserLogs, persistImageToDocuments } from '../../services/offlineCacheService';
+import { queueAction } from '../../services/offlineQueueService';
 const StepIndicator = ({ currentStep, totalSteps }: { currentStep: number, totalSteps: number }) => (
   <View style={styles.stepIndicatorContainer}>
     {Array.from({ length: totalSteps }).map((_, index) => (
@@ -423,14 +425,29 @@ export default function TreinoCompletoScreen() {
       // Ensure we associate the correct image if the user selected the Image Card (index 1)
       const imageToUpload = activeCardIndex === 1 ? postImage : undefined;
 
-      await createPost({
+      const postData = {
         usuarioId: user.id,
         logId: log.id,
         stats: stats,
         descricao: '',
         userName: userProfile?.nome || user.email || 'Usuário',
         userPhotoUrl: userProfile?.photoURL || null,
-      }, imageToUpload || undefined);
+      };
+
+      const networkState = await NetInfo.fetch();
+      const isOnline = networkState.isConnected;
+
+      if (isOnline) {
+        await createPost(postData, imageToUpload || undefined);
+      } else {
+        // Offline: persiste imagem e enfileira o post
+        let persistentImageUri: string | undefined;
+        if (imageToUpload) {
+          persistentImageUri = await persistImageToDocuments(imageToUpload);
+        }
+        await queueAction('CREATE_POST', { postData, imageUri: persistentImageUri });
+        console.log('[TreinoCompleto] Post enfileirado para upload quando online.');
+      }
 
       // No Alert, just move to next step
       setStep(s => s + 1);

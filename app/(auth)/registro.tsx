@@ -161,7 +161,7 @@ export default function CadastroScreen() {
   const [showFreeTrialModal, setShowFreeTrialModal] = useState(false);
   const [showPremiumWalkthrough, setShowPremiumWalkthrough] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
-  const { isPro } = useRevenueCat();
+  const { isPro, currentOffering } = useRevenueCat();
 
   // Toast State
   const [toastVisible, setToastVisible] = useState(false);
@@ -616,17 +616,28 @@ export default function CadastroScreen() {
 
   const handleAppleLink = async () => {
     try {
+      const { digestStringAsync, CryptoDigestAlgorithm, getRandomBytes } = await import('expo-crypto');
+
+      const rawNonce = Array.from(getRandomBytes(32))
+        .map((b: number) => b.toString(16).padStart(2, '0'))
+        .join('');
+
       const appleAuthRequestResponse = await appleAuth.performRequest({
         requestedOperation: appleAuth.Operation.LOGIN,
         requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
+        nonce: rawNonce
       });
       const { identityToken } = appleAuthRequestResponse;
       if (!identityToken) throw new Error("Apple: Token não encontrado.");
       const provider = new OAuthProvider('apple.com');
-      const credential = provider.credential({ idToken: identityToken });
+      const credential = provider.credential({
+        idToken: identityToken,
+        rawNonce: rawNonce
+      });
       await handleSocialLinkOrSignIn(credential);
     } catch (error: any) {
-      if ((error as any).code !== '1001') Alert.alert("Erro Apple", "Não foi possível conectar com Apple.");
+      console.error("Apple Sign In Error: ", error);
+      if ((error as any).code !== '1001') Alert.alert("Erro Apple", "Não foi possível conectar com Apple. " + (error.message || ""));
     }
   };
 
@@ -1723,19 +1734,30 @@ export default function CadastroScreen() {
         />
 
         {/* RevenueCat Paywall */}
+        {/* RevenueCat Paywall */}
         <Modal visible={showPaywall} animationType="slide">
-          <RevenueCatUI.Paywall
-            onPurchaseCompleted={async () => {
-              setShowPaywall(false);
-              await finalizarOnboarding();
-            }}
-            onRestoreCompleted={async ({ customerInfo }) => {
-              if (customerInfo.entitlements.active['GymBeat Pro']) {
+          {currentOffering ? (
+            <RevenueCatUI.Paywall
+              onPurchaseCompleted={async () => {
                 setShowPaywall(false);
                 await finalizarOnboarding();
-              }
-            }}
-          />
+              }}
+              onRestoreCompleted={async ({ customerInfo }) => {
+                if (customerInfo.entitlements.active['GymBeat Pro']) {
+                  setShowPaywall(false);
+                  await finalizarOnboarding();
+                }
+              }}
+            />
+          ) : (
+            <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+              <ActivityIndicator size="large" color="#1cb0f6" />
+              <Text style={{ color: '#fff', marginTop: 20 }}>Carregando ofertas...</Text>
+              <TouchableOpacity onPress={() => setShowPaywall(false)} style={{ marginTop: 40 }}>
+                <Text style={{ color: '#aaa' }}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </Modal>
 
       </SafeAreaView>

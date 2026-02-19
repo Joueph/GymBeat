@@ -1,6 +1,7 @@
 import NetInfo from '@react-native-community/netinfo';
 import { addLog } from './logService';
 import { getOfflineQueue, OfflineAction, setOfflineQueue } from './offlineQueueService';
+import { createPost } from './postService';
 import { addTreino, updateTreino } from './treinoService';
 
 /**
@@ -39,6 +40,12 @@ export const processQueue = async (): Promise<void> => {
                     case 'ADD_TREINO':
                         // Payload: { treinoData: Omit<Treino, 'id'> }
                         await addTreino(action.payload.treinoData, true); // true = isSyncing
+                        break;
+
+                    case 'CREATE_POST':
+                        // Payload: { postData: Omit<Post, 'id' | 'createdAt' | 'likes'>, imageUri?: string }
+                        await createPost(action.payload.postData, action.payload.imageUri);
+                        console.log(`[SyncService] Post offline publicado com sucesso.`);
                         break;
                 }
 

@@ -13,6 +13,20 @@ const ACTIVE_WORKOUT_LOG_KEY = 'activeWorkoutLog';
 const USER_SESSION_CACHE_KEY = 'userSessionCache';
 const CURRENT_USER_ID_KEY = 'currentUserId';
 
+// Diretório persistente para mídias (não é apagado pelo OS, ao contrário de cacheDirectory)
+const PERSISTENT_MEDIA_DIR = `${FileSystem.documentDirectory}exerciseMedia/`;
+const PERSISTENT_POSTS_DIR = `${FileSystem.documentDirectory}pendingPosts/`;
+
+/**
+ * Garante que um diretório exista, criando-o se necessário.
+ */
+const ensureDirectoryExists = async (dir: string): Promise<void> => {
+    const dirInfo = await FileSystem.getInfoAsync(dir);
+    if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    }
+};
+
 
 /**
  * Garante que uma mídia (vídeo/imagem) de um exercício seja baixada e salva localmente.
@@ -26,12 +40,19 @@ const preCacheMedia = async (remoteUri: string | undefined): Promise<void> => {
         const fileName = remoteUri.split('/').pop()?.split('?')[0];
         if (!fileName) return;
 
-        const localFileUri = `${FileSystem.cacheDirectory}${fileName}`;
+        await ensureDirectoryExists(PERSISTENT_MEDIA_DIR);
+        const localFileUri = `${PERSISTENT_MEDIA_DIR}${fileName}`;
         const fileInfo = await FileSystem.getInfoAsync(localFileUri);
 
         if (!fileInfo.exists) {
-            // console.log(`[Cache] Baixando mídia: ${fileName}`);
-            await FileSystem.downloadAsync(remoteUri, localFileUri);
+            // Tenta migrar do cacheDirectory antigo
+            const oldCacheUri = `${FileSystem.cacheDirectory}${fileName}`;
+            const oldInfo = await FileSystem.getInfoAsync(oldCacheUri);
+            if (oldInfo.exists) {
+                await FileSystem.moveAsync({ from: oldCacheUri, to: localFileUri });
+            } else {
+                await FileSystem.downloadAsync(remoteUri, localFileUri);
+            }
         }
     } catch (error) {
         console.error(`[Cache] Erro ao baixar a mídia ${remoteUri}:`, error);
@@ -318,4 +339,19 @@ export const getCachedUserLogs = async (userId: string): Promise<Log[]> => {
         console.error("[Cache] Erro ao recuperar logs:", error);
         return [];
     }
+};
+
+/**
+ * Copia uma imagem de um caminho temporário para o diretório persistente de posts pendentes.
+ * Usado quando o usuário tira uma foto offline e o post precisa ser enfileirado.
+ * @param tempUri A URI temporária da imagem (ex: do ImagePicker ou câmera).
+ * @returns A URI persistente da imagem salva no documentDirectory.
+ */
+export const persistImageToDocuments = async (tempUri: string): Promise<string> => {
+    await ensureDirectoryExists(PERSISTENT_POSTS_DIR);
+    const fileName = `post_${Date.now()}.jpg`;
+    const persistentUri = `${PERSISTENT_POSTS_DIR}${fileName}`;
+    await FileSystem.copyAsync({ from: tempUri, to: persistentUri });
+    console.log(`[Cache] Imagem de post persistida em: ${persistentUri}`);
+    return persistentUri;
 };

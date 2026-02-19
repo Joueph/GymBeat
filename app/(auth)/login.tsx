@@ -75,19 +75,47 @@ export default function LoginScreen() {
     setLoading(true);
     setErrorMessage("");
     try {
+      const { digestStringAsync, CryptoDigestAlgorithm, getRandomBytes } = await import('expo-crypto');
+
+      const rawNonce = Array.from(getRandomBytes(32))
+        .map((b: number) => b.toString(16).padStart(2, '0'))
+        .join('');
+
+      const requestedOperation = appleAuth.Operation.LOGIN;
+      const requestedScopes = [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL];
+
       const appleAuthRequestResponse = await appleAuth.performRequest({
-        requestedOperation: appleAuth.Operation.LOGIN,
-        requestedScopes: [appleAuth.Scope.FULL_NAME, appleAuth.Scope.EMAIL],
+        requestedOperation,
+        requestedScopes,
+        nonce: rawNonce
       });
-      const { identityToken } = appleAuthRequestResponse;
+
+      const { identityToken, email: appleEmail, fullName } = appleAuthRequestResponse;
+
       if (!identityToken) throw new Error("Apple Sign-In: identityToken não encontrado.");
+
       const provider = new OAuthProvider('apple.com');
-      const credential = provider.credential({ idToken: identityToken });
+      const credential = provider.credential({
+        idToken: identityToken,
+        rawNonce: rawNonce
+      });
+
       const userCredential = await signInWithCredential(auth, credential);
+
+      // Update profile with name if new user
+      if (userCredential.user && (fullName?.givenName || appleEmail)) {
+        // Logic to ensure name is saved could go here if needed, 
+        // but checkAndAssignPendingFicha handles backend logic.
+      }
 
       await checkAndAssignPendingFicha(userCredential.user);
     } catch (error: any) {
-      if ((error as any).code !== '1001') setErrorMessage("Falha no login com Apple. Tente novamente.");
+      console.error("Apple Sign In Error: ", error);
+      if (error.code === '1001') {
+        // User cancelled
+        return;
+      }
+      setErrorMessage("Falha no login com Apple. " + (error.message || ""));
     } finally { setLoading(false); }
   };
 

@@ -4,6 +4,10 @@ import { StyleSheet } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
+/**
+ * Renders the sample modal route.
+ * @returns Modal screen with a link back to the root route.
+ */
 export default function ModalScreen() {
   return (
     <ThemedView style={styles.container}>

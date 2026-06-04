@@ -5,6 +5,12 @@ import { Machine } from '../models/machine';
 
 const machinesCollection = collection(db, 'machines');
 
+/**
+ * Busca as maquinas cadastradas para um exercicio de um usuario.
+ * @param exerciseId ID do modelo de exercicio associado as maquinas.
+ * @param userId ID do usuario dono das maquinas.
+ * @returns Lista de maquinas nao deletadas, ordenadas por uso recente.
+ */
 export const getMachinesForExercise = async (exerciseId: string, userId: string): Promise<Machine[]> => {
     try {
         const q = query(
@@ -31,6 +37,13 @@ export const getMachinesForExercise = async (exerciseId: string, userId: string)
     }
 };
 
+/**
+ * Cria uma maquina/variacao para um exercicio especifico.
+ * @param exerciseId ID do modelo de exercicio.
+ * @param userId ID do usuario dono da maquina.
+ * @param name Nome exibido para a maquina.
+ * @returns A maquina criada, ou null se a escrita falhar.
+ */
 export const createMachine = async (exerciseId: string, userId: string, name: string): Promise<Machine | null> => {
     try {
         const newMachine: Omit<Machine, 'id'> = {
@@ -48,6 +61,12 @@ export const createMachine = async (exerciseId: string, userId: string, name: st
     }
 };
 
+/**
+ * Atualiza campos de uma maquina existente.
+ * @param machineId ID da maquina no Firestore.
+ * @param updates Campos parciais a persistir.
+ * @returns Promise resolvida quando o update terminar; erros sao logados e nao relancados.
+ */
 export const updateMachine = async (machineId: string, updates: Partial<Machine>) => {
     try {
         const docRef = doc(db, 'machines', machineId);
@@ -57,6 +76,11 @@ export const updateMachine = async (machineId: string, updates: Partial<Machine>
     }
 };
 
+/**
+ * Marca uma maquina como deletada sem remover o documento.
+ * @param machineId ID da maquina no Firestore.
+ * @returns Promise resolvida quando o soft delete terminar; erros sao logados e nao relancados.
+ */
 export const softDeleteMachine = async (machineId: string) => {
     try {
         const docRef = doc(db, 'machines', machineId);
@@ -66,6 +90,13 @@ export const softDeleteMachine = async (machineId: string) => {
     }
 };
 
+/**
+ * Busca o log recente mais novo em que uma maquina foi usada em um exercicio.
+ * @param exerciseId ID do modelo de exercicio buscado dentro dos logs.
+ * @param machineId ID da maquina buscada dentro dos exercicios do log.
+ * @param userId ID do usuario dono dos logs.
+ * @returns O log correspondente mais recente entre os ultimos 50, ou null.
+ */
 export const getLastLogForMachine = async (exerciseId: string, machineId: string, userId: string): Promise<Log | null> => {
     // Queries logs to find the last time this specific machine was used for this exercise
     // Since logs structure is: Logs -> [Exercises]. We can't easily query "Logs where exercises includes machineId".

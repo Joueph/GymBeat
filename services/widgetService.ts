@@ -27,6 +27,11 @@ interface WeekStreakData {
   totalDays: number;
 }
 
+/**
+ * Normalizes Firestore, Date, string, and numeric timestamp values into Date instances.
+ * @param dateField Date-like value from Firestore, cache, or serialized widget input.
+ * @returns Parsed Date, or null when the value is absent or unsupported.
+ */
 const parseLogDate = (dateField: any): Date | null => {
   if (!dateField) return null;
   if (dateField instanceof Date) return dateField;
@@ -38,6 +43,12 @@ const parseLogDate = (dateField: any): Date | null => {
 };
 
 export const widgetService = {
+  /**
+   * Updates all iOS widget payloads using current workouts and completed/pending logs.
+   * @param treinos Workouts available for the active ficha.
+   * @param logs Logs already loaded in memory.
+   * @returns Promise resolved after widget data is saved and timelines are reloaded, or immediately on non-iOS platforms.
+   */
   async updateAll(treinos: Treino[], logs: Log[]) {
     if (Platform.OS !== 'ios') return;
 
@@ -69,6 +80,12 @@ export const widgetService = {
     }
   },
 
+  /**
+   * Computes and persists the today/next-workout widget payload.
+   * @param treinos Workouts to scan for today's or the next scheduled workout.
+   * @param logs Logs used to determine completion state and progress.
+   * @returns Promise resolved after saving the serialized widget payload.
+   */
   async updateTodayWorkout(treinos: Treino[], logs: Log[]) {
     const diasMap: { [key: number]: DiaSemana } = { 0: 'dom', 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sab' };
     const diasNomeMap: { [key: number]: string } = { 0: 'DOMINGO', 1: 'SEGUNDA', 2: 'TERÇA', 3: 'QUARTA', 4: 'QUINTA', 5: 'SEXTA', 6: 'SÁBADO' };
@@ -166,6 +183,11 @@ export const widgetService = {
     await saveWidgetData('widget_today_workout', JSON.stringify(data), APP_GROUP);
   },
 
+  /**
+   * Computes and persists the current-week streak widget payload.
+   * @param logs Logs used to mark trained days in the current week.
+   * @returns Promise resolved after saving the serialized streak payload.
+   */
   async updateWeekStreak(logs: Log[]) {
     // ... (lógica de dias)
     const hoje = new Date();

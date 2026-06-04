@@ -20,6 +20,12 @@ interface SuggestFeatureModalProps {
   onClose: () => void;
 }
 
+/**
+ * Shows the feature suggestion modal and submits user feedback.
+ * @param visible Whether the modal is currently visible.
+ * @param onClose Callback used to dismiss the modal.
+ * @returns Feature suggestion modal element.
+ */
 export const SuggestFeatureModal = ({ visible, onClose }: SuggestFeatureModalProps) => {
   const { user } = useAuth();
   const [title, setTitle] = useState('');

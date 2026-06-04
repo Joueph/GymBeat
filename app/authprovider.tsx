@@ -22,10 +22,19 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => { },
 });
 
+/**
+ * Reads the current authenticated user session from AuthContext.
+ * @returns Auth state, initialization state, offline state, and logout action.
+ */
 export function useAuth() {
   return useContext(AuthContext);
 }
 
+/**
+ * Provides Firebase Auth, Firestore profile, and offline user-session cache state to the app.
+ * @param children React subtree that needs authenticated user context.
+ * @returns AuthContext provider wrapping the given children.
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null);
   const [initialized, setInitialized] = useState(false);

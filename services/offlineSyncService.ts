@@ -18,7 +18,8 @@ export interface PendingOperation {
 
 /**
  * Adiciona uma operação à fila de sincronização offline.
- * @param operation A operação a ser adicionada à fila.
+ * @param operation Operacao sem ID/timestamp; esses campos sao gerados antes de salvar.
+ * @returns Promise resolvida apos persistir a fila atualizada, ou apos registrar erro.
  */
 export const addPendingOperation = async (operation: Omit<PendingOperation, 'id' | 'timestamp'>): Promise<void> => {
   try {
@@ -56,6 +57,7 @@ export const getPendingOperations = async (): Promise<PendingOperation[]> => {
 /**
  * Remove uma operação da fila após sincronização bem-sucedida.
  * @param operationId O ID da operação a ser removida.
+ * @returns Promise resolvida apos persistir a fila filtrada, ou apos registrar erro.
  */
 export const removePendingOperation = async (operationId: string): Promise<void> => {
   try {
@@ -71,6 +73,7 @@ export const removePendingOperation = async (operationId: string): Promise<void>
 
 /**
  * Limpa todas as operações pendentes (ex: após sincronização bem-sucedida).
+ * @returns Promise resolvida apos remover a chave de operacoes pendentes.
  */
 export const clearPendingOperations = async (): Promise<void> => {
   try {
@@ -84,6 +87,8 @@ export const clearPendingOperations = async (): Promise<void> => {
 /**
  * Hook para sincronizar operações pendentes quando a conexão for restaurada.
  * Deve ser chamado quando o app detectar que voltou online.
+ * @param syncCallback Callback que executa a sincronizacao real para as operacoes pendentes.
+ * @returns Promise resolvida apos sincronizar e limpar a fila, ou rejeitada se o callback falhar.
  */
 export const syncPendingOperations = async (
   syncCallback: (operations: PendingOperation[]) => Promise<void>

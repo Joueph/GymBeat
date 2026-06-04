@@ -6,6 +6,11 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 admin.initializeApp();
 const db = admin.firestore();
 
+/**
+ * Callable function that creates a pending friendship between two users.
+ * @param request Callable request containing fromUserId and friendCode in request.data.
+ * @returns Object with success=true after both user documents are updated.
+ */
 export const sendFriendRequest = onCall(async (request) => {
   functions.logger.info("Iniciando sendFriendRequest. Dados recebidos:", request.data);
   const { fromUserId, friendCode } = request.data;
@@ -43,6 +48,11 @@ export const sendFriendRequest = onCall(async (request) => {
 });
 
 
+/**
+ * Firestore trigger that mirrors an accepted friend request back to the requester.
+ * @param event users/{acceptingUserId} update event containing before/after amizade maps.
+ * @returns null after processing, or early when no relevant friendship transition is found.
+ */
 export const onFriendRequestAccepted = onDocumentUpdated("users/{acceptingUserId}", async (event) => {
   if (!event.data) return;
 
@@ -91,6 +101,8 @@ export const onFriendRequestAccepted = onDocumentUpdated("users/{acceptingUserId
 /**
  * Sincroniza dados essenciais para as regras de segurança (amizades e configurações de privacidade)
  * para uma subcoleção pública sempre que o documento do usuário for atualizado.
+ * @param event users/{userId} update event containing before/after user data.
+ * @returns null after syncing when privacy/friend data changed.
  */
 export const syncPublicProfile = onDocumentUpdated("users/{userId}", async (event) => {
   if (!event.data) return;
@@ -118,11 +130,21 @@ export const syncPublicProfile = onDocumentUpdated("users/{userId}", async (even
 });
 
 // Nenhuma alteração necessária aqui, pois é tratado no cliente.
+/**
+ * Placeholder trigger for rejected friend requests.
+ * @param event users/{rejectingUserId} update event.
+ * @returns null because rejection cleanup is handled on the client.
+ */
 export const onFriendRequestRejected = onDocumentUpdated("users/{rejectingUserId}", async (event) => {
   return null;
 });
 
 
+/**
+ * Callable function that returns a friend's profile and last-seven-days workout logs.
+ * @param request Callable request containing friendId in request.data and auth context.
+ * @returns Friend profile plus weeklyLogs ordered by horarioFim descending.
+ */
 export const getFriendActivity = onCall(async (request) => {
   const { friendId } = request.data;
   const auth = request.auth;

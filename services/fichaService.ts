@@ -21,12 +21,7 @@ import { cacheUserFichas, getCachedFichaAtiva, getCachedUserFichas } from './off
 /**
  * Fetches all workout plan models from the 'fichas_modelos' collection in Firestore.
  * This replaces reading from the local treinos.json file.
- */
-
-
-/**
- * Fetches all workout plan models from the 'fichas_modelos' collection in Firestore.
- * This replaces reading from the local treinos.json file.
+ * @returns Available ficha templates with normalized treino ID arrays.
  */
 export const getFichasModelos = async (): Promise<FichaModelo[]> => {
   const snapshot = await getDocs(collection(db, "fichasModelos"));
@@ -48,6 +43,10 @@ export const getFichasModelos = async (): Promise<FichaModelo[]> => {
 
 /**
  * Copies a FichaModelo and its associated TreinoModelos to a user-specific Ficha and Treinos.
+ * @param fichaModelo Template ficha used as the source of the user ficha.
+ * @param userId User ID that will own the copied ficha and treinos.
+ * @param treinosParaCopiar Customized treino templates to create under the new ficha.
+ * @returns IDs for the created ficha and treino documents.
  */
 export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: string, treinosParaCopiar: TreinoModelo[]): Promise<{ fichaId: string; treinoIds: string[] }> => {
   const batch = writeBatch(db);
@@ -117,6 +116,11 @@ export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: st
   return { fichaId: newFichaRef.id, treinoIds: newTreinoRefs.map(ref => ref.id) };
 };
 
+/**
+ * Busca a ficha ativa de um usuario, com fallback para o cache offline.
+ * @param userId ID do usuario dono da ficha.
+ * @returns A ficha ativa, ou null quando nenhuma ficha ativa for encontrada.
+ */
 export const getFichaAtiva = async (userId: string): Promise<Ficha | null> => {
   try {
     const fichasRef = collection(db, 'fichas');
@@ -141,6 +145,12 @@ export const getFichaAtiva = async (userId: string): Promise<Ficha | null> => {
     return null;
   }
 };
+
+/**
+ * Busca todas as fichas de um usuario e atualiza o cache local.
+ * @param userId ID do usuario dono das fichas.
+ * @returns Lista de fichas do usuario, ou a lista em cache quando o Firestore falhar.
+ */
 export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => {
   try {
     const fichasRef = collection(db, 'fichas');
@@ -164,6 +174,13 @@ export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => 
   }
 };
 
+/**
+ * Define qual ficha esta ativa para um usuario e desativa fichas ativas anteriores.
+ * @param userId ID do usuario dono das fichas.
+ * @param fichaId ID da ficha que deve ficar ativa, ou null para apenas desativar.
+ * @param previousFichaId ID conhecido da ficha ativa anterior usado como fallback.
+ * @returns A ficha recem-ativada, ou null quando nenhuma ficha for ativada.
+ */
 export const setFichaAtiva = async (userId: string, fichaId: string | null, previousFichaId?: string): Promise<Ficha | null> => {
   const batch = writeBatch(db);
   const fichasRef = collection(db, 'fichas');
@@ -209,12 +226,22 @@ export const setFichaAtiva = async (userId: string, fichaId: string | null, prev
   }
 };
 
+/**
+ * Cria uma ficha no Firestore.
+ * @param fichaData Dados da ficha sem o ID gerado pelo Firestore.
+ * @returns ID da ficha criada.
+ */
 export const addFicha = async (fichaData: Omit<Ficha, 'id'>): Promise<string> => {
   const fichasRef = collection(db, 'fichas');
   const docRef = await addDoc(fichasRef, fichaData);
   return docRef.id;
 };
 
+/**
+ * Busca uma ficha pelo ID, com fallback para a ficha ativa em cache.
+ * @param fichaId ID da ficha desejada.
+ * @returns A ficha encontrada, ou null quando ela nao existir ou nao houver fallback valido.
+ */
 export const getFichaById = async (fichaId: string): Promise<Ficha | null> => {
   try {
     const fichaRef = doc(db, 'fichas', fichaId);
@@ -238,6 +265,12 @@ export const getFichaById = async (fichaId: string): Promise<Ficha | null> => {
   }
 };
 
+/**
+ * Atualiza campos de uma ficha existente.
+ * @param fichaId ID da ficha a atualizar.
+ * @param data Campos parciais que serao enviados ao Firestore.
+ * @returns Promise resolvida quando o update for concluido.
+ */
 export const updateFicha = async (fichaId: string, data: Partial<Omit<Ficha, 'id'>>): Promise<void> => {
   const fichaRef = doc(db, 'fichas', fichaId);
   await updateDoc(fichaRef, data);

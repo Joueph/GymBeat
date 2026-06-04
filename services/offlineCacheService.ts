@@ -223,6 +223,9 @@ const USER_LOGS_KEY = 'userLogsCache_';
 
 /**
  * Salva a lista de fichas do usuário no cache.
+ * @param userId ID usado para isolar a chave do cache.
+ * @param fichas Lista de fichas a serializar no AsyncStorage.
+ * @returns Promise resolvida depois da tentativa de escrita.
  */
 export const cacheUserFichas = async (userId: string, fichas: Ficha[]): Promise<void> => {
     try {
@@ -235,6 +238,8 @@ export const cacheUserFichas = async (userId: string, fichas: Ficha[]): Promise<
 
 /**
  * Recupera a lista de fichas do usuário do cache.
+ * @param userId ID usado para localizar a chave do cache.
+ * @returns Lista de fichas em cache, ou array vazio quando nao houver dados.
  */
 export const getCachedUserFichas = async (userId: string): Promise<Ficha[]> => {
     try {
@@ -249,6 +254,9 @@ export const getCachedUserFichas = async (userId: string): Promise<Ficha[]> => {
 /**
  * Salva a lista de todos os treinos do usuário no cache.
  * Também aproveita para atualizar o cache individual de cada treino.
+ * @param userId ID usado para isolar a chave do cache.
+ * @param treinos Lista de treinos do usuario.
+ * @returns Promise resolvida depois de salvar a lista e os itens individuais.
  */
 export const cacheUserTreinos = async (userId: string, treinos: Treino[]): Promise<void> => {
     try {
@@ -266,6 +274,8 @@ export const cacheUserTreinos = async (userId: string, treinos: Treino[]): Promi
 
 /**
  * Recupera a lista de treinos do usuário do cache.
+ * @param userId ID usado para localizar a chave do cache.
+ * @returns Lista de treinos em cache, ou array vazio quando nao houver dados.
  */
 export const getCachedUserTreinos = async (userId: string): Promise<Treino[]> => {
     try {
@@ -279,6 +289,8 @@ export const getCachedUserTreinos = async (userId: string): Promise<Treino[]> =>
 
 /**
  * Recupera múltiplos treinos do cache individualmente.
+ * @param treinoIds IDs dos treinos a recuperar.
+ * @returns Lista com os treinos encontrados no cache individual.
  */
 export const getCachedTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> => {
     const treinos: Treino[] = [];
@@ -291,6 +303,9 @@ export const getCachedTreinosByIds = async (treinoIds: string[]): Promise<Treino
 
 /**
  * Salva a lista de logs do usuário no cache.
+ * @param userId ID usado para isolar a chave do cache.
+ * @param logs Lista de logs a serializar.
+ * @returns Promise resolvida depois da tentativa de escrita.
  */
 export const cacheUserLogs = async (userId: string, logs: Log[]): Promise<void> => {
     try {
@@ -303,6 +318,8 @@ export const cacheUserLogs = async (userId: string, logs: Log[]): Promise<void> 
 
 /**
  * Recupera a lista de logs do usuário do cache.
+ * @param userId ID usado para localizar a chave do cache.
+ * @returns Lista de logs em cache, ou array vazio quando nao houver dados.
  */
 export const getCachedUserLogs = async (userId: string): Promise<Log[]> => {
     try {

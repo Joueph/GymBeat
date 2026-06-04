@@ -21,10 +21,20 @@ export interface FinishWorkoutParams {
     currentActivityId?: string | null;
 }
 
+/**
+ * Provides save, finish, and cancel operations shared by workout editing/logging screens.
+ * @returns Workout persistence actions plus the current saving state.
+ */
 export function useWorkoutOperations() {
     const [isSaving, setIsSaving] = useState(false);
     const router = useRouter();
 
+    /**
+     * Creates or updates a workout template and refreshes its local cache.
+     * @param treino Workout data to persist.
+     * @param isNew true when the workout should be created instead of updated.
+     * @returns Persisted workout ID, or null when saving fails.
+     */
     const saveTreino = async (treino: Treino, isNew: boolean): Promise<string | null> => {
         setIsSaving(true);
         try {
@@ -51,6 +61,11 @@ export function useWorkoutOperations() {
         }
     };
 
+    /**
+     * Finalizes a workout session by creating any needed free-workout template and saving a log.
+     * @param params User, workout, timing, load, ownership, and Live Activity data needed to finish.
+     * @returns Promise resolved after navigation to the completion screen or after an error alert.
+     */
     const finishWorkout = async (params: FinishWorkoutParams) => {
         const {
             user,
@@ -160,6 +175,11 @@ export function useWorkoutOperations() {
         }
     };
 
+    /**
+     * Cancels the active workout flow and clears native/cache state.
+     * @param currentActivityId Optional iOS Live Activity ID to end before leaving the screen.
+     * @returns Promise resolved after cleanup/navigation or after an error alert.
+     */
     const cancelWorkout = async (currentActivityId?: string | null) => {
         setIsSaving(true);
         try {

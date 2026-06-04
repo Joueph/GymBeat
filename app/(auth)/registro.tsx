@@ -119,6 +119,10 @@ const StreakGoalItem = ({
   );
 };
 
+/**
+ * Renders the multi-step onboarding and account-registration flow.
+ * @returns Registration/onboarding screen with profile, recommendation, and auth setup steps.
+ */
 export default function CadastroScreen() {
   const router = useRouter();
   const netInfo = useNetInfo();

@@ -396,6 +396,10 @@ const ExerciseItem = ({
   );
 };
 
+/**
+ * Renders the workout editor for creating or modifying exercises, sets, notes, and settings.
+ * @returns Workout editing screen.
+ */
 export default function EditarTreinoScreen() {
   const { user } = useAuth();
   const router = useRouter();

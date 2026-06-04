@@ -2,12 +2,11 @@ import { useRouter } from 'expo-router';
 import React from 'react';
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRevenueCat } from '../components/providers/RevenueCatProvider';
-// Note: CustomerCenter might be available in newer versions of react-native-purchases-ui or as a separate component.
-// For this version (as we just installed latest), we will check if it exists or build a manual one.
-// Since I cannot verify the exports of 'react-native-purchases-ui' at runtime easily without docs for the specific version installed,
-// I will build a robust manual "Customer Center" which is safer and requested as "When it makes sense".
-// The safest bet is a manual UI that calls RevenueCat methods.
 
+/**
+ * Displays the user's subscription status and purchase-management actions.
+ * @returns The manual customer-center screen backed by RevenueCat state and restore actions.
+ */
 export default function CustomerCenterScreen() {
     const { isPro, customerInfo, restorePurchases } = useRevenueCat();
     const router = useRouter();

@@ -15,6 +15,7 @@ import { getPendingOperations, PendingOperation, removePendingOperation } from '
  * geralmente no useEffect do _layout.tsx ou em um contexto global.
  * 
  * @param userId ID do usuário para validação
+ * @returns Promise resolvida apos remover da fila as operacoes de log sincronizadas.
  */
 export const syncLogsFromOfflineQueue = async (userId: string): Promise<void> => {
   try {
@@ -103,6 +104,8 @@ export const syncLogsFromOfflineQueue = async (userId: string): Promise<void> =>
 /**
  * Sincroniza TODAS as operações pendentes de qualquer coleção.
  * Use quando tiver múltiplos tipos de operações para sincronizar.
+ * @param userId ID do usuario usado para validar operacoes de colecoes suportadas.
+ * @returns Promise resolvida apos tentar sincronizar cada grupo de colecao.
  */
 export const syncAllPendingOperations = async (userId: string): Promise<void> => {
   try {
@@ -152,6 +155,10 @@ export const syncAllPendingOperations = async (userId: string): Promise<void> =>
 /**
  * Retry com exponential backoff para sincronização.
  * Use se quiser tentar novamente automaticamente.
+ * @param userId ID do usuario usado na sincronizacao.
+ * @param maxRetries Numero maximo de tentativas.
+ * @param initialDelayMs Delay inicial antes de dobrar a espera entre tentativas.
+ * @returns true quando a sincronizacao concluir; false quando todas as tentativas falharem.
  */
 export const syncWithRetry = async (
   userId: string,

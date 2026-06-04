@@ -11,10 +11,19 @@ const NetworkContext = createContext<NetworkContextType>({
   netInfo: null,
 });
 
+/**
+ * Reads current network connectivity from NetworkContext.
+ * @returns Online/offline boolean plus the latest NetInfo state.
+ */
 export function useNetwork() {
   return useContext(NetworkContext);
 }
 
+/**
+ * Provides NetInfo connectivity state and blocks rendering until the initial network check completes.
+ * @param children React subtree that needs network context.
+ * @returns NetworkContext provider once initialized, otherwise null during startup.
+ */
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const [isOnline, setIsOnline] = useState(true);
   const [netInfo, setNetInfo] = useState<NetInfoState | null>(null);

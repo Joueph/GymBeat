@@ -25,7 +25,10 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// O componente que consome o contexto e faz a lógica de navegação
+/**
+ * Owns authenticated navigation redirects and online sync attempts for the root stack.
+ * @returns Root stack navigation once auth is initialized, otherwise null.
+ */
 function MainNavigation() {
   const { user, initialized } = useAuth();
   const { isOnline } = useNetwork();
@@ -99,7 +102,10 @@ function MainNavigation() {
 }
 
 
-// O layout raiz que apenas fornece o contexto
+/**
+ * Root Expo Router layout that installs app-wide providers and notification/audio setup.
+ * @returns The provider tree, main navigation stack, and global keyboard dismiss button.
+ */
 export default function RootLayout() {
   useEffect(() => {
     // Configura o modo de áudio do app para não interromper a música de outros apps.
@@ -160,4 +166,3 @@ export default function RootLayout() {
     </NetworkProvider>
   );
 }
-

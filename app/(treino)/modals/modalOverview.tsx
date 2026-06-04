@@ -257,6 +257,10 @@ interface WorkoutOverviewModalProps {
     onEditExercise: (exercise: Exercicio) => void;
 }
 
+/**
+ * Renders the workout overview modal with completion progress and per-exercise summaries.
+ * @returns Workout overview modal element.
+ */
 export const WorkoutOverviewModal = ({
     visible,
     onClose,

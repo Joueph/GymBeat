@@ -5,6 +5,7 @@ import { addTreino, updateTreino } from './treinoService';
 
 /**
  * Processes the offline queue, attempting to sync actions with the server.
+ * @returns Promise resolved after replaying queued actions or leaving them queued for retry.
  */
 export const processQueue = async (): Promise<void> => {
     const state = await NetInfo.fetch();

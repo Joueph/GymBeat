@@ -1,6 +1,14 @@
 import React from 'react';
 import Svg, { Circle, G, Line } from 'react-native-svg';
 
+/**
+ * Renders the configurable settings icon used by app controls.
+ * @param width Icon width in pixels.
+ * @param height Icon height in pixels.
+ * @param color Stroke/fill color.
+ * @param rotation Rotation angle in degrees.
+ * @returns SVG config icon element.
+ */
 export const ConfigIcon = ({ width = 22, height = 22, color = '#FBFBFB', rotation = 0 }) => (
   <Svg width={width} height={height} viewBox="0 0 13 12" fill="none">
     <G opacity="0.75" rotation={rotation} origin="6.5, 6">

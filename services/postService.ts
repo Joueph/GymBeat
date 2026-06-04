@@ -3,6 +3,12 @@ import { db } from '../firebaseconfig';
 import { Post } from '../models/post';
 import { uploadMediaAndGetURL } from './storageService';
 
+/**
+ * Cria um post de treino e opcionalmente envia uma imagem para o Storage.
+ * @param postData Dados do post sem ID, createdAt e likes, que sao definidos pelo servico.
+ * @param imageUri URI local opcional da imagem que sera enviada antes da criacao do post.
+ * @returns Promise resolvida quando o documento do post for criado.
+ */
 export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'likes'>, imageUri?: string): Promise<void> => {
     try {
         let imageUrl = '';
@@ -27,6 +33,12 @@ export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'like
     }
 };
 
+/**
+ * Busca posts recentes para feed geral ou posts do proprio usuario.
+ * @param filter Escopo da busca: todos, amigos ou apenas o usuario atual.
+ * @param userId ID usado quando o filtro for "mine".
+ * @returns Lista de posts recentes; retorna vazia quando a consulta falha.
+ */
 export const getRecentPosts = async (filter: 'all' | 'friends' | 'mine' = 'all', userId?: string): Promise<Post[]> => {
     try {
         let q;
@@ -47,6 +59,11 @@ export const getRecentPosts = async (filter: 'all' | 'friends' | 'mine' = 'all',
     }
 };
 
+/**
+ * Remove um post do Firestore.
+ * @param postId ID do post a deletar.
+ * @returns Promise resolvida quando a delecao for concluida.
+ */
 export const deletePost = async (postId: string): Promise<void> => {
     try {
         await deleteDoc(doc(db, 'posts', postId));
@@ -56,6 +73,12 @@ export const deletePost = async (postId: string): Promise<void> => {
     }
 };
 
+/**
+ * Placeholder legado para alternancia de like; a implementacao real usa likePost/unlikePost.
+ * @param postId ID do post que seria alterado.
+ * @param userId ID do usuario que faria a acao.
+ * @returns Promise resolvida sem alterar dados no estado atual.
+ */
 export const toggleLike = async (postId: string, userId: string): Promise<void> => {
     try {
         const postRef = doc(db, 'posts', postId);
@@ -80,12 +103,24 @@ export const toggleLike = async (postId: string, userId: string): Promise<void> 
     } catch (e) { }
 };
 
+/**
+ * Adiciona o usuario ao array de likes de um post.
+ * @param postId ID do post.
+ * @param userId ID do usuario que curtiu.
+ * @returns Promise resolvida quando o update for concluido.
+ */
 export const likePost = async (postId: string, userId: string) => {
     await updateDoc(doc(db, 'posts', postId), {
         likes: arrayUnion(userId)
     });
 };
 
+/**
+ * Remove o usuario do array de likes de um post.
+ * @param postId ID do post.
+ * @param userId ID do usuario que removeu a curtida.
+ * @returns Promise resolvida quando o update for concluido.
+ */
 export const unlikePost = async (postId: string, userId: string) => {
     await updateDoc(doc(db, 'posts', postId), {
         likes: arrayRemove(userId)
@@ -93,6 +128,11 @@ export const unlikePost = async (postId: string, userId: string) => {
 };
 
 
+/**
+ * Busca o post associado a um log de treino.
+ * @param logId ID do log vinculado ao post.
+ * @returns O primeiro post encontrado para o log, ou null quando nao houver resultado ou a busca falhar.
+ */
 export const getPostByLogId = async (logId: string): Promise<Post | null> => {
     try {
         const postsRef = collection(db, 'posts');

@@ -1,6 +1,10 @@
 import { Stack } from 'expo-router';
 import React from 'react';
 
+/**
+ * Defines the project stack routes.
+ * @returns Project stack layout.
+ */
 export default function ProjetosLayout() {
   return (
     <Stack

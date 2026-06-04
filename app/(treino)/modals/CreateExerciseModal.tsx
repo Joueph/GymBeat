@@ -25,6 +25,13 @@ interface CreateExerciseModalProps {
   muscleGroups: string[];
 }
 
+/**
+ * Renders the custom-exercise creation modal and uploads optional media.
+ * @param visible Whether the modal is currently visible.
+ * @param onClose Callback used to dismiss the modal.
+ * @param onExerciseCreated Callback invoked with the created exercise model.
+ * @returns Custom exercise creation modal element.
+ */
 export const CreateExerciseModal = ({
   visible,
   onClose,

@@ -619,6 +619,10 @@ const LoggedExerciseCard = ({
   );
 };
 
+/**
+ * Renders the active workout logging experience with timers, sets, notes, Live Activity, and finish/cancel actions.
+ * @returns Ongoing-workout logging screen.
+ */
 export default function LoggingDuringWorkoutScreen() {
   const router = useRouter();
   const { treinoId, fichaId, logId } = useLocalSearchParams<{ treinoId?: string; fichaId?: string, logId?: string }>();

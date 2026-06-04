@@ -6,6 +6,10 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth } from './authprovider';
 
+/**
+ * Handles invite links and friend-code acceptance from deep-link parameters.
+ * @returns Invite status screen for loading, success, and error states.
+ */
 export default function InviteScreen() {
     const { friendCode } = useLocalSearchParams<{ friendCode: string }>();
     const { user } = useAuth();

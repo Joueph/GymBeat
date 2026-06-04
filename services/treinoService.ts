@@ -19,6 +19,11 @@ import { cacheUserTreinos, getCachedTreinoById, getCachedTreinosByIds, getCached
 
 export type DiaSemana = 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab';
 
+/**
+ * Busca um modelo de exercicio usado para popular um treino.
+ * @param modeloId ID do documento em exerciciosModelos.
+ * @returns Modelo de exercicio encontrado, ou null quando inexistente.
+ */
 const getExercicioModeloById = async (modeloId: string): Promise<ExercicioModelo | null> => {
   const docRef = doc(db, 'exerciciosModelos', modeloId);
   const docSnap = await getDoc(docRef);
@@ -30,6 +35,8 @@ const getExercicioModeloById = async (modeloId: string): Promise<ExercicioModelo
 
 /**
  * Fetches a single workout by its ID.
+ * @param treinoId ID of the workout document.
+ * @returns The workout with populated exercise models, null when missing, or cached data on failure.
  */
 export const getTreinoById = async (treinoId: string): Promise<Treino | null> => {
   try {
@@ -75,6 +82,8 @@ export const getTreinoById = async (treinoId: string): Promise<Treino | null> =>
 
 /**
  * Fetches multiple workouts based on an array of IDs.
+ * @param treinoIds Workout document IDs to fetch.
+ * @returns Workouts found in Firestore, or cached workouts when Firestore fails.
  */
 export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> => {
   if (!treinoIds || treinoIds.length === 0) {
@@ -95,6 +104,8 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
 
 /**
  * Fetches all workouts for a given user ID.
+ * @param userId ID of the workout owner.
+ * @returns User workouts sorted by ordem, or cached workouts when Firestore fails.
  */
 export const getTreinosByUsuarioId = async (userId: string): Promise<Treino[]> => {
   try {
@@ -123,6 +134,8 @@ export const getTreinosByUsuarioId = async (userId: string): Promise<Treino[]> =
 
 /**
  * Fetches multiple workout models based on an array of IDs.
+ * @param treinoIds Workout model document IDs to fetch.
+ * @returns Matching workout models.
  */
 export const getTreinosModelosByIds = async (treinoIds: string[]): Promise<TreinoModelo[]> => {
   if (!treinoIds || treinoIds.length === 0) {
@@ -136,6 +149,10 @@ export const getTreinosModelosByIds = async (treinoIds: string[]): Promise<Trein
 
 /**
  * Adds a new workout to a workout plan (ficha).
+ * @param fichaId ID of the ficha that should reference the new workout.
+ * @param treinoData Workout data to create.
+ * @param userId Owner ID to store on the new workout.
+ * @returns ID of the created workout.
  */
 export const addTreinoToFicha = async (fichaId: string, treinoData: Partial<Omit<Treino, 'id'>>, userId: string): Promise<string> => {
   const batch = writeBatch(db);
@@ -163,6 +180,9 @@ import { queueAction } from './offlineQueueService';
 
 /**
  * Adds a new workout.
+ * @param treinoData Workout data without the generated ID.
+ * @param isSyncing true when replaying an offline operation to avoid re-queueing.
+ * @returns Created Firestore ID, or a temporary ID when queued offline.
  */
 export const addTreino = async (treinoData: Omit<Treino, 'id'>, isSyncing: boolean = false): Promise<string> => {
   const networkState = await NetInfo.fetch();
@@ -208,6 +228,10 @@ export const addTreino = async (treinoData: Omit<Treino, 'id'>, isSyncing: boole
 
 /**
  * Updates an existing workout.
+ * @param treinoId ID of the workout to update.
+ * @param treinoData Partial workout fields to persist.
+ * @param isSyncing true when replaying an offline operation to avoid re-queueing.
+ * @returns Promise resolved when the update is saved or queued.
  */
 export const updateTreino = async (treinoId: string, treinoData: Partial<Omit<Treino, 'id'>>, isSyncing: boolean = false): Promise<void> => {
   const networkState = await NetInfo.fetch();
@@ -236,6 +260,8 @@ export const updateTreino = async (treinoId: string, treinoData: Partial<Omit<Tr
 
 /**
  * Updates the order of multiple 'unassigned' workouts.
+ * @param treinoIds Ordered workout IDs; array position becomes the stored ordem.
+ * @returns Promise resolved after the batch commit.
  */
 export const updateTreinosOrdem = async (treinoIds: string[]): Promise<void> => {
   const batch = writeBatch(db);
@@ -248,6 +274,9 @@ export const updateTreinosOrdem = async (treinoIds: string[]): Promise<void> => 
 
 /**
  * Deletes a workout and removes its reference from the corresponding ficha.
+ * @param treinoId ID of the workout to delete.
+ * @param fichaId Optional ficha ID that should stop referencing the workout.
+ * @returns Promise resolved after the batch commit.
  */
 export const deleteTreino = async (treinoId: string, fichaId?: string): Promise<void> => {
   const batch = writeBatch(db);

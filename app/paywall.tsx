@@ -5,6 +5,10 @@ import { CustomerInfo } from 'react-native-purchases';
 import RevenueCatUI from 'react-native-purchases-ui';
 import { useRevenueCat } from '../components/providers/RevenueCatProvider';
 
+/**
+ * Displays the RevenueCat paywall and closes after successful purchase or restore.
+ * @returns Premium purchase screen.
+ */
 export default function PaywallScreen() {
     const { isLoaded, isPro } = useRevenueCat();
     const router = useRouter();

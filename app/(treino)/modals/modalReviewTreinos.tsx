@@ -54,6 +54,15 @@ const calculateDuration = (start: Date | null, end: Date | null): string => {
     return `${minutes} min`;
 };
 
+/**
+ * Renders a modal for reviewing historical workout logs for the same treino.
+ * @param visible Whether the modal is currently visible.
+ * @param onClose Callback used to dismiss the modal.
+ * @param initialLog Starting log to show.
+ * @param allUserLogs Candidate logs used for previous/next navigation.
+ * @param currentUserId ID of the current user reviewing the logs.
+ * @returns Workout review modal element.
+ */
 export const WorkoutReviewModal = ({ visible, onClose, initialLog, allUserLogs, currentUserId }: { visible: boolean; onClose: () => void; initialLog: Log | null; allUserLogs: Log[]; currentUserId: string }) => {
     const [currentLog, setCurrentLog] = React.useState(initialLog);
     const [post, setPost] = React.useState<Post | null>(null);

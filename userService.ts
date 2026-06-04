@@ -22,6 +22,11 @@ import { Usuario } from "./models/usuario";
 import { getCachedUserSession } from "./services/offlineCacheService";
 
 // ... (as outras funções como getUserProfile, updateUserProfile, etc. permanecem as mesmas)
+/**
+ * Busca o perfil de usuario no Firestore, com fallback para a sessao em cache.
+ * @param uid ID do usuario.
+ * @returns Perfil do usuario, null quando nao existir, ou rejeita quando Firestore/cache falharem.
+ */
 export const getUserProfile = async (uid: string) => {
   if (!uid) return null;
   try {
@@ -48,6 +53,12 @@ export const getUserProfile = async (uid: string) => {
   }
 };
 
+/**
+ * Atualiza campos do perfil de usuario.
+ * @param uid ID do usuario.
+ * @param data Campos parciais de Usuario enviados ao Firestore.
+ * @returns Promise resolvida quando o update terminar; rejeita em erro de escrita.
+ */
 export const updateUserProfile = async (uid: string, data: Partial<Usuario>) => {
   if (!uid) return;
   try {
@@ -60,6 +71,12 @@ export const updateUserProfile = async (uid: string, data: Partial<Usuario>) => 
   }
 };
 
+/**
+ * Busca usuarios por prefixo de nome em lowercase, excluindo o usuario atual.
+ * @param searchText Texto digitado para busca.
+ * @param currentUserId ID do usuario que esta buscando.
+ * @returns Lista de usuarios encontrados, sem incluir o usuario atual.
+ */
 export const searchUsers = async (searchText: string, currentUserId: string): Promise<Usuario[]> => {
   if (!searchText.trim()) return [];
   const lowerCaseSearchText = searchText.trim().toLowerCase();
@@ -80,6 +97,12 @@ export const searchUsers = async (searchText: string, currentUserId: string): Pr
   }
 };
 
+/**
+ * Cria ou mescla o documento de perfil do usuario e seu perfil publico inicial.
+ * @param user Usuario autenticado do Firebase Auth.
+ * @param additionalData Dados coletados no onboarding ou em fluxos de cadastro.
+ * @returns Promise resolvida apos gravar os documentos de perfil.
+ */
 export const createUserProfileDocument = async (
   user: User,
   additionalData: Partial<Usuario>
@@ -141,6 +164,7 @@ export const createUserProfileDocument = async (
  * Altera o status da amizade para 'true' no documento do usuário atual.
  * @param currentUserId ID do usuário que está aceitando o pedido.
  * @param requesterId ID do usuário que enviou o pedido.
+ * @returns Promise resolvida apos atualizar o mapa de amizades do usuario atual.
  */
 export const acceptFriendRequest = async (currentUserId: string, requesterId: string) => {
   if (!currentUserId || !requesterId) return;
@@ -160,6 +184,7 @@ export const acceptFriendRequest = async (currentUserId: string, requesterId: st
  * Remove a relação de amizade de AMBOS os documentos de usuário para evitar inconsistências.
  * @param currentUserId ID do usuário que está rejeitando o pedido.
  * @param requesterId ID do usuário que enviou o pedido.
+ * @returns Promise resolvida apos remover os vinculos nos dois documentos.
  */
 export const rejectFriendRequest = async (currentUserId: string, requesterId: string) => {
   if (!currentUserId || !requesterId) return;
@@ -193,6 +218,9 @@ export const rejectFriendRequest = async (currentUserId: string, requesterId: st
 /**
  * Concede um período de teste gratuito ao usuário.
  * Define o campo `premiumUntil` para a data atual + dias especificados.
+ * @param uid ID do usuario que recebera o trial.
+ * @param days Quantidade de dias de trial a partir da data atual.
+ * @returns Promise resolvida apos gravar premiumUntil no perfil.
  */
 export const grantFreeTrial = async (uid: string, days: number = 14) => {
   if (!uid) return;

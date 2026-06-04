@@ -2,6 +2,10 @@
 
 import { Stack } from 'expo-router';
 
+/**
+ * Defines the authentication stack routes.
+ * @returns Auth stack with login and registration screens.
+ */
 export default function AuthLayout() {
   return (
     <Stack

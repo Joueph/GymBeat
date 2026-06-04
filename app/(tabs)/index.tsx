@@ -22,6 +22,10 @@ import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { FeatureUpvoteModal } from '../FeatureUpvoteModal';
 
+/**
+ * Renders the home/progress dashboard and wires widget deep links into workout logging.
+ * @returns Home screen composed from home data hooks, dashboard widgets, and modals.
+ */
 export default function HomeScreen() {
   const router = useRouter();
   const {

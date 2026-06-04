@@ -13,6 +13,7 @@ const logsCollection = collection(db, 'logs');
  * @param logId - ID opcional para atualizar ou remover.
  * @param shouldDelete - Se deve deletar o log.
  * @param isSyncing - Flag para indicar se a chamada vem do sync offline (evita loop).
+ * @returns ID do log criado/atualizado/deletado, ou ID temporario quando enfileirado offline.
  */
 export const addLog = async (logData: Partial<Omit<Log, 'id'>> | null, logId?: string, shouldDelete: boolean = false, isSyncing: boolean = false) => {
   try {
@@ -86,6 +87,7 @@ export const addLog = async (logData: Partial<Omit<Log, 'id'>> | null, logId?: s
 /**
  * Busca os logs de treino de um usuário, ordenados por data.
  * @param usuarioId - O UID do usuário.
+ * @returns Lista de logs do usuario, com fallback para cache offline quando a consulta falha.
  */
 export const getLogsByUsuarioId = async (usuarioId: string): Promise<Log[]> => {
   try {
@@ -115,6 +117,7 @@ export const getLogsByUsuarioId = async (usuarioId: string): Promise<Log[]> => {
 /**
  * Busca os logs de treino associados a um projeto.
  * @param projetoId - O ID do projeto.
+ * @returns Lista de logs do projeto, ordenada do mais recente para o mais antigo.
  */
 export const getLogsByProjetoId = async (projetoId: string): Promise<Log[]> => {
   try {

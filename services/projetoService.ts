@@ -48,6 +48,11 @@ export const updateProjeto = async (projetoId: string, projetoData: Partial<Proj
     await updateDoc(projetoDocRef, projetoData);
 };
 
+/**
+ * Busca projetos criados por um usuario.
+ * @param userId ID do usuario criador.
+ * @returns Lista de projetos cujo criadorId corresponde ao usuario.
+ */
 export const getProjetosByUsuarioId = async (userId: string): Promise<Projeto[]> => {
     // Note: This relies on 'participantes' array or 'criadorId'. 
     // Assuming we want projects created by user.

@@ -37,6 +37,10 @@ interface DisplayItem {
   isPrincipal?: boolean;
 }
 
+/**
+ * Renders the user's workout folders and active/unassigned workout management UI.
+ * @returns Workout-list screen for choosing, editing, reordering, and activating fichas.
+ */
 export default function MeusTreinosScreen() {
   const { user, initialized: authInitialized } = useAuth();
   const router = useRouter();

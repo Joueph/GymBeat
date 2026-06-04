@@ -14,6 +14,10 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
 
+/**
+ * Centralizes home-screen data loading, derived metrics, layout preferences, and widget updates.
+ * @returns Home-screen state, modal setters, metric summaries, refresh function, and persistence actions.
+ */
 export const useHomeData = () => {
     const { user } = useAuth();
     const { isPremium } = usePremiumStatus();
@@ -220,6 +224,11 @@ export const useHomeData = () => {
         return { tempoDeTreino: timeHistory, series: seriesHistory, volume: volumeHistory, pesoCorporal: weightHistory };
     }, [logs, userProfile]);
 
+    /**
+     * Persists a new body-weight record on the current user profile.
+     * @param newWeight Numeric body weight value collected from the drawer.
+     * @returns Promise resolved after Firestore and local state are updated.
+     */
     const handleSaveWeight = async (newWeight: number) => {
         if (!user || !userProfile) return;
         const newWeightRecord = { valor: newWeight, data: new Date() };
@@ -234,6 +243,10 @@ export const useHomeData = () => {
         }
     };
 
+    /**
+     * Reads the most recent body-weight entry from the current user profile.
+     * @returns Latest recorded weight, or 70 when there is no history.
+     */
     const getLatestWeight = () => {
         if (!userProfile?.historicoPeso || userProfile.historicoPeso.length === 0) return 70;
         const sortedHistorico = [...userProfile.historicoPeso]
@@ -242,6 +255,11 @@ export const useHomeData = () => {
         return sortedHistorico[0].valor;
     };
 
+    /**
+     * Persists home widget visibility/order preferences.
+     * @param newLayout Ordered home widget configuration.
+     * @returns Promise resolved after local state and Firestore are updated.
+     */
     const saveLayout = async (newLayout: { key: string; visible: boolean }[]) => {
         if (!user) return;
         setLayout(newLayout);
@@ -254,6 +272,11 @@ export const useHomeData = () => {
         }
     };
 
+    /**
+     * Persists metric-card visibility, width, and graph preferences.
+     * @param newMetricsLayout Ordered metric configuration.
+     * @returns Promise resolved after local state and Firestore are updated.
+     */
     const saveMetricsConfig = async (newMetricsLayout: { key: string; visible: boolean; fullWidth: boolean; graphType?: 'bar' | 'line' }[]) => {
         if (!user) return;
         setMetricsLayout(newMetricsLayout);

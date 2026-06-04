@@ -129,6 +129,10 @@ const formatDuration = (totalSeconds: number) => {
 };
 
 
+/**
+ * Renders the workout completion flow, including summary, streak, post creation, and sharing.
+ * @returns Completed-workout screen driven by the saved log ID.
+ */
 export default function TreinoCompletoScreen() {
   const router = useRouter();
   // ... (código existente de hooks)
@@ -992,7 +996,6 @@ const styles = StyleSheet.create({
     height: '100%',
   },
 });
-
 
 
 

@@ -19,6 +19,7 @@ const auth = getAuth(app);
 /**
  * Retorna a referência do documento de estatísticas para o usuário atual.
  * O ID do documento será o mesmo ID do usuário (uid).
+ * @returns Referencia do documento de estatisticas, ou null se nao houver usuario autenticado.
  */
 const getEstatisticasDocRef = () => {
   const userId = auth.currentUser?.uid;
@@ -32,6 +33,7 @@ const getEstatisticasDocRef = () => {
 /**
  * Inicia o onboarding: autentica o usuário anonimamente e cria o documento de estatísticas.
  * Deve ser chamado quando o usuário clica em "Vamos lá".
+ * @returns Promise resolvida apos autenticar anonimamente e criar/mesclar as estatisticas iniciais.
  */
 export const iniciarOnboarding = async () => {
   try {
@@ -83,6 +85,7 @@ export const iniciarOnboarding = async () => {
  *
  * @param dadosParaAtualizar Um objeto parcial com os campos a serem atualizados.
  * (Ex: { objetivoPrincipal: 'Perder peso' })
+ * @returns Promise resolvida apos atualizar o documento, ou apos ignorar quando nao houver usuario.
  */
 export const atualizarPassoOnboarding = async (
   dadosParaAtualizar: Partial<EstatisticasOnboarding>
@@ -103,6 +106,7 @@ export const atualizarPassoOnboarding = async (
  * Converte a conta anônima em uma conta permanente com e-mail e senha.
  * @param email O e-mail do usuário.
  * @param senha A senha do usuário.
+ * @returns Promise resolvida apos vincular a credencial a conta anonima atual.
  */
 export const converterContaAnonima = async (email: string, senha: string) => {
   const currentUser = auth.currentUser;
@@ -118,6 +122,7 @@ export const converterContaAnonima = async (email: string, senha: string) => {
 /**
  * Finaliza o onboarding, marcando a hora de registro no documento de estatísticas.
  * Deve ser chamado após a conversão da conta.
+ * @returns Promise resolvida apos salvar o horario de registro, ou apos ignorar quando nao houver usuario.
  */
 export const finalizarOnboarding = async () => {
   const docRef = getEstatisticasDocRef();

@@ -8,6 +8,11 @@ const EXERCICIOS_CACHE_KEY = 'exercicios_cache';
 const LAST_SYNC_KEY = 'exercicios_last_sync';
 const EXERCICIOS_PAGE_SIZE = 20;
 
+/**
+ * Cria um modelo de exercicio customizado para o usuario autenticado.
+ * @param exercicioData Dados do exercicio sem os campos gerados pelo sistema.
+ * @returns O modelo criado, incluindo o ID gerado pelo Firestore.
+ */
 export const createExercicioModelo = async (exercicioData: Omit<ExercicioModelo, 'id' | 'isCustom' | 'userId'> & { imagemUrl?: string }): Promise<ExercicioModelo> => {
   const user = auth.currentUser;
   if (!user) {
@@ -44,6 +49,10 @@ export const createExercicioModelo = async (exercicioData: Omit<ExercicioModelo,
   return newModel;
 };
 
+/**
+ * Sincroniza todos os modelos de exercicio do Firestore para o cache local.
+ * @returns Promise resolvida quando o cache e a data da ultima sincronizacao forem salvos.
+ */
 export const syncExercicios = async (): Promise<void> => {
   try {
     console.log("Starting exercise sync...");
@@ -61,6 +70,10 @@ export const syncExercicios = async (): Promise<void> => {
   }
 };
 
+/**
+ * Le do cache local todos os grupos musculares disponiveis nos modelos de exercicio.
+ * @returns Lista alfabetica de grupos musculares encontrados no cache.
+ */
 export const getTodosGruposMusculares = async (): Promise<string[]> => {
   try {
     const cached = await AsyncStorage.getItem(EXERCICIOS_CACHE_KEY);
@@ -92,6 +105,11 @@ export const getTodosGruposMusculares = async (): Promise<string[]> => {
   }
 };
 
+/**
+ * Busca modelos de exercicio no cache local com filtros, busca fuzzy e paginacao por offset.
+ * @param params Opcoes de paginacao, termo de busca e filtro por grupo muscular.
+ * @returns Exercicios da pagina solicitada e o proximo offset, ou null quando nao ha mais paginas.
+ */
 export const getExerciciosModelos = async (params: { lastVisibleDoc?: any | null, limit?: number, searchTerm?: string, grupoMuscular?: string | null }): Promise<{ exercicios: ExercicioModelo[], lastVisibleDoc: number | null }> => {
   const { lastVisibleDoc = 0, limit: queryLimit = EXERCICIOS_PAGE_SIZE, searchTerm, grupoMuscular } = params;
 

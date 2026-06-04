@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 
 /**
  * Verifica e solicita permissões de notificação se necessário.
+ * @returns true quando notificacoes estao permitidas; false quando negadas ou quando a verificacao falhar.
  */
 export const requestNotificationPermissionsIfNeeded = async () => {
   try {
@@ -33,6 +34,7 @@ export const requestNotificationPermissionsIfNeeded = async () => {
  * @param title O título da notificação.
  * @param body O corpo da notificação.
  * @param trigger O gatilho para a notificação. Pode ser um horário diário ou um intervalo em segundos.
+ * @returns Promise resolvida quando a notificacao for agendada; rejeita se o agendamento falhar.
  */
 export const scheduleNotification = async (
   identifier: string,
@@ -83,6 +85,7 @@ export const scheduleNotification = async (
 /**
  * Cancela uma notificação agendada pelo seu identificador.
  * @param identifier O ID da notificação a ser cancelada.
+ * @returns Promise resolvida depois da tentativa de cancelamento; erros sao apenas registrados.
  */
 export const cancelNotification = async (identifier: string) => {
   try {

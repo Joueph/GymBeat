@@ -67,6 +67,10 @@ const defaultPrivacySettings: PrivacySettings = {
   profileVisibility: 'amigos', weekStreak: 'todos', workoutDays: 'todos', workoutDetails: 'amigos', autoAcceptFriendRequests: false
 };
 
+/**
+ * Renders and edits the current user's profile, privacy, notification, and training preferences.
+ * @returns Profile settings screen backed by Firestore user data.
+ */
 export default function PerfilScreen() {
   const { user, logout } = useAuth();
   const [profile, setProfile] = useState<ProfileWithSettings>({});

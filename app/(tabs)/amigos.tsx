@@ -14,6 +14,10 @@ import { PostFeedWidget } from '../../components/amigos/PostFeedWidget';
 import { SocialHeader } from '../../components/amigos/SocialHeader';
 import { useAmigosData } from '../../hooks/useAmigosData';
 
+/**
+ * Renders the social tab with friends, requests, posts, and project shortcuts.
+ * @returns Friends/social screen backed by useAmigosData.
+ */
 export default function AmigosScreen() {
   const router = useRouter();
   const {

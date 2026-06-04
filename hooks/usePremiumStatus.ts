@@ -10,6 +10,10 @@ interface PremiumStatus {
     isLoading: boolean;
 }
 
+/**
+ * Combines RevenueCat entitlement state and Firestore trial data into app premium status.
+ * @returns Premium/trial loading state plus a helper that navigates to the paywall.
+ */
 export function usePremiumStatus() {
     const { isPro: isRevenueCatPro, isLoaded: isRevenueCatLoaded } = useRevenueCat();
     const [status, setStatus] = useState<PremiumStatus>({
@@ -95,6 +99,10 @@ export function usePremiumStatus() {
 
     const router = require('expo-router').useRouter();
 
+    /**
+     * Navigates the current router to the paywall screen.
+     * @returns void.
+     */
     const navigateToPaywall = () => {
         router.push('/paywall');
     };

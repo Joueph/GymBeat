@@ -6,6 +6,11 @@ import { useAuth } from '../../app/authprovider';
 import { HapticTab } from '../../components/haptic-tab';
 import { OfflineIndicator } from '../../components/OfflineIndicator';
 
+/**
+ * Renders a FontAwesome tab icon with the app's bottom-tab sizing defaults.
+ * @param props Icon name, color, and optional size passed by Expo Router tabs.
+ * @returns FontAwesome icon element.
+ */
 function TabBarIcon(props: {
   name: React.ComponentProps<typeof FontAwesome>['name'];
   color: string;
@@ -16,6 +21,10 @@ function TabBarIcon(props: {
   );
 }
 
+/**
+ * Defines the main tab navigator and the social request badge.
+ * @returns Tab layout containing progress, workouts, and social screens.
+ */
 export default function TabLayout() {
   const { user } = useAuth();
 

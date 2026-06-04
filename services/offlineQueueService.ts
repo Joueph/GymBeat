@@ -13,7 +13,10 @@ export interface OfflineAction {
 }
 
 /**
- * Adds an action to the offline queue.
+ * Adds an action to the AsyncStorage-backed offline queue.
+ * @param type Type of operation the sync layer should replay later.
+ * @param payload Operation-specific data needed to perform the replay.
+ * @returns Promise resolved after the queue is persisted, or after an error is logged.
  */
 export const queueAction = async (type: OfflineActionType, payload: any): Promise<void> => {
     try {
@@ -37,7 +40,8 @@ export const queueAction = async (type: OfflineActionType, payload: any): Promis
 };
 
 /**
- * Retrieves the current offline queue.
+ * Retrieves the current offline action queue.
+ * @returns Stored actions, or an empty array when the queue is missing or unreadable.
  */
 export const getOfflineQueue = async (): Promise<OfflineAction[]> => {
     try {
@@ -50,7 +54,9 @@ export const getOfflineQueue = async (): Promise<OfflineAction[]> => {
 };
 
 /**
- * Updates the offline queue (e.g. after processing items).
+ * Replaces the offline action queue after processing or retry bookkeeping.
+ * @param queue Full queue value to persist.
+ * @returns Promise resolved after the queue is saved, or after an error is logged.
  */
 export const setOfflineQueue = async (queue: OfflineAction[]): Promise<void> => {
     try {
@@ -61,7 +67,8 @@ export const setOfflineQueue = async (queue: OfflineAction[]): Promise<void> => 
 };
 
 /**
- * Gets the current size of the queue.
+ * Gets the current number of queued offline actions.
+ * @returns Number of queued actions, or 0 when the queue cannot be read.
  */
 export const getQueueSize = async (): Promise<number> => {
     try {

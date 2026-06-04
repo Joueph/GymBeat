@@ -20,6 +20,10 @@ GoogleSignin.configure({
   webClientId: '418244836174-0e2ch7p0rjdg58d1hcghn135munqat75.apps.googleusercontent.com',
 });
 
+/**
+ * Renders email, Google, and Apple login flows, including pending onboarding ficha setup.
+ * @returns Login screen with credential and social-auth actions.
+ */
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState("");

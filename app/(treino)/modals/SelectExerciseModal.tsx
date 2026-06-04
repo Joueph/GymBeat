@@ -16,6 +16,16 @@ interface SelectExerciseModalProps {
 
 const EXERCICIOS_PAGE_SIZE = 20;
 
+/**
+ * Renders a paginated exercise picker for selecting one exercise.
+ * @param visible Whether the modal is currently visible.
+ * @param onClose Callback used to dismiss the modal.
+ * @param onSelect Callback invoked with the chosen exercise model.
+ * @param excludeIds Exercise IDs to hide from the picker.
+ * @param initialGroup Optional starting muscle-group filter.
+ * @param sortByWordCount Whether to sort exercises by shorter names first.
+ * @returns Single-select exercise modal element.
+ */
 export const SelectExerciseModal = ({ visible, onClose, onSelect, excludeIds = [], initialGroup = null, sortByWordCount = false }: SelectExerciseModalProps) => {
   const [exerciciosModelos, setExerciciosModelos] = useState<ExercicioModelo[]>([]);
   const [lastVisibleDoc, setLastVisibleDoc] = useState<number | null>(null);

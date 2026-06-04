@@ -28,6 +28,10 @@ interface MultiSelectExerciseModalProps {
 
 const EXERCICIOS_PAGE_SIZE = 20;
 
+/**
+ * Renders a paginated exercise picker that allows selecting multiple exercises.
+ * @returns Multi-select exercise modal element.
+ */
 export const MultiSelectExerciseModal = ({
   visible,
   onClose,

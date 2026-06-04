@@ -7,6 +7,10 @@ import { MetaProjeto } from '../../models/projeto';
 import { createProjeto, getProjetosByUsuarioId } from '../../services/projetoService';
 import { useAuth } from '../authprovider';
 
+/**
+ * Renders the project creation form and persists new projects for the current user.
+ * @returns Project creation screen.
+ */
 export default function CriarProjetoScreen() {
   const { user } = useAuth();
   const router = useRouter();

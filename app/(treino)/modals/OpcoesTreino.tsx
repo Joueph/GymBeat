@@ -21,6 +21,10 @@ import { Ficha } from '../../../models/ficha';
 import { addFicha, getFichasByUsuarioId } from '../../../services/fichaService';
 import { useAuth } from '../../authprovider';
 
+/**
+ * Renders workout creation/options choices and routes the user to the selected workout setup flow.
+ * @returns Workout options modal screen.
+ */
 export default function OpcoesTreinoScreen() {
   const router = useRouter();
   const { user } = useAuth();

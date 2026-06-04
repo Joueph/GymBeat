@@ -27,6 +27,10 @@ interface ProjectLog extends Log {
 // Definindo um tipo de união para os itens da lista
 type ListItem = Participant | ProjectLog;
 
+/**
+ * Shows a project's shared workout logs and participant/friendship actions.
+ * @returns Project detail screen driven by route project ID and current auth user.
+ */
 export default function ProjetoDetalheScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const { user } = useAuth();
@@ -349,4 +353,3 @@ const styles = StyleSheet.create({
         backgroundColor: '#2c2c2e',
     },
 });
-

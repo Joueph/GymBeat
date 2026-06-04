@@ -35,6 +35,12 @@ interface FeatureUpvoteModalProps {
   onClose: () => void;
 }
 
+/**
+ * Shows the feature upvote modal and handles voting interactions.
+ * @param visible Whether the modal is currently visible.
+ * @param onClose Callback used to dismiss the modal.
+ * @returns Feature upvote modal element.
+ */
 export const FeatureUpvoteModal = ({ visible, onClose }: FeatureUpvoteModalProps) => {
   const { user } = useAuth();
   const [features, setFeatures] = useState<Feature[]>([]);

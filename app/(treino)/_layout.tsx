@@ -3,6 +3,10 @@ import React from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { MenuProvider } from 'react-native-popup-menu';
 
+/**
+ * Defines the workout stack navigator and gesture/menu providers for workout flows.
+ * @returns Stack layout for editing, logging, completion, and workout-plan screens.
+ */
 export default function TreinoLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

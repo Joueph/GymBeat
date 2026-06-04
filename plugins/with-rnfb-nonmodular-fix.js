@@ -3,6 +3,11 @@ const {withDangerousMod, createRunOncePlugin} = require('@expo/config-plugins')
 const fs = require('fs')
 const path = require('path')
 
+/**
+ * Ensures the Podfile has a post_install hook that later patching can target.
+ * @param {string} podfile - Raw Podfile contents.
+ * @returns {string} The original Podfile when a hook exists, otherwise the Podfile with an empty hook appended.
+ */
 function ensurePostInstall(podfile) {
   if(podfile.includes('post_install do |installer|')) {
     return podfile
@@ -14,6 +19,11 @@ end
 `
 }
 
+/**
+ * Injects the React Native Firebase non-modular include workaround into the Podfile once.
+ * @param {string} podfile - Raw Podfile contents before the Expo dangerous mod writes it.
+ * @returns {string} Podfile contents with the RNFB build-setting snippet inserted inside post_install.
+ */
 function injectSnippet(podfile) {
   const SNIPPET = `
   installer.pods_project.targets.each do |t|
@@ -40,6 +50,11 @@ function injectSnippet(podfile) {
   )
 }
 
+/**
+ * Expo config plugin that patches the generated iOS Podfile during prebuild.
+ * @param {import('@expo/config-plugins').ExpoConfig} config - Expo config object being processed.
+ * @returns {import('@expo/config-plugins').ExpoConfig} The config with an iOS dangerous mod registered.
+ */
 const withRNFBNonModularFix = (config) =>
   withDangerousMod(config, [
     'ios',

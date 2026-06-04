@@ -14,6 +14,14 @@ interface ExerciseReorderModalProps {
     onSave: (newOrder: (Exercicio | LoggedExercise)[]) => void;
 }
 
+/**
+ * Renders a draggable exercise reorder modal.
+ * @param visible Whether the modal is currently visible.
+ * @param onClose Callback used to dismiss without saving.
+ * @param exercises Exercises in their current order.
+ * @param onSave Callback invoked with the reordered exercise list.
+ * @returns Exercise reorder modal element.
+ */
 export const ExerciseReorderModal = ({ visible, onClose, exercises, onSave }: ExerciseReorderModalProps) => {
     const [data, setData] = useState<(Exercicio | LoggedExercise)[]>(exercises);
 

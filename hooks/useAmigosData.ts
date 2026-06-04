@@ -22,6 +22,10 @@ const toDate = (date: any): Date | null => {
     return isNaN(d.getTime()) ? null : d;
 };
 
+/**
+ * Centralizes friends-tab state, live profile subscriptions, social stats, and friend actions.
+ * @returns Friends screen data, modal/input state, derived stats, and social action handlers.
+ */
 export function useAmigosData() {
     const { user } = useAuth();
     const { isOnline } = useNetwork();
@@ -168,6 +172,10 @@ export function useAmigosData() {
         }, [user])
     );
 
+    /**
+     * Parses a project invite code and navigates to the project route.
+     * @returns void; invalid input is surfaced through an alert.
+     */
     const handleJoinProject = () => {
         const match = projectCode.match(/\{([^}]+)\}/);
         const extractedId = match ? match[1] : projectCode;
@@ -179,6 +187,10 @@ export function useAmigosData() {
         }
     };
 
+    /**
+     * Opens the native share sheet with the current user's friend invite link.
+     * @returns Promise resolved after the share sheet completes or an error alert is shown.
+     */
     const handleShareCode = async () => {
         if (!user) return;
         try {
@@ -194,6 +206,11 @@ export function useAmigosData() {
         }
     };
 
+    /**
+     * Accepts a pending friend request for the current user.
+     * @param requesterId ID of the user who sent the request.
+     * @returns Promise resolved after the friendship update or an error alert.
+     */
     const handleAcceptRequest = async (requesterId: string) => {
         if (!user) return;
         try {
@@ -205,6 +222,11 @@ export function useAmigosData() {
         }
     };
 
+    /**
+     * Rejects or removes a friend relationship for the current user.
+     * @param requesterId ID of the related user to remove.
+     * @returns Promise resolved after the friendship removal or an error alert.
+     */
     const handleRejectRequest = async (requesterId: string) => {
         if (!user) return;
         try {

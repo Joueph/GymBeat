@@ -34,6 +34,12 @@ interface NoteHistoryItem {
     note: string;
 }
 
+/**
+ * Renders exercise notes with previous workout history and premium gating.
+ * @param visible Whether the modal is currently visible.
+ * @param onClose Callback used to dismiss the modal.
+ * @returns Exercise notes modal element.
+ */
 export const ExerciseNotesModal = ({
     visible,
     onClose,

@@ -1,4 +1,5 @@
 import { Ficha } from '@/models/ficha';
+import { Log } from '@/models/log';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React from 'react';
@@ -6,17 +7,33 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type QuickActionsWidgetProps = {
     activeFicha: Ficha | null;
+    activeWorkoutLog?: Log | null;
     onStartEmptyWorkout: () => void;
 };
 
-export const QuickActionsWidget: React.FC<QuickActionsWidgetProps> = ({ activeFicha, onStartEmptyWorkout }) => {
-    if (activeFicha) return null;
+export const QuickActionsWidget: React.FC<QuickActionsWidgetProps> = ({ activeFicha, activeWorkoutLog, onStartEmptyWorkout }) => {
+    if (activeFicha && !activeWorkoutLog) return null;
 
     return (
         <View style={styles.containerWrapper}>
             <Text style={styles.sectionTitle}>Ações</Text>
 
             <View style={styles.container_inner}>
+                {activeWorkoutLog && (
+                    <TouchableOpacity
+                        style={[styles.actionButton, styles.resumeButton]}
+                        onPress={() => router.push({ pathname: '/(treino)/LoggingDuringWorkout', params: { logId: activeWorkoutLog.id } })}
+                    >
+                        <View>
+                            <Text style={styles.actionText}>Continuar treino</Text>
+                            <Text style={styles.actionSubText}>{String(activeWorkoutLog.nomeTreino || activeWorkoutLog.treino?.nome || 'Treino em andamento')}</Text>
+                        </View>
+                        <View style={styles.iconContainer}>
+                            <Ionicons name="play" size={24} color="#FFFFFF" />
+                        </View>
+                    </TouchableOpacity>
+                )}
+
                 <TouchableOpacity style={styles.actionButton} onPress={onStartEmptyWorkout}>
                     <Text style={styles.actionText}>Iniciar Treino Livre</Text>
                     <View style={styles.iconContainer}>
@@ -65,5 +82,14 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 16,
         fontWeight: 'bold',
+    },
+    actionSubText: {
+        color: '#9CA3AF',
+        fontSize: 12,
+        marginTop: 4,
+    },
+    resumeButton: {
+        borderColor: '#3B82F6',
+        borderWidth: 1,
     },
 });

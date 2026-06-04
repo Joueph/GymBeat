@@ -34,7 +34,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     const checkInitialConnection = async () => {
       const state = await NetInfo.fetch();
       setNetInfo(state);
-      setIsOnline(state.isConnected ?? true);
+      setIsOnline((state.isConnected ?? true) && state.isInternetReachable !== false);
       setInitialized(true); // Mark as initialized after fetch
     };
 
@@ -43,7 +43,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
     // Monitora mudanças no estado da internet
     const unsubscribe = NetInfo.addEventListener((state) => {
       setNetInfo(state);
-      const connected = state.isConnected ?? true;
+      const connected = (state.isConnected ?? true) && state.isInternetReachable !== false;
       setIsOnline(connected);
 
       console.log(`[Network] Conexão: ${connected ? 'Online' : 'Offline'}`);

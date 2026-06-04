@@ -1,6 +1,5 @@
 import { FontAwesome, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import * as Network from 'expo-network';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -167,14 +166,6 @@ export default function MeusTreinosScreen() {
     switch (action) {
       case 'set-active':
         try {
-          const networkState = await Network.getNetworkStateAsync();
-          const isOffline = !networkState.isConnected;
-
-          if (isOffline) {
-            Alert.alert("Offline", "Você precisa estar online para alterar a ficha principal.");
-            return;
-          }
-
           const isCurrentlyActive = activeFicha?.id === folderId;
           // If it's already active, we pass null to deactivate it (remove as principal)
           // otherwise we pass the folderId to set it as new active

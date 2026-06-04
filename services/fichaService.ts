@@ -1,5 +1,6 @@
 // services/fichaService.ts
 
+import NetInfo from '@react-native-community/netinfo';
 import {
   addDoc,
   collection,
@@ -16,7 +17,16 @@ import { db } from '../firebaseconfig';
 import { Ficha } from '../models/ficha';
 import { FichaModelo } from '../models/fichaModelo';
 import { TreinoModelo } from '../models/treinoModelo';
-import { cacheUserFichas, getCachedFichaAtiva, getCachedUserFichas } from './offlineCacheService';
+import {
+  cacheFichaAtiva,
+  cacheUserFichas,
+  clearCachedFichaAtiva,
+  getCachedFichaAtiva,
+  getCachedUserFichas,
+  updateCachedFicha,
+  upsertCachedFicha
+} from './offlineCacheService';
+import { queueAction } from './offlineQueueService';
 
 /**
  * Fetches all workout plan models from the 'fichas_modelos' collection in Firestore.
@@ -122,6 +132,11 @@ export const copyFichaModeloToUser = async (fichaModelo: FichaModelo, userId: st
  * @returns A ficha ativa, ou null quando nenhuma ficha ativa for encontrada.
  */
 export const getFichaAtiva = async (userId: string): Promise<Ficha | null> => {
+  const networkState = await NetInfo.fetch();
+  if (!((networkState.isConnected ?? true) && networkState.isInternetReachable !== false)) {
+    return await getCachedFichaAtiva();
+  }
+
   try {
     const fichasRef = collection(db, 'fichas');
     const q = query(fichasRef, where('usuarioId', '==', userId), where('ativa', '==', true));
@@ -133,7 +148,9 @@ export const getFichaAtiva = async (userId: string): Promise<Ficha | null> => {
 
     // Assume there's only one active ficha per user
     const docSnap = querySnapshot.docs[0];
-    return { id: docSnap.id, ...docSnap.data() } as Ficha;
+    const ficha = { id: docSnap.id, ...docSnap.data() } as Ficha;
+    await cacheFichaAtiva(ficha);
+    return ficha;
   } catch (error) {
     console.error('[FichaService] Erro ao buscar ficha ativa:', error);
     // Fallback: tenta recuperar do cache se offline
@@ -152,6 +169,11 @@ export const getFichaAtiva = async (userId: string): Promise<Ficha | null> => {
  * @returns Lista de fichas do usuario, ou a lista em cache quando o Firestore falhar.
  */
 export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => {
+  const networkState = await NetInfo.fetch();
+  if (!((networkState.isConnected ?? true) && networkState.isInternetReachable !== false)) {
+    return await getCachedUserFichas(userId);
+  }
+
   try {
     const fichasRef = collection(db, 'fichas');
     const q = query(fichasRef, where('usuarioId', '==', userId));
@@ -181,7 +203,31 @@ export const getFichasByUsuarioId = async (userId: string): Promise<Ficha[]> => 
  * @param previousFichaId ID conhecido da ficha ativa anterior usado como fallback.
  * @returns A ficha recem-ativada, ou null quando nenhuma ficha for ativada.
  */
-export const setFichaAtiva = async (userId: string, fichaId: string | null, previousFichaId?: string): Promise<Ficha | null> => {
+export const setFichaAtiva = async (userId: string, fichaId: string | null, previousFichaId?: string, isSyncing: boolean = false): Promise<Ficha | null> => {
+  const networkState = await NetInfo.fetch();
+  const isOnline = (networkState.isConnected ?? true) && networkState.isInternetReachable !== false;
+
+  if (!isOnline && !isSyncing) {
+    await queueAction('SET_FICHA_ATIVA', { userId, fichaId, previousFichaId });
+
+    const fichas = await getCachedUserFichas(userId);
+    let updatedActive: Ficha | null = null;
+    await cacheUserFichas(userId, fichas.map(ficha => {
+      const ativa = !!fichaId && ficha.id === fichaId;
+      const updatedFicha = { ...ficha, ativa };
+      if (ativa) updatedActive = updatedFicha;
+      return updatedFicha;
+    }));
+
+    if (updatedActive) {
+      await cacheFichaAtiva(updatedActive);
+    } else {
+      await clearCachedFichaAtiva();
+    }
+
+    return updatedActive;
+  }
+
   const batch = writeBatch(db);
   const fichasRef = collection(db, 'fichas');
 
@@ -213,15 +259,30 @@ export const setFichaAtiva = async (userId: string, fichaId: string | null, prev
     batch.update(newActiveFichaRef, { ativa: true });
     await batch.commit();
 
+    const cachedFichas = await getCachedUserFichas(userId);
+    if (cachedFichas.length > 0) {
+      await cacheUserFichas(userId, cachedFichas.map(ficha => ({
+        ...ficha,
+        ativa: ficha.id === fichaId
+      })));
+    }
+
     // ADICIONADO: Busca e retorna a ficha recém-ativada
     const docSnap = await getDoc(newActiveFichaRef);
     if (docSnap.exists()) {
-      return { id: docSnap.id, ...docSnap.data() } as Ficha;
+      const ficha = { id: docSnap.id, ...docSnap.data() } as Ficha;
+      await upsertCachedFicha(userId, ficha);
+      return ficha;
     }
     return null; // Caso a ficha não seja encontrada
   } else {
     // Se fichaId for null, apenas commitamos as desativações
     await batch.commit();
+    const cachedFichas = await getCachedUserFichas(userId);
+    if (cachedFichas.length > 0) {
+      await cacheUserFichas(userId, cachedFichas.map(ficha => ({ ...ficha, ativa: false })));
+    }
+    await clearCachedFichaAtiva();
     return null;
   }
 };
@@ -231,9 +292,31 @@ export const setFichaAtiva = async (userId: string, fichaId: string | null, prev
  * @param fichaData Dados da ficha sem o ID gerado pelo Firestore.
  * @returns ID da ficha criada.
  */
-export const addFicha = async (fichaData: Omit<Ficha, 'id'>): Promise<string> => {
+export const addFicha = async (fichaData: Omit<Ficha, 'id'>, isSyncing: boolean = false): Promise<string> => {
+  const networkState = await NetInfo.fetch();
+  const isOnline = (networkState.isConnected ?? true) && networkState.isInternetReachable !== false;
+  const requestedId = (fichaData as Partial<Ficha>).id;
+
+  if (!isOnline && !isSyncing) {
+    const tempId = requestedId || `temp-ficha-${Date.now()}`;
+    const localFicha = { ...fichaData, id: tempId } as Ficha;
+
+    await queueAction('ADD_FICHA', { fichaData: localFicha });
+    await upsertCachedFicha(localFicha.usuarioId, localFicha);
+    return tempId;
+  }
+
   const fichasRef = collection(db, 'fichas');
+  if (requestedId) {
+    const fichaRef = doc(db, 'fichas', requestedId);
+    await writeBatch(db).set(fichaRef, fichaData).commit();
+    const ficha = { ...fichaData, id: requestedId } as Ficha;
+    await upsertCachedFicha(ficha.usuarioId, ficha);
+    return requestedId;
+  }
+
   const docRef = await addDoc(fichasRef, fichaData);
+  await upsertCachedFicha(fichaData.usuarioId, { ...fichaData, id: docRef.id } as Ficha);
   return docRef.id;
 };
 
@@ -271,9 +354,19 @@ export const getFichaById = async (fichaId: string): Promise<Ficha | null> => {
  * @param data Campos parciais que serao enviados ao Firestore.
  * @returns Promise resolvida quando o update for concluido.
  */
-export const updateFicha = async (fichaId: string, data: Partial<Omit<Ficha, 'id'>>): Promise<void> => {
+export const updateFicha = async (fichaId: string, data: Partial<Omit<Ficha, 'id'>>, isSyncing: boolean = false): Promise<void> => {
+  const networkState = await NetInfo.fetch();
+  const isOnline = (networkState.isConnected ?? true) && networkState.isInternetReachable !== false;
+
+  if (!isOnline && !isSyncing) {
+    await queueAction('UPDATE_FICHA', { fichaId, data });
+    await updateCachedFicha(fichaId, data);
+    return;
+  }
+
   const fichaRef = doc(db, 'fichas', fichaId);
   await updateDoc(fichaRef, data);
+  await updateCachedFicha(fichaId, data);
 };
 
 /**

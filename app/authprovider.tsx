@@ -124,7 +124,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Salva em cache para acesso offline
             await cacheUserSession(combinedUser);
           } else {
-            setUser(null);
+            const cachedUser = await getCachedUserSession();
+            if (cachedUser && cachedUser.id === currentUser.uid) {
+              console.log('[Auth] Documento remoto ausente; mantendo sessão em cache.');
+              setUser(cachedUser);
+            } else {
+              setUser(null);
+            }
           }
         },
         async (error) => {
@@ -156,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         firestoreUnsubscribe();
       }
     };
-  }, [isOnline]);
+  }, []);
 
   // NOVO: Persistência redundante. Sempre que o usuário muda (e existe), atualizamos o cache.
   // Isso garante que se o login ocorrer e o snapshot não disparar o salvamento por algum motivo,

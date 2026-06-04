@@ -16,38 +16,36 @@ const logsCollection = collection(db, 'logs');
  * @returns ID do log criado/atualizado/deletado, ou ID temporario quando enfileirado offline.
  */
 export const addLog = async (logData: Partial<Omit<Log, 'id'>> | null, logId?: string, shouldDelete: boolean = false, isSyncing: boolean = false) => {
+  const upsertCachedLog = async (id: string, data: Partial<Omit<Log, 'id'>> | null) => {
+    if (!data?.usuarioId) return;
+
+    const userLogs = await getCachedUserLogs(data.usuarioId);
+    const existingIndex = userLogs.findIndex(l => l.id === id);
+    const newLogObj = { ...data, id } as Log;
+
+    const updatedLogs = existingIndex >= 0
+      ? userLogs.map((log, index) => index === existingIndex ? { ...log, ...newLogObj } : log)
+      : [newLogObj, ...userLogs];
+
+    await cacheUserLogs(data.usuarioId, updatedLogs);
+  };
+
+  // Helper para enfileirar e atualizar cache
+  const queueAndCache = async () => {
+    console.log('[LogService] Enfileirando log (Offline/Erro).');
+    const tempId = logId || `temp-log-${Date.now()}`;
+
+    // 1. Enfileira a ação
+    await queueAction('ADD_LOG', { logData, logId: tempId });
+
+    // 2. Atualiza o cache local imediatamente para refletir na UI
+    await upsertCachedLog(tempId, logData);
+    return tempId;
+  };
+
   try {
     const networkState = await NetInfo.fetch();
-    const isOnline = networkState.isConnected;
-
-    // Helper para enfileirar e atualizar cache
-    const queueAndCache = async () => {
-      console.log('[LogService] Enfileirando log (Offline/Erro).');
-      const tempId = logId || `temp-log-${Date.now()}`;
-
-      // 1. Enfileira a ação
-      await queueAction('ADD_LOG', { logData, logId: tempId });
-
-      // 2. Atualiza o cache local imediatamente para refletir na UI
-      if (logData && logData.usuarioId) {
-        const userLogs = await getCachedUserLogs(logData.usuarioId);
-        // Se já existe (update), substitui. Se não, adiciona.
-        const existingIndex = userLogs.findIndex(l => l.id === tempId);
-
-        const newLogObj = { ...logData, id: tempId } as Log;
-
-        let updatedLogs;
-        if (existingIndex >= 0) {
-          updatedLogs = [...userLogs];
-          updatedLogs[existingIndex] = newLogObj;
-        } else {
-          updatedLogs = [newLogObj, ...userLogs];
-        }
-
-        await cacheUserLogs(logData.usuarioId, updatedLogs);
-      }
-      return tempId;
-    };
+    const isOnline = (networkState.isConnected ?? true) && networkState.isInternetReachable !== false;
 
     // Lógica Offline explícita (se não estiver sincronizando)
     if (!isOnline && !isSyncing && !shouldDelete) {
@@ -63,10 +61,12 @@ export const addLog = async (logData: Partial<Omit<Log, 'id'>> | null, logId?: s
       // Atualiza um log existente (merge)
       // Se não estiver sincronizando, tenta salvar no Firestore.
       await setDoc(doc(db, 'logs', logId), logData, { merge: true });
+      await upsertCachedLog(logId, logData);
       return logId;
     } else if (logData) {
       // Cria um novo log
       const docRef = await addDoc(collection(db, 'logs'), logData);
+      await upsertCachedLog(docRef.id, logData);
       return docRef.id;
     }
 
@@ -90,6 +90,11 @@ export const addLog = async (logData: Partial<Omit<Log, 'id'>> | null, logId?: s
  * @returns Lista de logs do usuario, com fallback para cache offline quando a consulta falha.
  */
 export const getLogsByUsuarioId = async (usuarioId: string): Promise<Log[]> => {
+  const networkState = await NetInfo.fetch();
+  if (!((networkState.isConnected ?? true) && networkState.isInternetReachable !== false)) {
+    return await getCachedUserLogs(usuarioId);
+  }
+
   try {
     const q = query(logsCollection, where('usuarioId', '==', usuarioId));
     const querySnapshot = await getDocs(q);

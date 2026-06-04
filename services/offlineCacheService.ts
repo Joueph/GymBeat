@@ -48,6 +48,8 @@ export const cacheFichaCompleta = async (ficha: Ficha, treinos: Treino[]): Promi
     try {
         // 1. Salvar a ficha e os treinos em AsyncStorage
         await AsyncStorage.setItem(FICHA_ATIVA_CACHE_KEY, JSON.stringify(ficha));
+        await cacheUserFichas(ficha.usuarioId, [ficha]);
+        await cacheUserTreinos(ficha.usuarioId, treinos);
         for (const treino of treinos) {
             await AsyncStorage.setItem(`${TREINOS_CACHE_KEY_PREFIX}${treino.id}`, JSON.stringify(treino));
         }
@@ -183,6 +185,18 @@ export const cacheFichaAtiva = async (ficha: Ficha): Promise<void> => {
 };
 
 /**
+ * Remove a ficha ativa em cache.
+ * @returns Promise resolvida depois de limpar a chave da ficha ativa.
+ */
+export const clearCachedFichaAtiva = async (): Promise<void> => {
+    try {
+        await AsyncStorage.removeItem(FICHA_ATIVA_CACHE_KEY);
+    } catch (error) {
+        console.error("[Cache] Erro ao limpar ficha ativa:", error);
+    }
+};
+
+/**
  * Recupera a ficha ativa em cache (para uso offline).
  * @returns A ficha ativa em cache ou null se não houver.
  */
@@ -204,10 +218,6 @@ export const clearUserSessionCache = async (): Promise<void> => {
         await AsyncStorage.removeItem(USER_SESSION_CACHE_KEY);
         await AsyncStorage.removeItem(CURRENT_USER_ID_KEY);
         await AsyncStorage.removeItem(FICHA_ATIVA_CACHE_KEY);
-        // Limpa também as listas
-        const userId = await AsyncStorage.getItem(CURRENT_USER_ID_KEY); // Pode já ter ido embora, então melhor limpar sem depender do ID se possível, ou limpar tudo.
-        // Como o ID já foi removido acima, não conseguimos limpar as chaves sufixadas pelo ID facilmente sem ter o ID antes.
-        // O ideal é limpar antes de remover o ID.
 
         console.log("[Cache] Sessão do usuário limpa.");
     } catch (error) {
@@ -234,6 +244,58 @@ export const cacheUserFichas = async (userId: string, fichas: Ficha[]): Promise<
     } catch (error) {
         console.error("[Cache] Erro ao salvar fichas:", error);
     }
+};
+
+/**
+ * Insere ou atualiza uma ficha na lista local do usuario.
+ * @param userId ID do usuario dono da ficha.
+ * @param ficha Ficha completa a salvar.
+ * @returns Promise resolvida apos atualizar a lista em cache e, quando ativa, a ficha ativa.
+ */
+export const upsertCachedFicha = async (userId: string, ficha: Ficha): Promise<void> => {
+    const fichas = await getCachedUserFichas(userId);
+    const existingIndex = fichas.findIndex(f => f.id === ficha.id);
+    const updated = existingIndex >= 0
+        ? fichas.map((f, index) => index === existingIndex ? { ...f, ...ficha } : f)
+        : [ficha, ...fichas];
+
+    await cacheUserFichas(userId, updated);
+
+    if (ficha.ativa) {
+        await cacheFichaAtiva(ficha);
+    }
+};
+
+/**
+ * Atualiza uma ficha ja existente no cache local.
+ * @param fichaId ID da ficha.
+ * @param data Campos parciais a aplicar.
+ * @param userId ID do usuario; quando omitido, usa o usuario em cache.
+ * @returns A ficha atualizada, ou null quando nao encontrada.
+ */
+export const updateCachedFicha = async (fichaId: string, data: Partial<Omit<Ficha, 'id'>>, userId?: string): Promise<Ficha | null> => {
+    const resolvedUserId = userId || await getCachedCurrentUserId();
+    if (!resolvedUserId) return null;
+
+    const fichas = await getCachedUserFichas(resolvedUserId);
+    let updatedFicha: Ficha | null = null;
+    const updated = fichas.map(f => {
+        if (f.id !== fichaId) return f;
+        updatedFicha = { ...f, ...data, id: fichaId };
+        return updatedFicha;
+    });
+
+    if (!updatedFicha) return null;
+    const fichaAtualizada = updatedFicha as Ficha;
+
+    await cacheUserFichas(resolvedUserId, updated);
+
+    const active = await getCachedFichaAtiva();
+    if (active?.id === fichaId || fichaAtualizada.ativa) {
+        await cacheFichaAtiva(fichaAtualizada);
+    }
+
+    return fichaAtualizada;
 };
 
 /**
@@ -270,6 +332,55 @@ export const cacheUserTreinos = async (userId: string, treinos: Treino[]): Promi
     } catch (error) {
         console.error("[Cache] Erro ao salvar lista de treinos:", error);
     }
+};
+
+/**
+ * Insere ou atualiza um treino na lista local do usuario e no cache individual.
+ * @param userId ID do usuario dono do treino.
+ * @param treino Treino completo a salvar.
+ * @returns Promise resolvida depois de atualizar os caches de treino.
+ */
+export const upsertCachedTreino = async (userId: string, treino: Treino): Promise<void> => {
+    const treinos = await getCachedUserTreinos(userId);
+    const existingIndex = treinos.findIndex(t => t.id === treino.id);
+    const updated = existingIndex >= 0
+        ? treinos.map((t, index) => index === existingIndex ? { ...t, ...treino } : t)
+        : [treino, ...treinos];
+
+    await cacheUserTreinos(userId, updated);
+    await cacheTreino(treino);
+};
+
+/**
+ * Atualiza um treino no cache local.
+ * @param treinoId ID do treino.
+ * @param data Campos parciais a aplicar.
+ * @param userId ID do usuario; quando omitido, usa o usuario em cache ou o treino individual.
+ * @returns Treino atualizado, ou null quando nao encontrado.
+ */
+export const updateCachedTreino = async (treinoId: string, data: Partial<Omit<Treino, 'id'>>, userId?: string): Promise<Treino | null> => {
+    const cachedTreino = await getCachedTreinoById(treinoId);
+    const resolvedUserId = userId || cachedTreino?.usuarioId || await getCachedCurrentUserId();
+    if (!resolvedUserId) return null;
+
+    const treinos = await getCachedUserTreinos(resolvedUserId);
+    let updatedTreino: Treino | null = null;
+    const updated = treinos.map(t => {
+        if (t.id !== treinoId) return t;
+        updatedTreino = { ...t, ...data, id: treinoId };
+        return updatedTreino;
+    });
+
+    if (!updatedTreino && cachedTreino) {
+        updatedTreino = { ...cachedTreino, ...data, id: treinoId };
+        updated.push(updatedTreino);
+    }
+
+    if (!updatedTreino) return null;
+
+    await cacheUserTreinos(resolvedUserId, updated);
+    await cacheTreino(updatedTreino);
+    return updatedTreino;
 };
 
 /**

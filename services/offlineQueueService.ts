@@ -2,7 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const OFFLINE_QUEUE_KEY = 'offlineActionQueue';
 
-export type OfflineActionType = 'ADD_LOG' | 'UPDATE_TREINO' | 'ADD_TREINO';
+export type OfflineActionType =
+    | 'ADD_LOG'
+    | 'UPDATE_TREINO'
+    | 'ADD_TREINO'
+    | 'ADD_FICHA'
+    | 'UPDATE_FICHA'
+    | 'SET_FICHA_ATIVA'
+    | 'UPDATE_TREINOS_ORDEM'
+    | 'UPDATE_USER_PROFILE';
 
 export interface OfflineAction {
     id: string;

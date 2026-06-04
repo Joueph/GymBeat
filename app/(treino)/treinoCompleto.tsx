@@ -1,5 +1,6 @@
 import { calculateTotalVolume } from '@/utils/volumeUtils';
 import { FontAwesome } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'; // Adicionado ThemedText
 import * as StoreReview from 'expo-store-review';
 // import { VideoView as Video, useVideoPlayer } from 'expo-video'; // Removido
@@ -158,9 +159,14 @@ export default function TreinoCompletoScreen() {
   const [posting, setPosting] = useState(false);
   const [sharedImageUri, setSharedImageUri] = useState<string | null>(null);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
+  const [requestedPostCardIndex, setRequestedPostCardIndex] = useState<number | undefined>(undefined);
 
   const viewShotRef = useRef<ViewShot>(null);
+  const cameraRef = useRef<CameraView>(null);
   const flatListRef = useRef<FlatList>(null);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [isCameraReady, setCameraReady] = useState(false);
+  const [isCapturingPhoto, setCapturingPhoto] = useState(false);
 
   // Animação para o gráfico de barras
   const chartHeight = useSharedValue(0);
@@ -274,7 +280,14 @@ export default function TreinoCompletoScreen() {
         getLogsByUsuarioId(user.id),
         getFichaAtiva(user.id)
       ]);
-      setAllUserLogs(userLogs); // Guarda todos os logs para os componentes filhos
+
+      const logsAtualizados = [...userLogs];
+      const logJaExiste = logsAtualizados.some(l => l.id === completedLog.id);
+      if (!logJaExiste) {
+        logsAtualizados.push(completedLog);
+      }
+
+      setAllUserLogs(logsAtualizados); // Guarda todos os logs para os componentes filhos
 
       // CORREÇÃO: Obter o peso mais recente do histórico de peso.
       const latestWeight = userProfile?.historicoPeso && userProfile.historicoPeso.length > 0
@@ -290,7 +303,7 @@ export default function TreinoCompletoScreen() {
       const today = new Date();
       const startOfThisWeek = getStartOfWeek(today);
 
-      const workoutsThisWeekCount = userLogs.filter(log => {
+      const workoutsThisWeekCount = logsAtualizados.filter(log => {
         const logDate = toDate(log.horarioFim);
         return logDate && logDate >= startOfThisWeek;
       }).length;
@@ -299,7 +312,7 @@ export default function TreinoCompletoScreen() {
 
       const workoutsByWeek: { [weekStart: string]: number } = {};
       // ... (código existente de workoutsByWeek)
-      userLogs.forEach(log => {
+      logsAtualizados.forEach(log => {
         const logDate = toDate(log.horarioFim);
         if (logDate) {
           const weekStartDate = getStartOfWeek(logDate);
@@ -325,14 +338,6 @@ export default function TreinoCompletoScreen() {
 
       if (fichaAtiva && fichaAtiva.treinos.length > 0) {
         const treinosFicha = await getTreinosByIds(fichaAtiva.treinos);
-
-        // Garante que o log atual (completedLog) esteja na lista passada para o widget
-        // caso o fetch do banco ainda não o tenha trazido.
-        const logsAtualizados = [...userLogs];
-        const logJaExiste = logsAtualizados.some(l => l.id === completedLog.id);
-        if (!logJaExiste) {
-          logsAtualizados.push(completedLog);
-        }
 
         // Atualiza widgets com a lista garantida
         widgetService.updateAll(treinosFicha, logsAtualizados);
@@ -382,35 +387,53 @@ export default function TreinoCompletoScreen() {
     if (!result.canceled) {
       const processedUri = await processImage(result.assets[0].uri);
       setPostImage(processedUri);
+      setRequestedPostCardIndex(1);
+      setActiveCardIndex(1);
     }
   };
 
   const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Desculpe', 'Precisamos de permissão para acessar a câmera.');
+    if (!cameraPermission?.granted) {
+      const permission = await requestCameraPermission();
+      if (!permission.granted) {
+        Alert.alert('Desculpe', 'Precisamos de permissão para acessar a câmera.');
+        return;
+      }
+    }
+
+    if (!cameraRef.current || !isCameraReady || isCapturingPhoto) {
       return;
     }
 
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 5],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      const processedUri = await processImage(result.assets[0].uri);
-      setPostImage(processedUri);
+    setCapturingPhoto(true);
+    try {
+      const result = await cameraRef.current.takePictureAsync({ quality: 0.9, skipProcessing: false });
+      if (result?.uri) {
+        const processedUri = await processImage(result.uri);
+        setPostImage(processedUri);
+        setRequestedPostCardIndex(1);
+        setActiveCardIndex(1);
+      }
+    } catch (error) {
+      console.error('Error taking embedded camera photo:', error);
+      Alert.alert('Erro', 'Não foi possível capturar a foto.');
+    } finally {
+      setCapturingPhoto(false);
     }
   };
 
   const handlePost = async () => {
     if (!log || !user) return;
+    if (activeCardIndex === 1 && !postImage) {
+      Alert.alert('Foto pendente', 'Capture ou escolha uma foto antes de postar este card.');
+      return;
+    }
+
     setPosting(true);
     try {
       // 1. Capture the current card view
       const uri = await captureRef(viewShotRef, {
-        format: "jpg",
+        format: "png",
         quality: 0.9,
       });
       setSharedImageUri(uri);
@@ -577,19 +600,55 @@ export default function TreinoCompletoScreen() {
           duration={formatDuration(duration)}
           trainingName={log?.treino?.nome || 'Treino'}
           viewShotRef={viewShotRef}
-          onIndexChange={setActiveCardIndex}
+          cameraRef={cameraRef}
+          hasCameraPermission={!!cameraPermission?.granted}
+          onRequestCameraPermission={requestCameraPermission}
+          onCameraReady={() => setCameraReady(true)}
+          requestedIndex={requestedPostCardIndex}
+          onIndexChange={(index) => {
+            setActiveCardIndex(index);
+            setRequestedPostCardIndex(undefined);
+          }}
         />
 
         <View style={styles.postActionsContainer}>
-          <View style={styles.mediaButtonsRow}>
-            <TouchableOpacity style={styles.mediaButton} onPress={takePhoto}>
-              <FontAwesome name="camera" size={20} color="#fff" />
-              <Text style={styles.mediaButtonText}>Câmera</Text>
+          {activeCardIndex === 1 && !postImage && (
+            <TouchableOpacity
+              style={[styles.captureButton, (!cameraPermission?.granted || !isCameraReady || isCapturingPhoto) && styles.disabledButton]}
+              onPress={takePhoto}
+              disabled={isCapturingPhoto}
+            >
+              {isCapturingPhoto ? (
+                <ActivityIndicator color="#0B0D10" />
+              ) : (
+                <View style={styles.captureButtonInner}>
+                  <FontAwesome name="camera" size={22} color="#0B0D10" />
+                </View>
+              )}
             </TouchableOpacity>
+          )}
+
+          <View style={styles.mediaButtonsRow}>
+            {postImage && (
+              <TouchableOpacity style={styles.mediaButton} onPress={() => {
+                setPostImage(null);
+                setRequestedPostCardIndex(1);
+                setActiveCardIndex(1);
+              }}>
+                <FontAwesome name="refresh" size={20} color="#fff" />
+                <Text style={styles.mediaButtonText}>Nova foto</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.mediaButton} onPress={pickImage}>
               <FontAwesome name="image" size={20} color="#fff" />
               <Text style={styles.mediaButtonText}>Galeria</Text>
             </TouchableOpacity>
+            {activeCardIndex !== 1 && !postImage && (
+              <TouchableOpacity style={styles.mediaButton} onPress={() => setRequestedPostCardIndex(1)}>
+                <FontAwesome name="camera" size={20} color="#fff" />
+                <Text style={styles.mediaButtonText}>Câmera</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <TouchableOpacity
@@ -932,6 +991,30 @@ const styles = StyleSheet.create({
   },
   postActionsContainer: {
     gap: 12,
+    marginTop: 4,
+  },
+  captureButton: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    backgroundColor: '#fff',
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 5,
+    borderColor: '#2A2E37',
+    marginTop: -2,
+    marginBottom: 4,
+  },
+  captureButtonInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#0B0D10',
   },
   mediaButtonsRow: {
     flexDirection: 'row',
@@ -989,13 +1072,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#fff',
+    borderColor: '#2A2E37',
   },
   sharePreviewImage: {
     width: '100%',
     height: '100%',
   },
 });
-
-
-

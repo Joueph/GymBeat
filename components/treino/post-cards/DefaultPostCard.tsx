@@ -51,7 +51,6 @@ const styles = StyleSheet.create({
         aspectRatio: 4 / 5,
         borderRadius: 16,
         overflow: 'hidden',
-        marginBottom: 20,
         position: 'relative',
     },
     defaultCard: {

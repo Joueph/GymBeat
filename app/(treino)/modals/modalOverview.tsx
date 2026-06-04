@@ -10,10 +10,10 @@ import { VideoListItem } from '../../../components/VideoListItem';
 
 // Flag para detecção do Expo Go
 
-// Adiciona a propriedade 'conclido' à interface Serie localmente
-interface SerieComStatus extends Serie {
-  conclido?: boolean;
-}
+// Adiciona a propriedade 'concluido' à interface Serie localmente
+type SerieComStatus = Omit<Serie, 'concluido'> & {
+  concluido?: boolean;
+};
 
 // New CircularProgressBar component
 const CircularProgressBar = ({ progress, completed, total }: { progress: number; completed: number; total: number }) => {
@@ -87,7 +87,7 @@ const ExerciseLoadItem = React.memo(({
             };
 
             const relevantLogs = userLogs
-                .filter(log => log?.treino?.id === treinoId && log.status === 'conclido')
+                .filter(log => log?.treino?.id === treinoId && log.status === 'concluido')
                 .sort((a, b) => {
                     const dateA = toDate(a.horarioInicio);
                     const dateB = toDate(b.horarioInicio);
@@ -127,7 +127,7 @@ const ExerciseLoadItem = React.memo(({
             return <Text style={styles.chartEmptyText}>Nenhuma série disponível.</Text>;
         }
         
-        const completedSeries = (exercise.series as SerieComStatus[]).filter(s => s?.conclido === true);
+        const completedSeries = (exercise.series as SerieComStatus[]).filter(s => s?.concluido === true);
         const totalSeries = exercise.series.length;
         let normalSeriesCounter = 0;
 
@@ -158,7 +158,7 @@ const ExerciseLoadItem = React.memo(({
                                 normalSeriesCounter++;
                             }
 
-                            const { calculationString } = calculateLoadForSerie(serie, exercise, userWeight);
+                            const { calculationString } = calculateLoadForSerie(serie as Serie, exercise, userWeight);
 
                             const rowStyle: ViewStyle[] = [styles.seriesDetailRow];
                             if (isDropset) {
@@ -288,7 +288,7 @@ export const WorkoutOverviewModal = ({
         treino.exercicios.forEach(ex => {
             if (ex.series) {
                 totalSeries += ex.series.length;
-                completedSeries += (ex.series as SerieComStatus[]).filter(s => s?.conclido === true).length;
+                completedSeries += (ex.series as SerieComStatus[]).filter(s => s?.concluido === true).length;
             }
         });
         

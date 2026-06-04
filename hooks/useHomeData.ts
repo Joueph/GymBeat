@@ -6,7 +6,13 @@ import { Treino } from '@/models/treino';
 import { Usuario } from '@/models/usuario';
 import { getFichaAtiva, getFichasByUsuarioId } from '@/services/fichaService';
 import { getLogsByUsuarioId } from '@/services/logService';
-import { getCachedActiveWorkoutLog } from '@/services/offlineCacheService';
+import {
+    getCachedActiveWorkoutLog,
+    getCachedFichaAtiva,
+    getCachedUserFichas,
+    getCachedUserLogs,
+    getCachedUserTreinos
+} from '@/services/offlineCacheService';
 import { getTreinosByIds } from '@/services/treinoService';
 import { widgetService } from '@/services/widgetService';
 import { getUserProfile, updateUserProfile } from '@/userService';
@@ -23,6 +29,7 @@ export const useHomeData = () => {
     const { isPremium } = usePremiumStatus();
     const [treinos, setTreinos] = useState<Treino[]>([]);
     const [logs, setLogs] = useState<Log[]>([]);
+    const [activeWorkoutLog, setActiveWorkoutLog] = useState<Log | null>(null);
     const [activeFicha, setActiveFicha] = useState<Ficha | null>(null);
     const [allFichas, setAllFichas] = useState<Ficha[]>([]);
     const [userProfile, setUserProfile] = useState<Usuario | null>(null);
@@ -55,6 +62,22 @@ export const useHomeData = () => {
         if (!user) return;
 
         try {
+            const [cachedFicha, cachedFichas, cachedTreinos, cachedLogs, cachedActiveWorkout] = await Promise.all([
+                getCachedFichaAtiva(),
+                getCachedUserFichas(user.id),
+                getCachedUserTreinos(user.id),
+                getCachedUserLogs(user.id),
+                getCachedActiveWorkoutLog()
+            ]);
+
+            if (cachedFicha || cachedFichas.length > 0 || cachedTreinos.length > 0 || cachedLogs.length > 0 || cachedActiveWorkout) {
+                setActiveFicha(cachedFicha);
+                setAllFichas(cachedFichas);
+                setTreinos(cachedTreinos);
+                setLogs(cachedLogs);
+                setActiveWorkoutLog(cachedActiveWorkout);
+            }
+
             const [activeFichaResp, firestoreLogs, cachedLog, profile, allFichasResp] = await Promise.all([
                 getFichaAtiva(user.id),
                 getLogsByUsuarioId(user.id),
@@ -67,6 +90,7 @@ export const useHomeData = () => {
 
 
             let combinedLogs = firestoreLogs;
+            setActiveWorkoutLog(cachedLog);
 
             if (cachedLog) {
                 combinedLogs = firestoreLogs.filter(log => log.id !== cachedLog.id);
@@ -293,6 +317,7 @@ export const useHomeData = () => {
         user,
         treinos,
         logs,
+        activeWorkoutLog,
         activeFicha,
         userProfile,
         isWeightDrawerVisible,

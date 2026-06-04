@@ -1,7 +1,9 @@
 import NetInfo from '@react-native-community/netinfo';
+import { addFicha, setFichaAtiva, updateFicha } from './fichaService';
 import { addLog } from './logService';
 import { getOfflineQueue, OfflineAction, setOfflineQueue } from './offlineQueueService';
-import { addTreino, updateTreino } from './treinoService';
+import { addTreino, updateTreino, updateTreinosOrdem } from './treinoService';
+import { updateUserProfile } from '../userService';
 
 /**
  * Processes the offline queue, attempting to sync actions with the server.
@@ -9,7 +11,7 @@ import { addTreino, updateTreino } from './treinoService';
  */
 export const processQueue = async (): Promise<void> => {
     const state = await NetInfo.fetch();
-    if (!state.isConnected) {
+    if (!((state.isConnected ?? true) && state.isInternetReachable !== false)) {
         console.log('[SyncService] Sem conexão. Processamento abortado.');
         return;
     }
@@ -40,6 +42,31 @@ export const processQueue = async (): Promise<void> => {
                     case 'ADD_TREINO':
                         // Payload: { treinoData: Omit<Treino, 'id'> }
                         await addTreino(action.payload.treinoData, true); // true = isSyncing
+                        break;
+
+                    case 'ADD_FICHA':
+                        await addFicha(action.payload.fichaData, true);
+                        break;
+
+                    case 'UPDATE_FICHA':
+                        await updateFicha(action.payload.fichaId, action.payload.data, true);
+                        break;
+
+                    case 'SET_FICHA_ATIVA':
+                        await setFichaAtiva(
+                            action.payload.userId,
+                            action.payload.fichaId,
+                            action.payload.previousFichaId,
+                            true
+                        );
+                        break;
+
+                    case 'UPDATE_TREINOS_ORDEM':
+                        await updateTreinosOrdem(action.payload.treinoIds);
+                        break;
+
+                    case 'UPDATE_USER_PROFILE':
+                        await updateUserProfile(action.payload.uid, action.payload.data, true);
                         break;
                 }
 

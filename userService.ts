@@ -19,7 +19,9 @@ import {
 import { db } from "./firebaseconfig";
 import { Usuario } from "./models/usuario";
 
-import { getCachedUserSession } from "./services/offlineCacheService";
+import NetInfo from "@react-native-community/netinfo";
+import { cacheUserSession, getCachedUserSession } from "./services/offlineCacheService";
+import { queueAction } from "./services/offlineQueueService";
 
 // ... (as outras funções como getUserProfile, updateUserProfile, etc. permanecem as mesmas)
 /**
@@ -59,11 +61,27 @@ export const getUserProfile = async (uid: string) => {
  * @param data Campos parciais de Usuario enviados ao Firestore.
  * @returns Promise resolvida quando o update terminar; rejeita em erro de escrita.
  */
-export const updateUserProfile = async (uid: string, data: Partial<Usuario>) => {
+export const updateUserProfile = async (uid: string, data: Partial<Usuario>, isSyncing: boolean = false) => {
   if (!uid) return;
+  const networkState = await NetInfo.fetch();
+  const isOnline = (networkState.isConnected ?? true) && networkState.isInternetReachable !== false;
+
+  if (!isOnline && !isSyncing) {
+    const cached = await getCachedUserSession();
+    if (cached && cached.id === uid) {
+      await cacheUserSession({ ...cached, ...data, id: uid } as Usuario);
+    }
+    await queueAction('UPDATE_USER_PROFILE', { uid, data });
+    return;
+  }
+
   try {
     const userRef = doc(db, `users/${uid}`);
     await updateDoc(userRef, data);
+    const cached = await getCachedUserSession();
+    if (cached && cached.id === uid) {
+      await cacheUserSession({ ...cached, ...data, id: uid } as Usuario);
+    }
     console.log("Perfil do usuário atualizado com sucesso!");
   } catch (error) {
     console.error("Erro ao atualizar o perfil do usuário:", error);

@@ -1,4 +1,5 @@
 // services/treinoService.ts
+import NetInfo from '@react-native-community/netinfo';
 import {
   arrayRemove,
   arrayUnion,
@@ -15,7 +16,16 @@ import { db } from '../firebaseconfig';
 import { Exercicio, ExercicioModelo } from '../models/exercicio'; // Import Exercicio and ExercicioModelo
 import { Treino } from '../models/treino';
 import { TreinoModelo } from '../models/treinoModelo';
-import { cacheUserTreinos, getCachedTreinoById, getCachedTreinosByIds, getCachedUserTreinos } from './offlineCacheService';
+import {
+  cacheUserTreinos,
+  getCachedTreinoById,
+  getCachedTreinosByIds,
+  getCachedUserTreinos,
+  updateCachedFicha,
+  updateCachedTreino,
+  upsertCachedTreino
+} from './offlineCacheService';
+import { queueAction } from './offlineQueueService';
 
 export type DiaSemana = 'dom' | 'seg' | 'ter' | 'qua' | 'qui' | 'sex' | 'sab';
 
@@ -39,6 +49,11 @@ const getExercicioModeloById = async (modeloId: string): Promise<ExercicioModelo
  * @returns The workout with populated exercise models, null when missing, or cached data on failure.
  */
 export const getTreinoById = async (treinoId: string): Promise<Treino | null> => {
+  const networkState = await NetInfo.fetch();
+  if (!((networkState.isConnected ?? true) && networkState.isInternetReachable !== false)) {
+    return await getCachedTreinoById(treinoId);
+  }
+
   try {
     const docRef = doc(db, 'treinos', treinoId);
     const docSnap = await getDoc(docRef);
@@ -63,8 +78,9 @@ export const getTreinoById = async (treinoId: string): Promise<Treino | null> =>
         // Filter out the null values
         const populatedExercicios = resolvedExercicios.filter((ex): ex is Exercicio => ex !== null);
 
-        treinoData.exercicios = populatedExercicios;
+      treinoData.exercicios = populatedExercicios;
       }
+      await upsertCachedTreino(treinoData.usuarioId, treinoData);
       return treinoData; // Return the fully populated Treino object
     }
     return null;
@@ -89,11 +105,20 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
   if (!treinoIds || treinoIds.length === 0) {
     return [];
   }
+  const networkState = await NetInfo.fetch();
+  if (!((networkState.isConnected ?? true) && networkState.isInternetReachable !== false)) {
+    return await getCachedTreinosByIds(treinoIds);
+  }
+
   const treinosRef = collection(db, 'treinos');
   try {
     const q = query(treinosRef, where('__name__', 'in', treinoIds));
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
+    const treinos = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Treino));
+    for (const treino of treinos) {
+      await upsertCachedTreino(treino.usuarioId, treino);
+    }
+    return treinos;
   } catch (error) {
     console.error('[TreinoService] Erro ao buscar treinos por IDs (offline fallback):', error);
     // Tenta recuperar individualmente do cache
@@ -108,6 +133,12 @@ export const getTreinosByIds = async (treinoIds: string[]): Promise<Treino[]> =>
  * @returns User workouts sorted by ordem, or cached workouts when Firestore fails.
  */
 export const getTreinosByUsuarioId = async (userId: string): Promise<Treino[]> => {
+  const networkState = await NetInfo.fetch();
+  if (!((networkState.isConnected ?? true) && networkState.isInternetReachable !== false)) {
+    const cached = await getCachedUserTreinos(userId);
+    return cached;
+  }
+
   try {
     const treinosRef = collection(db, 'treinos');
     const q = query(treinosRef, where('usuarioId', '==', userId));
@@ -172,12 +203,6 @@ export const addTreinoToFicha = async (fichaId: string, treinoData: Partial<Omit
   return treinoRef.id;
 };
 
-// ... imports
-import NetInfo from '@react-native-community/netinfo';
-import { queueAction } from './offlineQueueService';
-
-// ... (other functions)
-
 /**
  * Adds a new workout.
  * @param treinoData Workout data without the generated ID.
@@ -186,22 +211,32 @@ import { queueAction } from './offlineQueueService';
  */
 export const addTreino = async (treinoData: Omit<Treino, 'id'>, isSyncing: boolean = false): Promise<string> => {
   const networkState = await NetInfo.fetch();
-  const isOnline = networkState.isConnected;
+  const isOnline = (networkState.isConnected ?? true) && networkState.isInternetReachable !== false;
+  const requestedId = (treinoData as Partial<Treino>).id;
 
   if (!isOnline && !isSyncing) {
     console.log('[TreinoService] Offline. Enfileirando addTreino.');
-    // Offline: Add to queue
-    await queueAction('ADD_TREINO', { treinoData });
+    const tempId = requestedId || `temp-treino-${Date.now()}`;
+    const localTreino = { ...treinoData, id: tempId } as Treino;
 
-    // Return a temp ID (or handle this differently if we need the ID immediately for UI)
-    // Como não temos cache local da LISTA de TODOS os treinos (apenas user treinos), 
-    // talvez fosse bom atualizar o cache aqui também.
-    // Retornar um ID temporário:
-    return `temp-treino-${Date.now()}`;
+    // Offline: Add to queue
+    await queueAction('ADD_TREINO', { treinoData: localTreino });
+    await upsertCachedTreino(localTreino.usuarioId, localTreino);
+
+    if (localTreino.fichaId) {
+      const cachedFicha = await updateCachedFicha(localTreino.fichaId, {}, localTreino.usuarioId);
+      if (cachedFicha && !cachedFicha.treinos.includes(tempId)) {
+        await updateCachedFicha(localTreino.fichaId, { treinos: [...cachedFicha.treinos, tempId] }, localTreino.usuarioId);
+      }
+    }
+
+    return tempId;
   }
 
   const batch = writeBatch(db);
-  const newTreinoRef = doc(collection(db, 'treinos'));
+  const newTreinoRef = requestedId
+    ? doc(db, 'treinos', requestedId)
+    : doc(collection(db, 'treinos'));
 
   // Cria uma cópia dos dados para poder modificá-los
   const dataToSet = { ...treinoData, id: newTreinoRef.id };
@@ -222,6 +257,7 @@ export const addTreino = async (treinoData: Omit<Treino, 'id'>, isSyncing: boole
   }
 
   await batch.commit();
+  await upsertCachedTreino(dataToSet.usuarioId, dataToSet as Treino);
   return newTreinoRef.id;
 
 };
@@ -235,11 +271,12 @@ export const addTreino = async (treinoData: Omit<Treino, 'id'>, isSyncing: boole
  */
 export const updateTreino = async (treinoId: string, treinoData: Partial<Omit<Treino, 'id'>>, isSyncing: boolean = false): Promise<void> => {
   const networkState = await NetInfo.fetch();
-  const isOnline = networkState.isConnected;
+  const isOnline = (networkState.isConnected ?? true) && networkState.isInternetReachable !== false;
 
   if (!isOnline && !isSyncing) {
     console.log('[TreinoService] Offline. Enfileirando updateTreino.');
     await queueAction('UPDATE_TREINO', { treinoId, treinoData });
+    await updateCachedTreino(treinoId, treinoData);
     return;
   }
 
@@ -256,6 +293,7 @@ export const updateTreino = async (treinoId: string, treinoData: Partial<Omit<Tr
 
   const treinoRef = doc(db, 'treinos', treinoId);
   await updateDoc(treinoRef, dataToUpdate);
+  await updateCachedTreino(treinoId, treinoData);
 };
 
 /**
@@ -264,12 +302,26 @@ export const updateTreino = async (treinoId: string, treinoData: Partial<Omit<Tr
  * @returns Promise resolved after the batch commit.
  */
 export const updateTreinosOrdem = async (treinoIds: string[]): Promise<void> => {
+  const networkState = await NetInfo.fetch();
+  const isOnline = (networkState.isConnected ?? true) && networkState.isInternetReachable !== false;
+
+  if (!isOnline) {
+    await queueAction('UPDATE_TREINOS_ORDEM', { treinoIds });
+    for (let index = 0; index < treinoIds.length; index++) {
+      await updateCachedTreino(treinoIds[index], { ordem: index });
+    }
+    return;
+  }
+
   const batch = writeBatch(db);
   treinoIds.forEach((treinoId, index) => {
     const treinoRef = doc(db, 'treinos', treinoId);
     batch.update(treinoRef, { ordem: index });
   });
   await batch.commit();
+  for (let index = 0; index < treinoIds.length; index++) {
+    await updateCachedTreino(treinoIds[index], { ordem: index });
+  }
 };
 
 /**

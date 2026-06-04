@@ -31,6 +31,7 @@ export default function HomeScreen() {
   const {
     treinos,
     logs,
+    activeWorkoutLog,
     activeFicha,
     allFichas,
     userProfile,
@@ -104,7 +105,7 @@ export default function HomeScreen() {
       case 'streak':
         return <StreakWidget key={key} logs={logs} streakGoal={userProfile?.streakGoal ?? 3} />;
       case 'quickActions':
-        return <QuickActionsWidget key={key} activeFicha={activeFicha} onStartEmptyWorkout={handleStartEmptyWorkout} />;
+        return <QuickActionsWidget key={key} activeFicha={activeFicha} activeWorkoutLog={activeWorkoutLog} onStartEmptyWorkout={handleStartEmptyWorkout} />;
       case 'weeklyProgress':
         return <WeeklyProgress key={key} logs={logs} activeFicha={activeFicha} streakGoal={userProfile?.streakGoal} />;
       case 'todayWorkout':

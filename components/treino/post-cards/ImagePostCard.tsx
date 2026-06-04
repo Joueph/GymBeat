@@ -56,7 +56,6 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         overflow: 'hidden',
         backgroundColor: '#1A1D23',
-        marginBottom: 20,
         position: 'relative',
     },
     postImageBackground: {
